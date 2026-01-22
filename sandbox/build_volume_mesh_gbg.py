@@ -9,7 +9,7 @@ y0 = 6399009.716755
 # Meshing parameters
 h = 25.0  # max mesh size
 H = 80.0  # domain height
-L = 500.0  # domain size
+L = 400.0  # domain size
 
 # Define bounds
 bounds = dtcc.Bounds(x0 - 0.5 * L, y0 - 0.5 * L, x0 + 0.5 * L, y0 + 0.5 * L)
@@ -38,11 +38,15 @@ volume_mesh = dtcc.build_city_volume_mesh(
     city,
     max_mesh_size=h,
     domain_height=H,
-    boundary_face_markers=False,
+    boundary_face_markers=True,
+    tetgen_switches={
+        "max_volume": h,  # Max tet volume
+        "extra": " -VV",
+    },
 )
 
 # Save to file
-volume_mesh.save("volume_mesh_gbg.vtu")
+volume_mesh.save("volume_mesh_gbg.xdmf")
 
 # View mesh
-# volume_mesh.view()
+volume_mesh.view()
