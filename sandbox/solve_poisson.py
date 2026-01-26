@@ -73,4 +73,4 @@ u = problem.solve()
 # ------------------------------------------------------------
 # Post-processing & output
 # ------------------------------------------------------------
-u.save("solution_poisson.xdmf")
+u.save("output/solution_poisson.xdmf")
