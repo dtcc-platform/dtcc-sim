@@ -6,7 +6,7 @@ set_log_level(INFO)
 # ------------------------------------------------------------
 # Geometry
 # ------------------------------------------------------------
-mesh, markers = load_mesh_with_markers("volume_mesh_gbg.xdmf")
+mesh, markers = load_mesh_with_markers("output/volume_mesh_gbg.xdmf")
 
 # -----------------------------------------------------------
 # Get the number of buildings from the boundary markers
@@ -73,4 +73,4 @@ u = problem.solve()
 # ------------------------------------------------------------
 # Post-processing & output
 # ------------------------------------------------------------
-u.save("solution_poisson_gbg.xdmf")
+u.save("solution_poisson.xdmf")

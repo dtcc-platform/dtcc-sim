@@ -46,7 +46,7 @@ volume_mesh = dtcc.build_city_volume_mesh(
 )
 
 # Save to file
-volume_mesh.save("volume_mesh_gbg.xdmf")
+volume_mesh.save("output/volume_mesh_gbg.xdmf")
 
 # View mesh
-volume_mesh.view()
+# volume_mesh.view()
