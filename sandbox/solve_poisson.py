@@ -42,7 +42,6 @@ for i in (-2, -3, -4, -5, -6):
 # ------------------------------------------------------------
 u = TrialFunction(V)
 v = TestFunction(V)
-x = SpatialCoordinate(mesh)
 f = Constant(mesh, 0.0)
 a = inner(grad(u), grad(v)) * dx
 L = inner(f, v) * dx
@@ -50,14 +49,6 @@ L = inner(f, v) * dx
 # ------------------------------------------------------------
 # Linear solver
 # ------------------------------------------------------------
-direct = {
-    "ksp_monitor_short": None,
-    "ksp_converged_reason": None,
-    "ksp_type": "preonly",
-    "pc_type": "lu",
-    "pc_factor_mat_solver_type": "mumps",
-}
-
 opts = {
     "ksp_monitor_short": None,
     "ksp_converged_reason": None,
@@ -67,10 +58,12 @@ opts = {
     "pc_hypre_type": "boomeramg",
 }
 
-problem = LinearProblem(a, L, bcs=bcs, petsc_options=opts)
-u = problem.solve()
+# ------------------------------------------------------------
+# Solve
+# ------------------------------------------------------------
+u = solve(a == L, bcs=bcs, petsc_options=opts)
 
 # ------------------------------------------------------------
-# Post-processing & output
+# Output
 # ------------------------------------------------------------
 u.save("output/solution_poisson.xdmf")

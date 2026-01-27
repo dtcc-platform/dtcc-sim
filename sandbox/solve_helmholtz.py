@@ -27,7 +27,7 @@ if k * h > 0.9:
     exit(1)
 
 # ------------------------------------------------------------
-# Function space: mixed (Re, Im) → R²
+# Function space: mixed (Re, Im)
 # -----------------------------------------------------------
 W = FunctionSpace(mesh, (("Lagrange", 1), ("Lagrange", 1)))
 
@@ -44,12 +44,11 @@ s = A * exp(-r2 / (2 * sigma**2))
 # ------------------------------------------------------------
 # Boundary conditions
 # ------------------------------------------------------------
-ds = NeumannBC(mesh, markers=markers, marker_value=[-2, -3, -4, -5, -6])
+ds_absorb = NeumannBC(mesh, markers=markers, marker_value=[-2, -3, -4, -5, -6])
 
 # Dirichlet condition for anchor point (one dof)
-bc = DirichletBC(W.sub(0), 0.0, dofs=[0])
-# bcs = [bc] # does not seem to help much
-bcs = []
+bc_anchor = DirichletBC(W.sub(0), 0.0, dofs=[0])
+bcs = []  # optionally: [bc_anchor]
 
 # ------------------------------------------------------------
 # Variational problem
@@ -61,49 +60,14 @@ a = (
     inner(grad(p_re), grad(q_re)) * dx
     + inner(grad(p_im), grad(q_im)) * dx
     - k**2 * (p_re * q_re + p_im * q_im) * dx
-    + k * (p_im * q_re - p_re * q_im) * ds
+    + k * (p_im * q_re - p_re * q_im) * ds_absorb
 )
 
 L = -s * q_re * dx
 
 # ------------------------------------------------------------
-# GLS stabilization (does not seem to help much)
-# ------------------------------------------------------------
-tau = 0.0
-if tau > 0.0:
-
-    h_K = CellDiameter(mesh)
-    tau = 0.1 * h_K**2
-
-    r_p_re = div(grad(p_re)) + k**2 * p_re
-    r_p_im = div(grad(p_im)) + k**2 * p_im
-    r_q_re = div(grad(q_re)) + k**2 * q_re
-    r_q_im = div(grad(q_im)) + k**2 * q_im
-
-    a += tau * (r_p_re * r_q_re + r_p_im * r_q_im) * dx
-    L += -tau * s * r_q_re * dx
-
-# ------------------------------------------------------------
-# Shifted form for preconditioning
-# ------------------------------------------------------------
-alpha = 0.2
-beta = 0.65
-diag_shift = (1.0 - alpha**2) * k**2 * (p_re * q_re + p_im * q_im) * dx
-rot_shift = beta * k**2 * (p_im * q_re - p_re * q_im) * dx
-a_pc = a + diag_shift + rot_shift
-a_pc = a
-
-# ------------------------------------------------------------
 # Linear solver
 # ------------------------------------------------------------
-direct = {
-    "ksp_monitor_short": None,
-    "ksp_converged_reason": None,
-    "ksp_type": "preonly",
-    "pc_type": "lu",
-    "pc_factor_mat_solver_type": "mumps",
-}
-
 opts = {
     "ksp_monitor_short": None,
     "ksp_converged_reason": None,
@@ -120,25 +84,15 @@ opts = {
     "pc_hypre_boomeramg_agg_nl": 4,
 }
 
-# Set up linear problem
-problem = LinearProblem(a, L, bcs=bcs, petsc_options=opts)
+# ------------------------------------------------------------
+# Solve
+# ------------------------------------------------------------
 
-# Add preconditioner
-A_pc = assemble_matrix(a_pc, bcs=bcs)
-A_pc.assemble()
-problem.solver.setOperators(problem.A, A_pc)
-
-# Solve linear problem
-p = problem.solve()
+p = solve(a == L, bcs=bcs, petsc_options=opts)
 
 # ------------------------------------------------------------
 # Post-processing & output
 # ------------------------------------------------------------
-
-# Interpolate magnitude of complex solution
 V = FunctionSpace(mesh, "Lagrange", 1)
-expr = Expression(sqrt(p[0] ** 2 + p[1] ** 2), V.element.interpolation_points())
-p_abs = interpolate(expr, V)
-
-# Save solution
+p_abs = interpolate(sqrt(p[0] ** 2 + p[1] ** 2), V)
 p_abs.save("output/solution_helmholtz.xdmf")
