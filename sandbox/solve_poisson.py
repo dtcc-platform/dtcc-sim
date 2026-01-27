@@ -26,9 +26,10 @@ V = FunctionSpace(mesh, "Lagrange", 1)
 bcs = []
 
 # Boundary conditions on the buildings
+N = num_buildings
 for i in range(num_buildings):
     bc_wall = DirichletBC(V, 1.0, markers=markers, marker_value=i)
-    bc_roof = DirichletBC(V, 1.0, markers=markers, marker_value=2 * i)
+    bc_roof = DirichletBC(V, 1.0, markers=markers, marker_value=N + i)
     bcs.append(bc_wall)
     bcs.append(bc_roof)
 
