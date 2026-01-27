@@ -1,30 +1,9 @@
 """
 fenics.py — A minimal, legacy-style wrapper for FEniCSx (dolfinx)
 
-This module provides a "classic FEniCS" convenience layer on top of FEniCSx
-(dolfinx/basix/ufl/petsc4py) with the explicit goal that users can write:
-
-    from fenics import *
-
-and then use a familiar, compact API to:
-- create meshes and function spaces
-- define variational forms (UFL)
-- apply Dirichlet/Neumann boundary conditions
-- assemble and solve linear variational problems
-- interpolate/project expressions
-- save results to XDMF
-
-Compatibility
--------------
-Targeted at FEniCSx/dolfinx v0.9.x. Some APIs in dolfinx evolve; this wrapper
-attempts to be resilient to minor changes by avoiding overly strict type checks,
-especially around UFL equation objects.
-
-Notes
------
-- This is a thin wrapper: it does *not* hide PETSc entirely, but it makes common
-  workflows easy and preserves access to underlying dolfinx objects.
-
+This module provides a "classic FEniCS" convenience layer on top of FEniCSx,
+to enable classic (pretty) FEniCS programming, in contrast to the verbose
+(ugly) FEniCSx style.
 """
 
 from __future__ import annotations
@@ -528,6 +507,7 @@ def _is_ufl_expression(obj: Any) -> bool:
     """Return True if `obj` is a UFL expression (or looks like one)."""
     try:
         from ufl.core.expr import Expr  # type: ignore
+
         return isinstance(obj, Expr)
     except Exception:
         return hasattr(obj, "ufl_shape") or hasattr(obj, "ufl_operands")
@@ -595,6 +575,7 @@ def interpolate(f: Any, V: dolfinx.fem.FunctionSpace) -> Function:
     raise TypeError(
         "interpolate: unsupported input type. Expected Function, Expression, callable, UFL expression, or scalar."
     )
+
 
 def project(
     f: Any,
