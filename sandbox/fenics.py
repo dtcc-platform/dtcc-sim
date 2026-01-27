@@ -100,13 +100,17 @@ def assemble_matrix(a, **kwargs):
 
 
 def interpolate(f, V):
-    """
-    Interpolate a function f into a function space V.
-    This is a wrapper around dolfinx.fem.Function.interpolate.
-    """
     info(f"Interpolating function into {V}")
     u = Function(V)
-    u.interpolate(f)
+
+    if isinstance(f, Expression):
+        tdim = V.mesh.topology.dim
+        imap = V.mesh.topology.index_map(tdim)
+        cells = np.arange(imap.size_local + imap.num_ghosts, dtype=np.int32)
+        u.interpolate(f, cells0=cells, cells1=cells)
+    else:
+        u.interpolate(f)
+
     return u
 
 

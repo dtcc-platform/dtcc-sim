@@ -13,8 +13,7 @@ k = 2.0 * np.pi * f / c
 # ------------------------------------------------------------
 # Geometry
 # ------------------------------------------------------------
-# mesh, markers = load_mesh_with_markers("output/volume_mesh_gbg.xdmf")
-mesh, markers = load_mesh_with_markers("tmp/gbg_volume_mesh.xdmf")
+mesh, markers = load_mesh_with_markers("output/volume_mesh_gbg.xdmf")
 xmin, ymin, zmin, xmax, ymax, zmax = bounds(mesh)
 
 # ------------------------------------------------------------
