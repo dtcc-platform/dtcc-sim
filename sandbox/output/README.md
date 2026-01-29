@@ -1,1 +1,1 @@
-Output from solvers etc.
+Output directory for sandbox.
