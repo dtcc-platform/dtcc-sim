@@ -52,4 +52,4 @@ params = dtcc_sim.UrbanHeatParameters(
 
 # Create simulator and run
 sim = dtcc_sim.UrbanHeatSimulator(bounds=bounds, params=params)
-T = sim.simulate(output_path="demos/output/heatwave.xdmf")
+T = sim.simulate(output_path="output/heatwave.xdmf")
