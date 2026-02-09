@@ -6,7 +6,12 @@ set_log_level(INFO)
 # ------------------------------------------------------------
 # Geometry
 # ------------------------------------------------------------
-mesh, markers = load_mesh_with_markers("output/flat_mesh_gbg.xdmf")
+mesh, cell_tags = load_mesh_with_markers("output/flat_mesh_gbg.xdmf")
+
+# -----------------------------------------------------------
+# Convert cell markers to facet (edge) markers
+# -----------------------------------------------------------
+markers = cell_markers_to_facet_markers(mesh, cell_tags)
 
 # -----------------------------------------------------------
 # Get the number of buildings from the boundary markers
