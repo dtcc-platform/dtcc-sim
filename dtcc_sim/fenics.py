@@ -138,6 +138,7 @@ __all__.extend(
         # Mesh I/O / utilities
         "load_mesh",
         "load_mesh_with_markers",
+        "cell_markers_to_facet_markers",
         "BoxMesh",
         "bounds",
         "offset_to_origin",
@@ -780,6 +781,75 @@ def load_mesh_with_markers(
         mesh.topology.create_connectivity(tdim - 1, tdim)
         markers = xdmf.read_meshtags(mesh, name="boundary_markers")
     return mesh, markers
+
+
+def cell_markers_to_facet_markers(
+    mesh: dolfinx.mesh.Mesh,
+    cell_tags: dolfinx.mesh.MeshTags,
+) -> dolfinx.mesh.MeshTags:
+    """
+    Convert cell MeshTags to facet MeshTags.
+
+    A facet receives a marker when:
+    - It is an interior facet shared by two cells with *different* markers
+      (the larger marker value is used, so building markers 0, 1, 2, … take
+      precedence over ground -2 and halo -1).
+    - It is a boundary facet (one adjacent cell only); the owning cell's
+      marker is used.
+
+    Parameters
+    ----------
+    mesh :
+        The dolfinx mesh.
+    cell_tags :
+        MeshTags of dimension ``mesh.topology.dim`` (cell markers).
+
+    Returns
+    -------
+    dolfinx.mesh.MeshTags
+        MeshTags of dimension ``mesh.topology.dim - 1`` (facet markers).
+    """
+    tdim = mesh.topology.dim
+    fdim = tdim - 1
+
+    mesh.topology.create_entities(fdim)
+    mesh.topology.create_connectivity(tdim, fdim)
+    mesh.topology.create_connectivity(fdim, tdim)
+
+    f_to_c = mesh.topology.connectivity(fdim, tdim)
+    num_facets = mesh.topology.index_map(fdim).size_local
+
+    # Build cell index → marker lookup (default: no marker)
+    cell_marker = np.full(
+        mesh.topology.index_map(tdim).size_local, np.iinfo(np.int32).min, dtype=np.int32
+    )
+    cell_marker[cell_tags.indices] = cell_tags.values
+
+    facet_indices: list[int] = []
+    facet_values: list[int] = []
+
+    for f in range(num_facets):
+        cells = f_to_c.links(f)
+        if len(cells) == 1:
+            # Boundary facet → use the owning cell's marker
+            m = int(cell_marker[cells[0]])
+            if m != np.iinfo(np.int32).min:
+                facet_indices.append(f)
+                facet_values.append(m)
+        elif len(cells) == 2:
+            m0 = int(cell_marker[cells[0]])
+            m1 = int(cell_marker[cells[1]])
+            if m0 != m1:
+                # Interface facet → use the larger marker
+                facet_indices.append(f)
+                facet_values.append(max(m0, m1))
+
+    fi = np.array(facet_indices, dtype=np.int32)
+    fv = np.array(facet_values, dtype=np.int32)
+    perm = np.argsort(fi)
+
+    info(f"Converted {len(cell_tags.indices)} cell markers to {len(fi)} facet markers.")
+    return dolfinx.mesh.meshtags(mesh, fdim, fi[perm], fv[perm])
 
 
 def _save_mesh(self: dolfinx.mesh.Mesh, filename: str) -> None:
