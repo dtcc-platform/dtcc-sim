@@ -67,4 +67,4 @@ u = solve(a == L, bcs=bcs, petsc_options=opts)
 # ------------------------------------------------------------
 # Output
 # ------------------------------------------------------------
-u.save("output/solution_poisson.xdmf")
+u.save("output/solution_poisson_3d.xdmf")
