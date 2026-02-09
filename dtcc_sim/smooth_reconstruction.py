@@ -174,7 +174,7 @@ class SmoothReconstructionSimulator:
             raise ValueError("Only degree=1 (P1) is currently supported")
 
     def _build_mesh_from_bounds(self) -> None:
-        """Build volume mesh from bounds using dtcc_core.datasets.volumemesh."""
+        """Build volume mesh from bounds using dtcc_core.datasets.city_volume_mesh."""
         info("SmoothReconstruction: Building volume mesh from bounds...")
 
         try:
@@ -186,7 +186,7 @@ class SmoothReconstructionSimulator:
             )
 
         # Build volume mesh using the dataset
-        volume_mesh = datasets.volumemesh(
+        volume_mesh = datasets.city_volume_mesh(
             bounds=self.bounds,
             max_mesh_size=self.params.mesh_max_mesh_size,
             domain_height=self.params.mesh_domain_height,

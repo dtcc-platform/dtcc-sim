@@ -406,7 +406,7 @@ class UrbanHeatSimulator:
         self.solution: Optional[Function] = None
 
     def _build_mesh_from_bounds(self) -> None:
-        """Build volume mesh from bounds using dtcc_core.datasets.volumemesh."""
+        """Build volume mesh from bounds using dtcc_core.datasets.city_volume_mesh."""
         info("UrbanHeat: Building volume mesh from bounds...")
 
         try:
@@ -418,7 +418,7 @@ class UrbanHeatSimulator:
             )
 
         # Build volume mesh using the dataset
-        volume_mesh = datasets.volumemesh(
+        volume_mesh = datasets.city_volume_mesh(
             bounds=self.bounds,
             max_mesh_size=self.params.mesh_max_mesh_size,
             domain_height=self.params.mesh_domain_height,

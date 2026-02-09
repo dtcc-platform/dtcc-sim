@@ -15,7 +15,7 @@ L = 400.0  # domain size
 bounds = Bounds(x0 - 0.5 * L, y0 - 0.5 * L, x0 + 0.5 * L, y0 + 0.5 * L)
 
 # Get volume mesh dataset
-volume_mesh = datasets.volumemesh(bounds=bounds, max_mesh_size=h, domain_height=H)
+volume_mesh = datasets.city_volume_mesh(bounds=bounds, max_mesh_size=h, domain_height=H)
 
 # Save to file
 volume_mesh.save("output/volume_mesh_gbg.xdmf")
