@@ -21,7 +21,6 @@ dependencies = []
 [project.optional-dependencies]
 test = ["pytest"]
 docs = ["sphinx", "sphinx-immaterial"]
-mcp = ["mcp>=1.0.0", "httpx>=0.27.0"]
 
 [project.urls]
 Homepage = "https://github.com/dtcc-platform/dtcc-sim"
@@ -30,7 +29,7 @@ Documentation = "https://platform.dtcc.chalmers.se/"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["dtcc_sim*", "mcp_server*"]
+include = ["dtcc_sim*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
