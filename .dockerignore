@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.git/
+build/
+dtcc-dataset-downloader/frontend/node_modules/
+dtcc-dataset-downloader/frontend/dist/
+dtcc-dataset-downloader/dtcc_dataset_downloader.egg-info/
+dtcc-dataset-downloader/temp/
+dtcc-tetgen-wrapper/build/
