@@ -32,8 +32,13 @@ params = UrbanWindParameters(
     # Mesh
     mesh_max_mesh_size=25.0,
     mesh_domain_height=80.0,
+    # Turbulence — eddy viscosity is essential for city-scale flow.
+    # Without it the effective Re ~ 10^7 and the Galerkin
+    # discretisation is unstable.  A simple constant ν_t ≈ 1 m²/s
+    # gives Re_eff ~ 1000 which is well-resolved on this mesh.
+    nu_t=1.0,
     # Solver
-    dt=0.5,
+    dt=0.2,
     max_steps=500,
     steady_tolerance=1e-4,
     min_steps=50,

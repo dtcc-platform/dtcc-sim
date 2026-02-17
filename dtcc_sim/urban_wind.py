@@ -189,7 +189,15 @@ class UrbanWindParameters(BaseModel):
     # ---- 2.5 Solver scheme ----
     scheme: Literal["IPCS_ABCN"] = Field("IPCS_ABCN", description="Solver scheme")
     convective_form: Literal["standard", "skew_symmetric"] = Field(
-        "skew_symmetric", description="Convection treatment"
+        "standard",
+        description=(
+            "Convection treatment.  'standard' is the natural Galerkin form "
+            "(u_conv·∇)u·v which transports energy through open boundaries "
+            "and is stable for inlet/outlet flows.  'skew_symmetric' conserves "
+            "kinetic energy exactly but prevents convective energy removal at "
+            "outlets, so it requires sufficient eddy viscosity (nu_t) to avoid "
+            "energy accumulation and divergence."
+        ),
     )
     convection_linearization: Literal["picard", "ab2"] = Field(
         "picard",
@@ -1037,13 +1045,17 @@ class UrbanWindSimulator:
 
         # Convection (u_conv · ∇)u — semi-implicit in u_trial
         if params.convective_form == "skew_symmetric":
-            # Skew-symmetric form: 0.5[(u_conv·∇)u + (u_conv·∇v)^T u]
-            # The second term has a MINUS sign to conserve kinetic energy.
+            # Skew-symmetric form: 0.5[(u_conv·∇)u - (u_conv·∇v)^T u]
+            # Conserves kinetic energy exactly (b(u,u)=0) but prevents
+            # convective energy removal at outlets.  Only suitable when
+            # sufficient diffusion (nu_t) is present to drain energy.
             F1_lhs += (
                 0.5 * inner(dot(grad(u_trial), u_conv), v) * dx
                 - 0.5 * inner(dot(grad(v), u_conv), u_trial) * dx
             )
         else:
+            # Standard Galerkin convection — (u_conv·∇)u · v.
+            # Naturally transports energy through open boundaries.
             F1_lhs += inner(dot(grad(u_trial), u_conv), v) * dx
 
         F1_rhs = (1.0 / dt_c) * inner(u_n, v) * dx - inner(grad(p_n), v) * dx
