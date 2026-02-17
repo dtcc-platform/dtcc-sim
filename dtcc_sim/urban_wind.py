@@ -1,5 +1,4 @@
-"""
-Urban Wind CFD Solver (IPCS / ABCN Fractional-Step Method)
+"""Urban Wind CFD Solver (IPCS / ABCN Fractional-Step Method)
 
 Solves the incompressible Navier–Stokes equations in pseudo-time using an
 Incremental Pressure-Correction Scheme (IPCS) with Adams–Bashforth /
@@ -7,18 +6,18 @@ Crank–Nicolson (ABCN) time discretization on DTCC city air-volume meshes.
 
 Physical model
 --------------
-    ∂u/∂t + (u·∇)u = −∇p/ρ + ν_eff Δu      (momentum)
-    ∇·u = 0                                    (continuity)
+    ∂u/∂t + (u·∇)u = −∇p̃ + ν_eff Δu      (momentum)
+    ∇·u = 0                                  (continuity)
 
-The solver marches in pseudo-time until a steady state is reached or the
-maximum number of steps is exhausted.
+where p̃ = p/ρ is the *kinematic* pressure (units m²/s²).  The density ρ
+does not appear in the equations; all output pressures are kinematic.
 
 Output
 ------
 A ``dtcc_core.model.VolumeMesh`` with attached ``Field`` objects:
-- ``velocity`` (dim=3, m/s)
-- ``pressure`` (dim=1, Pa)
-- ``speed``    (dim=1, m/s)
+- ``velocity`` (dim=3, unit m/s)
+- ``pressure`` (dim=1, unit m²/s² — kinematic pressure)
+- ``speed``    (dim=1, unit m/s)
 
 References
 ----------
@@ -38,6 +37,7 @@ from pydantic import BaseModel, Field
 
 import dolfinx
 import dolfinx.fem
+import dolfinx.la
 import dolfinx.mesh
 from dolfinx.fem import (
     Constant,
@@ -113,6 +113,7 @@ BBOX_MARKER_NORMALS: Dict[int, Tuple[float, float, float]] = {
 DEFAULT_VELOCITY_PETSC: Dict[str, Any] = {
     "ksp_type": "gmres",
     "ksp_rtol": 1.0e-6,
+    "ksp_monitor": None,
     "pc_type": "hypre",
     "pc_hypre_type": "boomeramg",
 }
@@ -120,6 +121,7 @@ DEFAULT_VELOCITY_PETSC: Dict[str, Any] = {
 DEFAULT_PRESSURE_PETSC: Dict[str, Any] = {
     "ksp_type": "cg",
     "ksp_rtol": 1.0e-6,
+    "ksp_monitor": None,
     "pc_type": "hypre",
     "pc_hypre_type": "boomeramg",
 }
@@ -189,8 +191,23 @@ class UrbanWindParameters(BaseModel):
     convective_form: Literal["standard", "skew_symmetric"] = Field(
         "skew_symmetric", description="Convection treatment"
     )
-    pressure_correction_xi: float = Field(
-        0.0, description="Open-boundary locking parameter ξ"
+    convection_linearization: Literal["picard", "ab2"] = Field(
+        "picard",
+        description=(
+            "Linearization of the convective velocity: "
+            "'picard' uses u_n (robust, recommended for steady state), "
+            "'ab2' uses 1.5*u_n - 0.5*u_{n-1} (time-accurate but may oscillate)."
+        ),
+    )
+    velocity_relaxation: float = Field(
+        1.0,
+        description=(
+            "Under-relaxation factor ω for the velocity update: "
+            "u^{n+1} = ω u* + (1-ω) u^n.  Use <1 (e.g. 0.5) "
+            "to damp oscillations for complex geometries."
+        ),
+        gt=0.0,
+        le=1.0,
     )
 
     # ---- 2.6 Boundary-condition model ----
@@ -220,8 +237,20 @@ class UrbanWindParameters(BaseModel):
         None,
         description=(
             "Force outlet boundary marker (skip auto detection). "
-            "Set to 0 for closed cavities (no outlet); pressure is then "
-            "pinned at a single interior point."
+            "Use the string 'none' or set closed_cavity=True for "
+            "fully enclosed domains with no outlet."
+        ),
+    )
+    closed_cavity: bool = Field(
+        False,
+        description=(
+            "If True, no pressure-outlet BC is applied; pressure "
+            "is constrained via a PETSc null-space (zero-mean).  "
+            "Use for fully enclosed domains (lid-driven cavity) or "
+            "when no outlet face exists.  Note: combining this with "
+            "a net-inflow inlet BC may violate incompressibility; "
+            "ensure the inlet profile integrates to zero net flux or "
+            "pair with an outlet."
         ),
     )
 
@@ -279,7 +308,7 @@ def categorize_boundary(
     markers: dolfinx.mesh.MeshTags,
     num_buildings: int,
     inlet_marker: int,
-    outlet_marker: int,
+    outlet_marker: Optional[int],
     ground_tag: int = -1,
     top_tag: int = -2,
 ) -> dolfinx.mesh.MeshTags:
@@ -299,7 +328,11 @@ def categorize_boundary(
     mask_ground = vals == ground_tag
     mask_top = vals == top_tag
     mask_inlet = vals == inlet_marker
-    mask_outlet = vals == outlet_marker
+    mask_outlet = (
+        vals == outlet_marker
+        if outlet_marker is not None
+        else np.zeros(len(vals), dtype=bool)
+    )
 
     # Remaining bbox faces (not inlet, outlet or top)
     mask_side = (vals < ground_tag) & ~mask_top & ~mask_inlet & ~mask_outlet
@@ -336,7 +369,7 @@ def categorize_boundary(
 
 def select_inlet_outlet(
     params: UrbanWindParameters,
-) -> Tuple[int, int]:
+) -> Tuple[int, Optional[int]]:
     """Choose inlet and outlet bbox markers from wind direction.
 
     Uses the known marker→normal mapping in :data:`BBOX_MARKER_NORMALS`.
@@ -344,10 +377,16 @@ def select_inlet_outlet(
 
     Returns
     -------
-    (inlet_marker, outlet_marker)
+    (inlet_marker, outlet_marker)  — outlet_marker is None for closed cavities.
     """
     if params.inlet_marker is not None and params.outlet_marker is not None:
         return params.inlet_marker, params.outlet_marker
+
+    # Closed cavity: no outlet
+    if params.closed_cavity:
+        outlet_override: Optional[int] = None
+    else:
+        outlet_override = params.outlet_marker  # could be None → auto-detect
 
     wx, wy = params.wind_vector_xy
     w = np.array([wx, wy])
@@ -381,11 +420,70 @@ def select_inlet_outlet(
     inlet = (
         params.inlet_marker if params.inlet_marker is not None else best_inlet_marker
     )
-    outlet = (
-        params.outlet_marker if params.outlet_marker is not None else best_outlet_marker
-    )
+    outlet: Optional[int]
+    if params.closed_cavity:
+        outlet = None
+    elif outlet_override is not None:
+        outlet = outlet_override
+    else:
+        outlet = best_outlet_marker
 
     return inlet, outlet
+
+
+# ---------------------------------------------------------------------------
+# Helpers — marker validation
+# ---------------------------------------------------------------------------
+
+
+def _validate_bbox_markers(
+    mesh: dolfinx.mesh.Mesh,
+    markers: dolfinx.mesh.MeshTags,
+    inlet_marker: int,
+    outlet_marker: Optional[int],
+    has_outlet: bool,
+) -> None:
+    """Validate that expected boundary markers exist in the mesh tags.
+
+    Raises ``RuntimeError`` with a helpful message when required markers
+    are missing.
+    """
+    available = set(int(v) for v in markers.values)
+    # Gather globally (some markers may only appear on a subset of ranks)
+    all_markers_local = np.array(sorted(available), dtype=np.int32)
+    all_counts = mesh.comm.allgather(all_markers_local)
+    global_available = set()
+    for arr in all_counts:
+        global_available.update(int(v) for v in arr)
+
+    # Check inlet marker
+    if inlet_marker not in global_available:
+        raise RuntimeError(
+            f"UrbanWind: inlet marker {inlet_marker} not found in mesh tags.  "
+            f"Available markers: {sorted(global_available)}.  "
+            f"Expected BBOX_MARKER_NORMALS keys: {sorted(BBOX_MARKER_NORMALS.keys())}."
+        )
+
+    # Check outlet marker
+    if (
+        has_outlet
+        and outlet_marker is not None
+        and outlet_marker not in global_available
+    ):
+        raise RuntimeError(
+            f"UrbanWind: outlet marker {outlet_marker} not found in mesh tags.  "
+            f"Available markers: {sorted(global_available)}.  "
+            f"Set closed_cavity=True if no outlet face exists."
+        )
+
+    # Warn if none of the expected bbox markers are present
+    expected_bbox = set(BBOX_MARKER_NORMALS.keys())
+    if not expected_bbox.intersection(global_available):
+        warning(
+            f"UrbanWind: none of the expected bbox markers "
+            f"{sorted(expected_bbox)} found in mesh tags "
+            f"{sorted(global_available)}.  Inlet/outlet selection may be wrong."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -517,7 +615,7 @@ def _dolfinx_to_volume_mesh(
             name="pressure",
             dim=1,
             values=p_mapped,
-            unit="Pa",
+            unit="m^2/s^2",
             description="Pressure field from urban wind CFD solver",
         ),
         DtccField(
@@ -615,31 +713,48 @@ class UrbanWindSimulator:
 
     # ------------------------------------------------------------------ mesh
     def _build_mesh_from_bounds(self) -> None:
+        comm = MPI.COMM_WORLD
+        rank = comm.rank
+
         info("UrbanWind: Building volume mesh from bounds …")
         try:
             import dtcc_core.datasets as datasets
         except ImportError:
             raise ImportError("dtcc_core is required to build mesh from bounds.")
 
-        volume_mesh = datasets.city_volume_mesh(
-            bounds=self.bounds,
-            max_mesh_size=self.params.mesh_max_mesh_size,
-            domain_height=self.params.mesh_domain_height,
-            raster_cell_size=self.params.mesh_raster_cell_size,
-            raster_radius=self.params.mesh_raster_radius,
-        )
-        self.volume_mesh_dtcc = volume_mesh
-
+        # --- serial work: only rank 0 builds the mesh and writes to disk ---
         import tempfile
 
-        with tempfile.NamedTemporaryFile(suffix=".xdmf", delete=False) as tmp:
-            tmp_path = tmp.name
-        info(f"UrbanWind: saving mesh to temporary file: {tmp_path}")
-        volume_mesh.save(tmp_path)
+        tmp_path: Optional[str] = None
+        if rank == 0:
+            volume_mesh = datasets.city_volume_mesh(
+                bounds=self.bounds,
+                max_mesh_size=self.params.mesh_max_mesh_size,
+                domain_height=self.params.mesh_domain_height,
+                raster_cell_size=self.params.mesh_raster_cell_size,
+                raster_radius=self.params.mesh_raster_radius,
+            )
+            self.volume_mesh_dtcc = volume_mesh
+
+            with tempfile.NamedTemporaryFile(suffix=".xdmf", delete=False) as tmp:
+                tmp_path = tmp.name
+            info(f"UrbanWind: saving mesh to temporary file: {tmp_path}")
+            volume_mesh.save(tmp_path)
+
+        # broadcast the temp path so all ranks open the *same* file
+        tmp_path = comm.bcast(tmp_path, root=0)
+        comm.barrier()  # ensure file is written before any rank reads
+
+        # --- parallel read: all ranks collectively load the mesh ---
         self.mesh, self.markers = load_mesh_with_markers(tmp_path)
 
-        Path(tmp_path).unlink(missing_ok=True)
-        Path(tmp_path).with_suffix(".h5").unlink(missing_ok=True)
+        # barrier *after* read so no rank deletes before others finish
+        comm.barrier()
+
+        # rank 0 cleans up
+        if rank == 0:
+            Path(tmp_path).unlink(missing_ok=True)
+            Path(tmp_path).with_suffix(".h5").unlink(missing_ok=True)
 
     def _load_if_needed(self) -> None:
         if self.mesh is not None and self.markers is not None:
@@ -655,54 +770,113 @@ class UrbanWindSimulator:
             )
 
     # ------------------------------------------------------- weather helper
+    @staticmethod
+    def _circular_mean_deg(angles_deg: np.ndarray) -> float:
+        """Compute the circular (directional) mean of angles in degrees."""
+        theta = np.deg2rad(angles_deg)
+        return float(
+            (
+                np.rad2deg(np.arctan2(np.mean(np.sin(theta)), np.mean(np.cos(theta))))
+                + 360.0
+            )
+            % 360.0
+        )
+
+    @staticmethod
+    def _circular_median_deg(angles_deg: np.ndarray) -> float:
+        """Approximate circular median: circular mean is used.
+
+        A true circular median is complex; the circular mean is a
+        reasonable substitute for small station counts.
+        """
+        return UrbanWindSimulator._circular_mean_deg(angles_deg)
+
+    def _nearest_station_index(self, pts: np.ndarray) -> int:
+        """Return the index of the station closest to the domain centre."""
+        if self.bounds is None:
+            return 0
+        try:
+            b = self.bounds
+            # bounds may be a tuple (xmin, ymin, xmax, ymax) or an object
+            if hasattr(b, "center"):
+                cx, cy = b.center.x, b.center.y
+            elif hasattr(b, "__len__") and len(b) >= 4:
+                cx = 0.5 * (b[0] + b[2])
+                cy = 0.5 * (b[1] + b[3])
+            else:
+                return 0
+            dists = np.sqrt((pts[:, 0] - cx) ** 2 + (pts[:, 1] - cy) ** 2)
+            return int(np.argmin(dists))
+        except Exception:
+            return 0
+
     def _maybe_fetch_weather(self) -> None:
-        """Optionally override wind_speed / wind_dir_deg from SMHI weather."""
+        """Optionally override wind_speed / wind_dir_deg from SMHI weather.
+
+        Uses the dtcc-core ``SensorCollection.to_arrays()`` API.
+        """
         if not self.params.use_weather:
             return
-        try:
-            import dtcc_core.datasets as datasets
-        except ImportError:
-            warning("UrbanWind: dtcc_core not available; skipping weather fetch.")
-            return
 
-        info("UrbanWind: Fetching weather data …")
-        try:
-            sensors = datasets.weather(
-                bounds=self.bounds,
-                parameters=["wind_speed", "wind_direction"],
-            )
-            ws_vals = []
-            wd_vals = []
-            for s in sensors.stations():
-                for ts in s.timeseries:
-                    if ts.name == "wind_speed" and len(ts.values) > 0:
-                        ws_vals.append(ts.values[-1])
-                    elif ts.name == "wind_direction" and len(ts.values) > 0:
-                        wd_vals.append(ts.values[-1])
+        comm = MPI.COMM_WORLD
+        rank = comm.rank
+        weather_data: Optional[Tuple[float, float]] = None
 
-            if ws_vals and wd_vals:
-                agg = self.params.weather_aggregation
-                if agg == "nearest":
-                    ws = ws_vals[0]
-                    wd = wd_vals[0]
-                elif agg == "mean":
-                    ws = float(np.mean(ws_vals))
-                    wd = float(np.mean(wd_vals))
-                elif agg == "median":
-                    ws = float(np.median(ws_vals))
-                    wd = float(np.median(wd_vals))
-                else:
-                    ws, wd = ws_vals[0], wd_vals[0]
+        # Only rank 0 performs the HTTP fetch
+        if rank == 0:
+            try:
+                import dtcc_core.datasets as datasets
+            except ImportError:
+                warning("UrbanWind: dtcc_core not available; skipping weather fetch.")
+                weather_data = None
+                comm.bcast(weather_data, root=0)
+                return
 
-                info(f"UrbanWind: weather → speed={ws:.1f} m/s, dir={wd:.0f}°")
-                # Mutating Pydantic model — create a fresh copy
-                self.params = self.params.model_copy(
-                    update={"wind_speed": ws, "wind_dir_deg": wd}
+            info("UrbanWind: Fetching weather data …")
+            try:
+                sensors = datasets.weather(
+                    bounds=self.bounds,
+                    parameters=["wind_speed", "wind_direction"],
                 )
-            else:
-                warning("UrbanWind: weather data incomplete; using manual wind params.")
-        except Exception as exc:
-            warning(f"UrbanWind: weather fetch failed ({exc}); using manual params.")
+
+                pts_ws, ws_vals = sensors.to_arrays("wind_speed")
+                pts_wd, wd_vals = sensors.to_arrays("wind_direction")
+
+                if len(ws_vals) > 0 and len(wd_vals) > 0:
+                    agg = self.params.weather_aggregation
+                    if agg == "nearest":
+                        idx_ws = self._nearest_station_index(pts_ws)
+                        idx_wd = self._nearest_station_index(pts_wd)
+                        ws = float(ws_vals[idx_ws])
+                        wd = float(wd_vals[idx_wd])
+                    elif agg == "mean":
+                        ws = float(np.mean(ws_vals))
+                        wd = self._circular_mean_deg(wd_vals)
+                    elif agg == "median":
+                        ws = float(np.median(ws_vals))
+                        wd = self._circular_median_deg(wd_vals)
+                    else:
+                        ws = float(ws_vals[0])
+                        wd = float(wd_vals[0])
+                    weather_data = (ws, wd)
+                else:
+                    warning(
+                        "UrbanWind: weather data incomplete; using manual wind params."
+                    )
+            except Exception as exc:
+                warning(
+                    f"UrbanWind: weather fetch failed ({exc}); using manual params."
+                )
+
+        # Broadcast result to all ranks
+        weather_data = comm.bcast(weather_data, root=0)
+
+        if weather_data is not None:
+            ws, wd = weather_data
+            info(f"UrbanWind: weather → speed={ws:.1f} m/s, dir={wd:.0f}°")
+            self.params = self.params.model_copy(
+                update={"wind_speed": ws, "wind_dir_deg": wd}
+            )
 
     # -------------------------------------------------------- main simulate
     def simulate(self, *, output_path: Optional[str] = None) -> Any:
@@ -733,7 +907,13 @@ class UrbanWindSimulator:
         info(f"UrbanWind: inferred {self.num_buildings} buildings")
 
         inlet_marker, outlet_marker = select_inlet_outlet(params)
-        self._has_outlet = outlet_marker != 0
+        self._has_outlet = outlet_marker is not None and not params.closed_cavity
+
+        # --- Validate that expected bbox markers exist in the mesh ---
+        _validate_bbox_markers(
+            mesh, self.markers, inlet_marker, outlet_marker, self._has_outlet
+        )
+
         info(
             f"UrbanWind: inlet marker = {inlet_marker}, "
             f"outlet marker = {outlet_marker}"
@@ -788,6 +968,12 @@ class UrbanWindSimulator:
         # Locate inlet dofs
         fdim = mesh.topology.dim - 1
         inlet_facets = self.category_markers.find(int(BndCat.INLET))
+        if len(inlet_facets) == 0:
+            raise RuntimeError(
+                "UrbanWind: no inlet facets found after boundary categorisation.  "
+                "Available category values: "
+                f"{sorted(set(self.category_markers.values))}."
+            )
         inlet_dofs = locate_dofs_topological(V, fdim, inlet_facets)
         bc_inlet = dirichletbc(u_in_func, inlet_dofs)
 
@@ -807,21 +993,39 @@ class UrbanWindSimulator:
         if self._has_outlet:
             # phi=0 on outlet face
             outlet_facets = self.category_markers.find(int(BndCat.OUTLET))
+            if len(outlet_facets) == 0:
+                raise RuntimeError(
+                    "UrbanWind: _has_outlet is True but no outlet facets found.  "
+                    "Set closed_cavity=True if the domain has no outlet, or "
+                    f"check outlet_marker.  Available marker values: "
+                    f"{sorted(set(self.markers.values))}."
+                )
             outlet_dofs_q = locate_dofs_topological(Q, fdim, outlet_facets)
             bc_pressure = dirichletbc(PETSc.ScalarType(0.0), outlet_dofs_q, Q)
+            bcs_pres = [bc_pressure]
+            _pressure_nullspace = None
         else:
-            # Closed cavity: pin pressure at a single DOF
-            bc_pressure = dirichletbc(
-                PETSc.ScalarType(0.0), np.array([0], dtype=np.int32), Q
+            # Closed cavity — no outlet.  Use a PETSc null-space
+            # (constant pressure mode) instead of a bogus Dirichlet pin.
+            bcs_pres = []
+            _nullvec = _fem_petsc.create_petsc_vector(
+                Q.dofmap.index_map, Q.dofmap.index_map_bs
             )
-        bcs_pres = [bc_pressure]
+            _nullvec.set(1.0)
+            _nullvec.normalize()
+            _pressure_nullspace = PETSc.NullSpace().create(
+                vectors=[_nullvec], comm=mesh.comm
+            )
 
         # ---- IPCS variational forms ----
 
-        # AB2 extrapolated convecting velocity (after step 0, use AB2)
-        # For step 0, u_nm1 = u_n = 0 so convection is zero anyway.
-        # u_AB = 1.5*u_n - 0.5*u_nm1
-        u_AB = 1.5 * u_n - 0.5 * u_nm1
+        # Convecting velocity
+        if params.convection_linearization == "ab2":
+            # AB2 extrapolated: u_conv = 1.5*u_n - 0.5*u_{n-1}
+            u_conv = 1.5 * u_n - 0.5 * u_nm1
+        else:
+            # Picard (lagged): u_conv = u_n  — robust for steady state
+            u_conv = u_n
 
         # ---- Step 1: Tentative velocity ----
         # (u* - u_n)/dt + (u_AB · ∇)u* - ν∇²u* + ∇p_n = 0
@@ -830,14 +1034,16 @@ class UrbanWindSimulator:
             grad(u_trial), grad(v)
         ) * dx
 
-        # Convection (explicit AB2 in convecting velocity, implicit in u_trial)
+        # Convection (u_conv · ∇)u — semi-implicit in u_trial
         if params.convective_form == "skew_symmetric":
+            # Skew-symmetric form: 0.5[(u_conv·∇)u + (u_conv·∇v)^T u]
+            # The second term has a MINUS sign to conserve kinetic energy.
             F1_lhs += (
-                0.5 * inner(dot(grad(u_trial), u_AB), v) * dx
-                + 0.5 * inner(dot(grad(v), u_AB), u_trial) * dx
+                0.5 * inner(dot(grad(u_trial), u_conv), v) * dx
+                - 0.5 * inner(dot(grad(v), u_conv), u_trial) * dx
             )
         else:
-            F1_lhs += inner(dot(grad(u_trial), u_AB), v) * dx
+            F1_lhs += inner(dot(grad(u_trial), u_conv), v) * dx
 
         F1_rhs = (1.0 / dt_c) * inner(u_n, v) * dx - inner(grad(p_n), v) * dx
 
@@ -877,12 +1083,21 @@ class UrbanWindSimulator:
         a3 = _fem_form(inner(u_trial, v) * dx)
         L3 = _fem_form(inner(u_, v) * dx - dt_c * inner(grad(phi), v) * dx)
 
-        # ---- Assemble LHS matrices (constant across steps) ----
-        A1 = _fem_petsc.assemble_matrix(a1, bcs=bcs_vel)
+        # Step 3 must enforce velocity BCs so corrected velocity
+        # satisfies inlet profile and no-slip exactly.
+
+        # ---- Assemble LHS matrices ----
+        # A1 depends on u_n via convection — reassembled each step
+        A1 = _fem_petsc.create_matrix(a1)
+        A1.zeroEntries()
+        _fem_petsc.assemble_matrix_mat(A1, a1, bcs=bcs_vel)
         A1.assemble()
+        # A2, A3 are truly constant
         A2 = _fem_petsc.assemble_matrix(a2, bcs=bcs_pres)
         A2.assemble()
-        A3 = _fem_petsc.assemble_matrix(a3)
+        if _pressure_nullspace is not None:
+            A2.setNullSpace(_pressure_nullspace)
+        A3 = _fem_petsc.assemble_matrix(a3, bcs=bcs_vel)
         A3.assemble()
 
         # ---- KSP solvers ----
@@ -893,7 +1108,14 @@ class UrbanWindSimulator:
             A2, params.petsc_pressure or DEFAULT_PRESSURE_PETSC, "pres"
         )
         ksp3 = self._make_ksp(
-            A3, {"ksp_type": "cg", "ksp_rtol": 1e-8, "pc_type": "jacobi"}, "corr"
+            A3,
+            {
+                "ksp_type": "cg",
+                "ksp_rtol": 1e-8,
+                "ksp_monitor": None,
+                "pc_type": "jacobi",
+            },
+            "corr",
         )
 
         # ---- Time loop ----
@@ -901,6 +1123,12 @@ class UrbanWindSimulator:
         info("UrbanWind: Starting pseudo-time loop …")
 
         for step in range(1, params.max_steps + 1):
+            # Reassemble A1 with updated convection velocity (u_n)
+            A1.zeroEntries()
+            _fem_petsc.assemble_matrix_mat(A1, a1, bcs=bcs_vel)
+            A1.assemble()
+            ksp1.setOperators(A1)
+
             # Step 1 — tentative velocity
             b1 = _fem_petsc.assemble_vector(L1)
             _fem_petsc.apply_lifting(b1, [a1], [bcs_vel])
@@ -921,6 +1149,8 @@ class UrbanWindSimulator:
                 mode=PETSc.ScatterMode.REVERSE,
             )
             _fem_petsc.set_bc(b2, bcs_pres)
+            if _pressure_nullspace is not None:
+                _pressure_nullspace.remove(b2)
             ksp2.solve(b2, phi.x.petsc_vec)
             phi.x.scatter_forward()
             b2.destroy()
@@ -929,35 +1159,51 @@ class UrbanWindSimulator:
             p_n.x.array[:] += phi.x.array
             p_n.x.scatter_forward()
 
-            # Step 3 — velocity correction
+            # Step 3 — velocity correction (enforce BCs)
             b3 = _fem_petsc.assemble_vector(L3)
+            _fem_petsc.apply_lifting(b3, [a3], [bcs_vel])
             b3.ghostUpdate(
                 addv=PETSc.InsertMode.ADD_VALUES,
                 mode=PETSc.ScatterMode.REVERSE,
             )
+            _fem_petsc.set_bc(b3, bcs_vel)
             ksp3.solve(b3, u_.x.petsc_vec)
             u_.x.scatter_forward()
             b3.destroy()
 
-            # ---- Convergence check ----
-            diff = u_.x.array - u_n.x.array
+            # ---- Convergence check (owned DOFs only, no ghosts) ----
+            n_owned = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+            diff = u_.x.array[:n_owned] - u_n.x.array[:n_owned]
             diff_norm = float(
                 np.sqrt(mesh.comm.allreduce(np.dot(diff, diff), op=MPI.SUM))
             )
             u_norm = float(
                 np.sqrt(
-                    mesh.comm.allreduce(np.dot(u_n.x.array, u_n.x.array), op=MPI.SUM)
+                    mesh.comm.allreduce(
+                        np.dot(u_n.x.array[:n_owned], u_n.x.array[:n_owned]),
+                        op=MPI.SUM,
+                    )
                 )
             )
             rel = diff_norm / max(u_norm, 1e-14)
 
             if step % 10 == 0 or step <= 5:
-                info(f"UrbanWind: step {step:5d}  rel={rel:.3e}")
+                its1 = ksp1.getIterationNumber()
+                its2 = ksp2.getIterationNumber()
+                its3 = ksp3.getIterationNumber()
+                info(
+                    f"UrbanWind: step {step:5d}  rel={rel:.3e}  "
+                    f"KSP its: vel={its1} pres={its2} corr={its3}"
+                )
 
             # Advance state
+            omega = params.velocity_relaxation
             u_nm1.x.array[:] = u_n.x.array
             u_nm1.x.scatter_forward()
-            u_n.x.array[:] = u_.x.array
+            if omega < 1.0:
+                u_n.x.array[:] = omega * u_.x.array + (1.0 - omega) * u_n.x.array
+            else:
+                u_n.x.array[:] = u_.x.array
             u_n.x.scatter_forward()
 
             # Steady-state check
@@ -999,6 +1245,7 @@ class UrbanWindSimulator:
             # Write velocity and pressure to separate XDMF files so that
             # ParaView does not mix them up when applying glyph filters.
             import os
+
             base, ext = os.path.splitext(output_path)
             vel_path = f"{base}_velocity{ext}"
             pres_path = f"{base}_pressure{ext}"
@@ -1013,6 +1260,13 @@ class UrbanWindSimulator:
 
         # ---- Convert to dtcc-core VolumeMesh ----
         if self.volume_mesh_dtcc is not None:
+            if mesh.comm.size > 1:
+                raise RuntimeError(
+                    "UrbanWind: dtcc-core VolumeMesh output is not "
+                    "supported in MPI mode (output mapping uses only "
+                    "local DOFs).  Run with 1 rank, or request XDMF "
+                    "output via output_path instead."
+                )
             return _dolfinx_to_volume_mesh(mesh, u_n, p_n, self.volume_mesh_dtcc)
 
         # Fallback when mesh was provided directly (no dtcc-core mesh)

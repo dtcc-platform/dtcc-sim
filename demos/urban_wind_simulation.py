@@ -33,10 +33,11 @@ params = UrbanWindParameters(
     mesh_max_mesh_size=25.0,
     mesh_domain_height=80.0,
     # Solver
-    dt=0.2,
+    dt=0.5,
     max_steps=500,
     steady_tolerance=1e-4,
     min_steps=50,
+    convection_linearization="picard",
     # BCs
     wall_model="noslip",
     inlet_profile="log_law",
@@ -47,5 +48,7 @@ params = UrbanWindParameters(
 sim = UrbanWindSimulator(bounds=bounds, params=params)
 result = sim.simulate(output_path=str(output_dir / "urban_wind_simulation.xdmf"))
 
-print(f"\nDone — output saved to {output_dir / 'urban_wind_simulation.xdmf'}")
+print(f"\nDone — output saved to:")
+print(f"  {output_dir / 'urban_wind_simulation_velocity.xdmf'}")
+print(f"  {output_dir / 'urban_wind_simulation_pressure.xdmf'}")
 print(f"Open in ParaView to inspect velocity and pressure fields.")
