@@ -57,8 +57,10 @@ class TestInletOutletSelection:
         from dtcc_sim.urban_wind import UrbanWindParameters, select_inlet_outlet
 
         params = UrbanWindParameters(
-            wind_speed=5.0, wind_dir_deg=270.0,
-            inlet_marker=-5, outlet_marker=-6,
+            wind_speed=5.0,
+            wind_dir_deg=270.0,
+            inlet_marker=-5,
+            outlet_marker=-6,
         )
         inlet, outlet = select_inlet_outlet(params)
         assert inlet == -5
@@ -110,9 +112,14 @@ class TestInletProfiles:
     """Verify the callable inlet expressions produce correct values."""
 
     def test_uniform(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters, make_inlet_velocity_expression
+        from dtcc_sim.urban_wind import (
+            UrbanWindParameters,
+            make_inlet_velocity_expression,
+        )
 
-        p = UrbanWindParameters(wind_speed=5.0, wind_dir_deg=270.0, inlet_profile="uniform")
+        p = UrbanWindParameters(
+            wind_speed=5.0, wind_dir_deg=270.0, inlet_profile="uniform"
+        )
         f = make_inlet_velocity_expression(p)
         x = np.array([[0.0, 1.0], [0.0, 2.0], [10.0, 20.0]])  # (3, 2)
         vals = f(x)
@@ -122,11 +129,17 @@ class TestInletProfiles:
         np.testing.assert_allclose(vals[2, :], 0.0, atol=1e-12)  # u_z
 
     def test_power_law(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters, make_inlet_velocity_expression
+        from dtcc_sim.urban_wind import (
+            UrbanWindParameters,
+            make_inlet_velocity_expression,
+        )
 
         p = UrbanWindParameters(
-            wind_speed=10.0, wind_dir_deg=270.0,
-            inlet_profile="power_law", power_law_alpha=0.2, u_ref_height=10.0,
+            wind_speed=10.0,
+            wind_dir_deg=270.0,
+            inlet_profile="power_law",
+            power_law_alpha=0.2,
+            u_ref_height=10.0,
         )
         f = make_inlet_velocity_expression(p)
         z_vals = np.array([0.0, 10.0, 20.0])
@@ -138,11 +151,17 @@ class TestInletProfiles:
         np.testing.assert_allclose(vals[0, 0], 0.0, atol=1e-10)
 
     def test_log_law(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters, make_inlet_velocity_expression
+        from dtcc_sim.urban_wind import (
+            UrbanWindParameters,
+            make_inlet_velocity_expression,
+        )
 
         p = UrbanWindParameters(
-            wind_speed=10.0, wind_dir_deg=270.0,
-            inlet_profile="log_law", z0=0.5, u_ref_height=10.0,
+            wind_speed=10.0,
+            wind_dir_deg=270.0,
+            inlet_profile="log_law",
+            z0=0.5,
+            u_ref_height=10.0,
         )
         f = make_inlet_velocity_expression(p)
         x = np.array([[0.0], [0.0], [10.0]])  # z = 10 m

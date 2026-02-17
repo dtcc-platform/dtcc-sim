@@ -83,24 +83,26 @@ from dtcc_sim.fenics import (
 # Boundary categories
 # ---------------------------------------------------------------------------
 
+
 class BndCat(IntEnum):
     """Collapsed boundary categories for the urban wind domain."""
+
     WALL = 1
     ROOF = 2
     GROUND = 3
     INLET = 4
     OUTLET = 5
     TOP = 6
-    SIDE = 7   # lateral bbox faces that are neither inlet nor outlet
+    SIDE = 7  # lateral bbox faces that are neither inlet nor outlet
 
 
 # Marker → bbox face mapping (dtcc-core volumemesh convention)
 BBOX_MARKER_NORMALS: Dict[int, Tuple[float, float, float]] = {
-    -3: (-1.0, 0.0, 0.0),   # xmin face
-    -4: (1.0, 0.0, 0.0),    # xmax face
-    -5: (0.0, -1.0, 0.0),   # ymin face
-    -6: (0.0, 1.0, 0.0),    # ymax face
-    -2: (0.0, 0.0, 1.0),    # top face
+    -3: (-1.0, 0.0, 0.0),  # xmin face
+    -4: (1.0, 0.0, 0.0),  # xmax face
+    -5: (0.0, -1.0, 0.0),  # ymin face
+    -6: (0.0, 1.0, 0.0),  # ymax face
+    -2: (0.0, 0.0, 1.0),  # top face
 }
 
 
@@ -126,6 +128,7 @@ DEFAULT_PRESSURE_PETSC: Dict[str, Any] = {
 # ---------------------------------------------------------------------------
 # Parameters
 # ---------------------------------------------------------------------------
+
 
 class UrbanWindParameters(BaseModel):
     """Parameters for the urban wind CFD solver.
@@ -249,6 +252,7 @@ class UrbanWindParameters(BaseModel):
 # Helpers — boundary handling
 # ---------------------------------------------------------------------------
 
+
 def _global_max_positive_marker(
     mesh: dolfinx.mesh.Mesh, markers: dolfinx.mesh.MeshTags
 ) -> int:
@@ -257,9 +261,7 @@ def _global_max_positive_marker(
     return int(mesh.comm.allreduce(local_max, op=MPI.MAX))
 
 
-def infer_num_buildings(
-    mesh: dolfinx.mesh.Mesh, markers: dolfinx.mesh.MeshTags
-) -> int:
+def infer_num_buildings(mesh: dolfinx.mesh.Mesh, markers: dolfinx.mesh.MeshTags) -> int:
     """Marker scheme: walls 0..N-1, roofs N..2N-1."""
     max_pos = _global_max_positive_marker(mesh, markers)
     if max_pos < 0:
@@ -295,12 +297,7 @@ def categorize_boundary(
     mask_outlet = vals == outlet_marker
 
     # Remaining bbox faces (not inlet, outlet or top)
-    mask_side = (
-        (vals < ground_tag)
-        & ~mask_top
-        & ~mask_inlet
-        & ~mask_outlet
-    )
+    mask_side = (vals < ground_tag) & ~mask_top & ~mask_inlet & ~mask_outlet
 
     cat[mask_wall] = int(BndCat.WALL)
     cat[mask_roof] = int(BndCat.ROOF)
@@ -312,8 +309,13 @@ def categorize_boundary(
 
     # catch-all
     mask_other = ~(
-        mask_wall | mask_roof | mask_ground | mask_top
-        | mask_inlet | mask_outlet | mask_side
+        mask_wall
+        | mask_roof
+        | mask_ground
+        | mask_top
+        | mask_inlet
+        | mask_outlet
+        | mask_side
     )
     cat[mask_other] = int(BndCat.SIDE)
 
@@ -324,6 +326,7 @@ def categorize_boundary(
 # ---------------------------------------------------------------------------
 # Helpers — inlet / outlet selection
 # ---------------------------------------------------------------------------
+
 
 def select_inlet_outlet(
     params: UrbanWindParameters,
@@ -346,7 +349,7 @@ def select_inlet_outlet(
     # Only consider lateral faces (exclude top = -2)
     best_inlet_marker = -3
     best_outlet_marker = -3
-    best_inlet_dot = 0.0   # most negative dot → inlet
+    best_inlet_dot = 0.0  # most negative dot → inlet
     best_outlet_dot = 0.0  # most positive dot → outlet
 
     first = True
@@ -369,8 +372,12 @@ def select_inlet_outlet(
                 best_outlet_dot = d
                 best_outlet_marker = marker
 
-    inlet = params.inlet_marker if params.inlet_marker is not None else best_inlet_marker
-    outlet = params.outlet_marker if params.outlet_marker is not None else best_outlet_marker
+    inlet = (
+        params.inlet_marker if params.inlet_marker is not None else best_inlet_marker
+    )
+    outlet = (
+        params.outlet_marker if params.outlet_marker is not None else best_outlet_marker
+    )
 
     return inlet, outlet
 
@@ -378,6 +385,7 @@ def select_inlet_outlet(
 # ---------------------------------------------------------------------------
 # Helpers — inlet velocity profile
 # ---------------------------------------------------------------------------
+
 
 def make_inlet_velocity_expression(
     params: UrbanWindParameters,
@@ -391,12 +399,14 @@ def make_inlet_velocity_expression(
     profile = params.inlet_profile
 
     if profile == "uniform":
+
         def _expr(x: np.ndarray) -> np.ndarray:
             n = x.shape[1]
             vals = np.zeros((3, n), dtype=np.float64)
             vals[0, :] = U_ref * wx
             vals[1, :] = U_ref * wy
             return vals
+
     elif profile == "power_law":
         alpha = params.power_law_alpha
         z_ref = params.u_ref_height
@@ -409,6 +419,7 @@ def make_inlet_velocity_expression(
             vals[0, :] = mag * wx
             vals[1, :] = mag * wy
             return vals
+
     elif profile == "log_law":
         z0 = params.z0
         z_ref = params.u_ref_height
@@ -422,6 +433,7 @@ def make_inlet_velocity_expression(
             vals[0, :] = mag * wx
             vals[1, :] = mag * wy
             return vals
+
     else:
         raise ValueError(f"Unknown inlet profile: {profile}")
 
@@ -431,6 +443,7 @@ def make_inlet_velocity_expression(
 # ---------------------------------------------------------------------------
 # Helpers — output conversion
 # ---------------------------------------------------------------------------
+
 
 def _dolfinx_to_volume_mesh(
     dolfinx_mesh: dolfinx.mesh.Mesh,
@@ -487,12 +500,27 @@ def _dolfinx_to_volume_mesh(
 
     # Attach fields
     volume_mesh_dtcc.fields = [
-        DtccField(name="velocity", dim=3, values=u_mapped, unit="m/s",
-                  description="Velocity field from urban wind CFD solver"),
-        DtccField(name="pressure", dim=1, values=p_mapped, unit="Pa",
-                  description="Pressure field from urban wind CFD solver"),
-        DtccField(name="speed", dim=1, values=speed, unit="m/s",
-                  description="Wind speed |u| from urban wind CFD solver"),
+        DtccField(
+            name="velocity",
+            dim=3,
+            values=u_mapped,
+            unit="m/s",
+            description="Velocity field from urban wind CFD solver",
+        ),
+        DtccField(
+            name="pressure",
+            dim=1,
+            values=p_mapped,
+            unit="Pa",
+            description="Pressure field from urban wind CFD solver",
+        ),
+        DtccField(
+            name="speed",
+            dim=1,
+            values=speed,
+            unit="m/s",
+            description="Wind speed |u| from urban wind CFD solver",
+        ),
     ]
     return volume_mesh_dtcc
 
@@ -538,6 +566,7 @@ def _reorder_by_coords(
 # Simulator
 # ---------------------------------------------------------------------------
 
+
 class UrbanWindSimulator:
     """Incompressible Navier–Stokes solver for urban wind simulation.
 
@@ -582,9 +611,7 @@ class UrbanWindSimulator:
         try:
             import dtcc_core.datasets as datasets
         except ImportError:
-            raise ImportError(
-                "dtcc_core is required to build mesh from bounds."
-            )
+            raise ImportError("dtcc_core is required to build mesh from bounds.")
 
         volume_mesh = datasets.city_volume_mesh(
             bounds=self.bounds,
@@ -596,6 +623,7 @@ class UrbanWindSimulator:
         self.volume_mesh_dtcc = volume_mesh
 
         import tempfile
+
         with tempfile.NamedTemporaryFile(suffix=".xdmf", delete=False) as tmp:
             tmp_path = tmp.name
         info(f"UrbanWind: saving mesh to temporary file: {tmp_path}")
@@ -697,11 +725,16 @@ class UrbanWindSimulator:
         info(f"UrbanWind: inferred {self.num_buildings} buildings")
 
         inlet_marker, outlet_marker = select_inlet_outlet(params)
-        info(f"UrbanWind: inlet marker = {inlet_marker}, outlet marker = {outlet_marker}")
+        info(
+            f"UrbanWind: inlet marker = {inlet_marker}, outlet marker = {outlet_marker}"
+        )
 
         self.category_markers = categorize_boundary(
-            mesh, self.markers, self.num_buildings,
-            inlet_marker=inlet_marker, outlet_marker=outlet_marker,
+            mesh,
+            self.markers,
+            self.num_buildings,
+            inlet_marker=inlet_marker,
+            outlet_marker=outlet_marker,
         )
 
         # ---- function spaces (Taylor–Hood) ----
@@ -713,11 +746,11 @@ class UrbanWindSimulator:
         )
 
         # ---- functions / state ----
-        u_n = Function(V, name="u_n")    # velocity at time n
+        u_n = Function(V, name="u_n")  # velocity at time n
         u_nm1 = Function(V, name="u_nm1")  # velocity at time n-1
-        p_n = Function(Q, name="p_n")    # pressure at time n
+        p_n = Function(Q, name="p_n")  # pressure at time n
         u_ = Function(V, name="u_star")  # tentative velocity
-        phi = Function(Q, name="phi")    # pressure correction
+        phi = Function(Q, name="phi")  # pressure correction
 
         # Test / trial
         v = TestFunction(V)
@@ -759,9 +792,7 @@ class UrbanWindSimulator:
         # Pressure BC: phi=0 at outlet
         outlet_facets = self.category_markers.find(int(BndCat.OUTLET))
         outlet_dofs_q = locate_dofs_topological(Q, fdim, outlet_facets)
-        bc_pressure = dirichletbc(
-            PETSc.ScalarType(0.0), outlet_dofs_q, Q
-        )
+        bc_pressure = dirichletbc(PETSc.ScalarType(0.0), outlet_dofs_q, Q)
         bcs_pres = [bc_pressure]
 
         # ---- IPCS variational forms ----
@@ -774,10 +805,9 @@ class UrbanWindSimulator:
         # ---- Step 1: Tentative velocity ----
         # (u* - u_n)/dt + (u_AB · ∇)u* - ν∇²u* + ∇p_n = 0
         # Bilinear in u_trial, v:
-        F1_lhs = (
-            (1.0 / dt_c) * inner(u_trial, v) * dx
-            + nu_c * inner(grad(u_trial), grad(v)) * dx
-        )
+        F1_lhs = (1.0 / dt_c) * inner(u_trial, v) * dx + nu_c * inner(
+            grad(u_trial), grad(v)
+        ) * dx
 
         # Convection (explicit AB2 in convecting velocity, implicit in u_trial)
         if params.convective_form == "skew_symmetric":
@@ -788,10 +818,7 @@ class UrbanWindSimulator:
         else:
             F1_lhs += inner(dot(grad(u_trial), u_AB), v) * dx
 
-        F1_rhs = (
-            (1.0 / dt_c) * inner(u_n, v) * dx
-            - inner(grad(p_n), v) * dx
-        )
+        F1_rhs = (1.0 / dt_c) * inner(u_n, v) * dx - inner(grad(p_n), v) * dx
 
         # Wall friction weak terms (only for friction model)
         if params.wall_model == "friction":
@@ -808,14 +835,15 @@ class UrbanWindSimulator:
 
             for tag in solid_tags:
                 # tangential friction: β * (u_t · v_t)  with u_t = u - (u·n)n
-                F1_lhs += beta_c * (
-                    inner(u_trial, v)
-                    - inner(dot(u_trial, n_vec) * n_vec, v)
-                ) * ds_cat(tag)
+                F1_lhs += (
+                    beta_c
+                    * (inner(u_trial, v) - inner(dot(u_trial, n_vec) * n_vec, v))
+                    * ds_cat(tag)
+                )
                 # normal penalty: γ * (u·n)(v·n)
-                F1_lhs += gamma_c * inner(
-                    dot(u_trial, n_vec), dot(v, n_vec)
-                ) * ds_cat(tag)
+                F1_lhs += (
+                    gamma_c * inner(dot(u_trial, n_vec), dot(v, n_vec)) * ds_cat(tag)
+                )
 
         a1 = _fem_form(F1_lhs)
         L1 = _fem_form(F1_rhs)
@@ -892,12 +920,14 @@ class UrbanWindSimulator:
 
             # ---- Convergence check ----
             diff = u_.x.array - u_n.x.array
-            diff_norm = float(np.sqrt(mesh.comm.allreduce(
-                np.dot(diff, diff), op=MPI.SUM
-            )))
-            u_norm = float(np.sqrt(mesh.comm.allreduce(
-                np.dot(u_n.x.array, u_n.x.array), op=MPI.SUM
-            )))
+            diff_norm = float(
+                np.sqrt(mesh.comm.allreduce(np.dot(diff, diff), op=MPI.SUM))
+            )
+            u_norm = float(
+                np.sqrt(
+                    mesh.comm.allreduce(np.dot(u_n.x.array, u_n.x.array), op=MPI.SUM)
+                )
+            )
             rel = diff_norm / max(u_norm, 1e-14)
 
             if step % 10 == 0 or step <= 5:
@@ -934,6 +964,7 @@ class UrbanWindSimulator:
         # ---- Output ----
         if output_path is not None:
             from dolfinx.io import XDMFFile
+
             with XDMFFile(mesh.comm, output_path, "w") as xdmf:
                 xdmf.write_mesh(mesh)
                 xdmf.write_function(u_n)
@@ -942,9 +973,7 @@ class UrbanWindSimulator:
 
         # ---- Convert to dtcc-core VolumeMesh ----
         if self.volume_mesh_dtcc is not None:
-            return _dolfinx_to_volume_mesh(
-                mesh, u_n, p_n, self.volume_mesh_dtcc
-            )
+            return _dolfinx_to_volume_mesh(mesh, u_n, p_n, self.volume_mesh_dtcc)
 
         # Fallback when mesh was provided directly (no dtcc-core mesh)
         return u_n, p_n
