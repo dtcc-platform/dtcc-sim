@@ -13,11 +13,18 @@ from .smooth_reconstruction import (
     SmoothReconstructionSimulator,
     SmoothReconstructionParameters,
 )
+from .urban_wind import (
+    UrbanWindSimulator,
+    UrbanWindParameters,
+    BndCat as WindBndCat,
+)
 from .datasets import (
     UrbanHeatSimulationArgs,
     UrbanHeatSimulationDataset,
     AirQualityFieldArgs,
     AirQualityFieldDataset,
+    UrbanWindSimulationArgs,
+    UrbanWindSimulationDataset,
 )
 
 # Set default log level to INFO for FEniCSx
@@ -35,8 +42,13 @@ __all__ = [
     "RobinBCSpec",
     "SmoothReconstructionSimulator",
     "SmoothReconstructionParameters",
+    "UrbanWindSimulator",
+    "UrbanWindParameters",
+    "WindBndCat",
     "UrbanHeatSimulationArgs",
     "UrbanHeatSimulationDataset",
     "AirQualityFieldArgs",
     "AirQualityFieldDataset",
+    "UrbanWindSimulationArgs",
+    "UrbanWindSimulationDataset",
 ]

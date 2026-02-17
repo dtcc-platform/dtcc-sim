@@ -16,6 +16,7 @@ from .smooth_reconstruction import (
     SmoothReconstructionSimulator,
     SmoothReconstructionParameters,
 )
+from .urban_wind import UrbanWindSimulator, UrbanWindParameters
 
 
 class UrbanHeatSimulationArgs(DatasetBaseArgs):
@@ -311,4 +312,102 @@ __all__ = [
     "UrbanHeatSimulationDataset",
     "AirQualityFieldArgs",
     "AirQualityFieldDataset",
+    "UrbanWindSimulationArgs",
+    "UrbanWindSimulationDataset",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Urban Wind Simulation Dataset
+# ---------------------------------------------------------------------------
+
+
+class UrbanWindSimulationArgs(DatasetBaseArgs):
+    """Arguments for urban wind simulation dataset."""
+
+    # Wind
+    use_weather: bool = Field(False, description="Fetch wind from SMHI weather API")
+    weather_aggregation: str = Field("nearest", description="Weather aggregation")
+    wind_speed: float = Field(5.0, description="Reference wind speed [m/s]")
+    wind_dir_deg: float = Field(
+        270.0,
+        description="Wind direction (met convention: FROM, 0=N 90=E 180=S 270=W)",
+    )
+
+    # Mesh
+    mesh_max_mesh_size: float = Field(25.0, description="Max mesh size [m]")
+    mesh_domain_height: float = Field(80.0, description="Domain height [m]")
+
+    # Solver
+    dt: float = Field(0.2, description="Pseudo-time step [s]")
+    max_steps: int = Field(2000, description="Maximum number of time steps")
+    steady_tolerance: float = Field(1e-4, description="Steady-state tolerance")
+    min_steps: int = Field(50, description="Minimum steps before early stop")
+
+    # BC model
+    wall_model: str = Field("noslip", description="Wall model: 'noslip' or 'friction'")
+    beta_wall: float = Field(0.5, description="Friction coefficient (friction model)")
+    inlet_profile: str = Field(
+        "uniform", description="Inlet profile: 'uniform', 'power_law', 'log_law'"
+    )
+    z0: float = Field(0.5, description="Roughness length [m] for log-law")
+    u_ref_height: float = Field(10.0, description="Reference measurement height [m]")
+    power_law_alpha: float = Field(0.2, description="Power-law exponent")
+
+    format: Optional[Literal["pb"]] = Field(None, description="Output format")
+
+
+class UrbanWindSimulationDataset(DatasetDescriptor):
+    """Urban wind CFD simulation as a dataset.
+
+    Solves the incompressible Navier-Stokes equations on a DTCC city volume mesh
+    using the IPCS fractional-step method.  The solver marches in pseudo-time
+    until a steady state is reached and returns a dtcc-core ``VolumeMesh`` with
+    attached ``velocity``, ``pressure``, and ``speed`` fields.
+
+    Example:
+        >>> import dtcc_core.datasets as datasets
+        >>> import dtcc_sim.datasets
+        >>>
+        >>> result = datasets.urban_wind_simulation(
+        ...     bounds=[xmin, ymin, xmax, ymax],
+        ...     wind_speed=8.0,
+        ...     wind_dir_deg=240.0,
+        ... )
+    """
+
+    name = "urban_wind_simulation"
+    description = (
+        "Incompressible Navier-Stokes urban wind simulation using IPCS (fractional-step) "
+        "with FEniCSx.  Generates a 3D city volume mesh from geographic bounds and solves "
+        "for steady-state airflow.  Returns a dtcc-core VolumeMesh with velocity, pressure, "
+        "and speed fields suitable for pedestrian-comfort and urban-ventilation studies."
+    )
+    ArgsModel = UrbanWindSimulationArgs
+
+    def build(self, args):
+        bounds = self.parse_bounds(args.bounds)
+        params = UrbanWindParameters(
+            use_weather=args.use_weather,
+            weather_aggregation=args.weather_aggregation,
+            wind_speed=args.wind_speed,
+            wind_dir_deg=args.wind_dir_deg,
+            mesh_max_mesh_size=args.mesh_max_mesh_size,
+            mesh_domain_height=args.mesh_domain_height,
+            dt=args.dt,
+            max_steps=args.max_steps,
+            steady_tolerance=args.steady_tolerance,
+            min_steps=args.min_steps,
+            wall_model=args.wall_model,
+            beta_wall=args.beta_wall,
+            inlet_profile=args.inlet_profile,
+            z0=args.z0,
+            u_ref_height=args.u_ref_height,
+            power_law_alpha=args.power_law_alpha,
+        )
+        sim = UrbanWindSimulator(bounds=bounds, params=params)
+        result = sim.simulate()
+
+        if args.format:
+            return self.export_to_bytes(result, args.format)
+        return result
