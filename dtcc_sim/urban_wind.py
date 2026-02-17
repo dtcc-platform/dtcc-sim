@@ -76,6 +76,7 @@ from dtcc_sim.fenics import (
     load_mesh_with_markers,
     BoxMesh,
     bounds as mesh_bounds,
+    offset_to_origin,
 )
 
 
@@ -902,6 +903,13 @@ class UrbanWindSimulator:
         """
         self._load_if_needed()
         assert self.mesh is not None and self.markers is not None
+
+        # ---- translate mesh to origin ----
+        # Real-world coordinates (e.g. SWEREF 99 TM: x ~ 320 000,
+        # y ~ 6 400 000) cause catastrophic floating-point precision
+        # loss in gradient / stiffness computations.  Shift the mesh
+        # so (xmin, ymin, zmin) = (0, 0, 0).
+        offset_to_origin(self.mesh)
 
         self._maybe_fetch_weather()
 
