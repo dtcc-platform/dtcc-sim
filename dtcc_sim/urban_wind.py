@@ -302,10 +302,11 @@ def categorize_boundary(
     cat[mask_wall] = int(BndCat.WALL)
     cat[mask_roof] = int(BndCat.ROOF)
     cat[mask_ground] = int(BndCat.GROUND)
-    cat[mask_inlet] = int(BndCat.INLET)
-    cat[mask_outlet] = int(BndCat.OUTLET)
     cat[mask_top] = int(BndCat.TOP)
     cat[mask_side] = int(BndCat.SIDE)
+    # Inlet/outlet must come last so explicit overrides take priority
+    cat[mask_inlet] = int(BndCat.INLET)
+    cat[mask_outlet] = int(BndCat.OUTLET)
 
     # catch-all
     mask_other = ~(
@@ -965,10 +966,20 @@ class UrbanWindSimulator:
         if output_path is not None:
             from dolfinx.io import XDMFFile
 
+            # XDMF requires functions of the same degree as the mesh (P1).
+            # Interpolate P2 velocity down to P1 for output.
+            V1_out = FunctionSpace(mesh, "Lagrange", 1, dim=3)
+            u_out = Function(V1_out, name="velocity")
+            u_out.interpolate(u_n)
+
+            p_out = Function(Q, name="pressure")
+            p_out.x.array[:] = p_n.x.array
+            p_out.x.scatter_forward()
+
             with XDMFFile(mesh.comm, output_path, "w") as xdmf:
                 xdmf.write_mesh(mesh)
-                xdmf.write_function(u_n)
-                xdmf.write_function(p_n)
+                xdmf.write_function(u_out)
+                xdmf.write_function(p_out)
             info(f"UrbanWind: Saved solution to {output_path}")
 
         # ---- Convert to dtcc-core VolumeMesh ----
