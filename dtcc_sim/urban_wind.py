@@ -217,7 +217,12 @@ class UrbanWindParameters(BaseModel):
         None, description="Force inlet boundary marker (skip auto detection)"
     )
     outlet_marker: Optional[int] = Field(
-        None, description="Force outlet boundary marker (skip auto detection)"
+        None,
+        description=(
+            "Force outlet boundary marker (skip auto detection). "
+            "Set to 0 for closed cavities (no outlet); pressure is then "
+            "pinned at a single interior point."
+        ),
     )
 
     # ---- 2.7 PETSc options ----
@@ -594,12 +599,14 @@ class UrbanWindSimulator:
         mesh: Optional[dolfinx.mesh.Mesh] = None,
         markers: Optional[dolfinx.mesh.MeshTags] = None,
         params: Optional[UrbanWindParameters] = None,
+        inlet_expression: Optional[callable] = None,
     ) -> None:
         self.bounds = bounds
         self.mesh_path = mesh_path
         self.mesh = mesh
         self.markers = markers
         self.params = params if params is not None else UrbanWindParameters()
+        self.inlet_expression = inlet_expression
 
         # populated during simulation
         self.volume_mesh_dtcc: Optional[Any] = None
@@ -726,8 +733,11 @@ class UrbanWindSimulator:
         info(f"UrbanWind: inferred {self.num_buildings} buildings")
 
         inlet_marker, outlet_marker = select_inlet_outlet(params)
+        self._has_outlet = outlet_marker != 0
         info(
-            f"UrbanWind: inlet marker = {inlet_marker}, outlet marker = {outlet_marker}"
+            f"UrbanWind: inlet marker = {inlet_marker}, "
+            f"outlet marker = {outlet_marker}"
+            f"{'' if self._has_outlet else ' (closed cavity – no outlet)'}"
         )
 
         self.category_markers = categorize_boundary(
@@ -769,7 +779,10 @@ class UrbanWindSimulator:
 
         # ---- inlet BC ----
         u_in_func = Function(V, name="u_inlet")
-        inlet_expr = make_inlet_velocity_expression(params)
+        if self.inlet_expression is not None:
+            inlet_expr = self.inlet_expression
+        else:
+            inlet_expr = make_inlet_velocity_expression(params)
         u_in_func.interpolate(inlet_expr)
 
         # Locate inlet dofs
@@ -790,10 +803,17 @@ class UrbanWindSimulator:
                 dofs = locate_dofs_topological(V, fdim, facets)
                 bcs_vel.append(dirichletbc(u_zero, dofs))
 
-        # Pressure BC: phi=0 at outlet
-        outlet_facets = self.category_markers.find(int(BndCat.OUTLET))
-        outlet_dofs_q = locate_dofs_topological(Q, fdim, outlet_facets)
-        bc_pressure = dirichletbc(PETSc.ScalarType(0.0), outlet_dofs_q, Q)
+        # Pressure BC
+        if self._has_outlet:
+            # phi=0 on outlet face
+            outlet_facets = self.category_markers.find(int(BndCat.OUTLET))
+            outlet_dofs_q = locate_dofs_topological(Q, fdim, outlet_facets)
+            bc_pressure = dirichletbc(PETSc.ScalarType(0.0), outlet_dofs_q, Q)
+        else:
+            # Closed cavity: pin pressure at a single DOF
+            bc_pressure = dirichletbc(
+                PETSc.ScalarType(0.0), np.array([0], dtype=np.int32), Q
+            )
         bcs_pres = [bc_pressure]
 
         # ---- IPCS variational forms ----
@@ -976,11 +996,20 @@ class UrbanWindSimulator:
             p_out.x.array[:] = p_n.x.array
             p_out.x.scatter_forward()
 
-            with XDMFFile(mesh.comm, output_path, "w") as xdmf:
+            # Write velocity and pressure to separate XDMF files so that
+            # ParaView does not mix them up when applying glyph filters.
+            import os
+            base, ext = os.path.splitext(output_path)
+            vel_path = f"{base}_velocity{ext}"
+            pres_path = f"{base}_pressure{ext}"
+
+            with XDMFFile(mesh.comm, vel_path, "w") as xdmf:
                 xdmf.write_mesh(mesh)
                 xdmf.write_function(u_out)
+            with XDMFFile(mesh.comm, pres_path, "w") as xdmf:
+                xdmf.write_mesh(mesh)
                 xdmf.write_function(p_out)
-            info(f"UrbanWind: Saved solution to {output_path}")
+            info(f"UrbanWind: Saved solution to {vel_path} and {pres_path}")
 
         # ---- Convert to dtcc-core VolumeMesh ----
         if self.volume_mesh_dtcc is not None:

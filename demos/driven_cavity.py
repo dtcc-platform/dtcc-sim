@@ -7,10 +7,11 @@ except the top (z=1), which moves at constant tangential velocity in the
 +x direction (the "lid").
 
 The solver is set up by using the UrbanWindSimulator in direct-mesh
-mode.  The lid velocity is imposed by using the *inlet_marker* override
-to mark the top face as the inlet, and setting wind direction so that
-the inlet velocity points in the +x direction.  The outlet is placed
-on one of the side faces (x-max) with zero-pressure outflow.
+mode.  The lid velocity is imposed via a custom inlet_expression on
+the top face (inlet_marker=-2).  All other faces are no-slip walls.
+Since this is a fully enclosed cavity, outlet_marker=0 tells the solver
+to pin pressure at a single point instead of applying a zero-pressure
+outflow BC.
 
 This is a well-known recirculating flow — you should see a large
 primary vortex in the xz mid-plane when viewed in ParaView.
@@ -48,18 +49,10 @@ markers_vals = np.full(len(boundary_facets), -7, dtype=np.int32)
 tol = 1e-10
 for i, mp in enumerate(midpoints):
     x, y, z = mp
-    if abs(x) < tol:
-        markers_vals[i] = -3        # x-min
-    elif abs(x - 1.0) < tol:
-        markers_vals[i] = -4        # x-max  → outlet
-    elif abs(y) < tol:
-        markers_vals[i] = -5        # y-min
-    elif abs(y - 1.0) < tol:
-        markers_vals[i] = -6        # y-max
-    elif abs(z) < tol:
-        markers_vals[i] = -1        # ground
-    elif abs(z - 1.0) < tol:
+    if abs(z - 1.0) < tol:
         markers_vals[i] = -2        # top  → lid (inlet)
+    else:
+        markers_vals[i] = -1        # all other faces → no-slip wall
 
 order = np.argsort(boundary_facets)
 facet_tags = dolfinx.mesh.meshtags(
@@ -69,14 +62,14 @@ facet_tags = dolfinx.mesh.meshtags(
 # ---- solve ----
 from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
 
-# Override markers: top=-2 is the lid (inlet), x-max=-4 is the outlet.
+# Override markers: top=-2 is the lid (inlet), no outlet (closed cavity).
 # Wind direction 270° (from west) → flow in +x → lid slides in +x.
 params = UrbanWindParameters(
     wind_speed=1.0,
-    wind_dir_deg=270.0,       # flow in +x direction
-    inlet_marker=-2,          # top face is the lid
-    outlet_marker=-4,         # x-max face is the outlet
-    nu_t=0.01,                # higher eddy viscosity for stability (Re ≈ 100)
+    wind_dir_deg=270.0,  # flow in +x direction
+    inlet_marker=-2,  # top face is the lid
+    outlet_marker=0,   # no outlet → pin pressure at a point
+    nu_t=0.01,  # higher eddy viscosity for stability (Re ≈ 100)
     dt=0.02,
     max_steps=1000,
     min_steps=100,
@@ -96,4 +89,5 @@ print(f"\nDriven cavity converged.")
 print(f"  max |u| = {u_max:.4f}")
 print(f"  u finite: {np.all(np.isfinite(u.x.array))}")
 print(f"  p finite: {np.all(np.isfinite(p.x.array))}")
-print(f"  Output saved to {output_dir / 'driven_cavity.xdmf'}")
+print(f"  Output saved to {output_dir / 'driven_cavity_velocity.xdmf'}")
+print(f"                   and {output_dir / 'driven_cavity_pressure.xdmf'}")

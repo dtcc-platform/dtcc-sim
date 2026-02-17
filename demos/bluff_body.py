@@ -107,26 +107,24 @@ for i, mp in enumerate(midpoints):
     if on_obs:
         # Obstacle roof (top face of obstacle at z ≈ oz1)
         if abs(z - oz1) < tol:
-            markers_vals[i] = 1   # building roof (N=1 → roof marker = 1)
+            markers_vals[i] = 1  # building roof (N=1 → roof marker = 1)
         else:
-            markers_vals[i] = 0   # building wall (marker = 0)
+            markers_vals[i] = 0  # building wall (marker = 0)
     elif abs(x) < tol:
-        markers_vals[i] = -3      # x-min (inlet)
+        markers_vals[i] = -3  # x-min (inlet)
     elif abs(x - Lx) < tol:
-        markers_vals[i] = -4      # x-max (outlet)
+        markers_vals[i] = -4  # x-max (outlet)
     elif abs(y) < tol:
-        markers_vals[i] = -5      # y-min (side)
+        markers_vals[i] = -5  # y-min (side)
     elif abs(y - Ly) < tol:
-        markers_vals[i] = -6      # y-max (side)
+        markers_vals[i] = -6  # y-max (side)
     elif abs(z) < tol:
-        markers_vals[i] = -1      # ground
+        markers_vals[i] = -1  # ground
     elif abs(z - Lz) < tol:
-        markers_vals[i] = -2      # top
+        markers_vals[i] = -2  # top
 
 order = np.argsort(boundary_facets)
-facet_tags = dmesh.meshtags(
-    mesh, fdim, boundary_facets[order], markers_vals[order]
-)
+facet_tags = dmesh.meshtags(mesh, fdim, boundary_facets[order], markers_vals[order])
 
 n_wall = np.sum(markers_vals == 0)
 n_roof = np.sum(markers_vals == 1)
@@ -137,8 +135,8 @@ from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
 
 params = UrbanWindParameters(
     wind_speed=1.0,
-    wind_dir_deg=270.0,       # from west → flow in +x
-    nu_t=0.5,                 # high eddy viscosity for stable low-Re flow
+    wind_dir_deg=270.0,  # from west → flow in +x
+    nu_t=0.5,  # high eddy viscosity for stable low-Re flow
     dt=0.01,
     max_steps=500,
     min_steps=50,
@@ -158,4 +156,5 @@ print(f"\nBluff body flow converged.")
 print(f"  max |u| = {u_max:.4f}")
 print(f"  u finite: {np.all(np.isfinite(u.x.array))}")
 print(f"  p finite: {np.all(np.isfinite(p.x.array))}")
-print(f"  Output saved to {output_dir / 'bluff_body.xdmf'}")
+print(f"  Output saved to {output_dir / 'bluff_body_velocity.xdmf'}")
+print(f"                   and {output_dir / 'bluff_body_pressure.xdmf'}")
