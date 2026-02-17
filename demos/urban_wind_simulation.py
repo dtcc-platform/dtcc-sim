@@ -38,7 +38,7 @@ params = UrbanWindParameters(
     # gives Re_eff ~ 1000 which is well-resolved on this mesh.
     nu_t=1.0,
     # Solver
-    dt=0.2,
+    dt=0.5,
     max_steps=500,
     steady_tolerance=1e-4,
     min_steps=50,

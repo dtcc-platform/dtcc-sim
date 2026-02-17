@@ -343,6 +343,7 @@ def poiseuille_result():
     params = UrbanWindParameters(
         wind_speed=0.5,
         wind_dir_deg=270.0,
+        nu_t=0.1,  # stabilise — Re_eff ≈ 20 on this coarse mesh
         dt=0.5,
         max_steps=40,
         min_steps=10,
