@@ -50,9 +50,9 @@ tol = 1e-10
 for i, mp in enumerate(midpoints):
     x, y, z = mp
     if abs(z - 1.0) < tol:
-        markers_vals[i] = -2        # top  → lid (inlet)
+        markers_vals[i] = -2  # top  → lid (inlet)
     else:
-        markers_vals[i] = -1        # all other faces → no-slip wall
+        markers_vals[i] = -1  # all other faces → no-slip wall
 
 order = np.argsort(boundary_facets)
 facet_tags = dolfinx.mesh.meshtags(
@@ -68,7 +68,8 @@ params = UrbanWindParameters(
     wind_speed=1.0,
     wind_dir_deg=270.0,  # flow in +x direction
     inlet_marker=-2,  # top face is the lid
-    outlet_marker=0,   # no outlet → pin pressure at a point
+    outlet_marker=None,  # no outlet — closed cavity
+    closed_cavity=True,  # use null-space for pressure
     nu_t=0.01,  # higher eddy viscosity for stability (Re ≈ 100)
     dt=0.02,
     max_steps=1000,
