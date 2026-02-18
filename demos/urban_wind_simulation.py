@@ -36,16 +36,18 @@ params = UrbanWindParameters(
     # Without it the effective Re ~ 10^7 and the Galerkin
     # discretisation is unstable.  A simple constant ν_t ≈ 1 m²/s
     # gives Re_eff ~ 1000 which is well-resolved on this mesh.
-    nu_t=1.0,
+    nu_t=2.0,
     # Solver
-    dt=0.5,
+    dt=0.2,
     max_steps=500,
-    steady_tolerance=1e-4,
-    min_steps=50,
+    steady_tolerance=1e-2,
+    min_steps=30,
     convection_linearization="picard",
+    velocity_relaxation=0.5,
     # BCs
     wall_model="noslip",
     inlet_profile="log_law",
+    inlet_ramp_steps=100,
     z0=0.5,
     u_ref_height=10.0,
 )

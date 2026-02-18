@@ -232,6 +232,14 @@ class UrbanWindParameters(BaseModel):
     inlet_profile: Literal["uniform", "power_law", "log_law"] = Field(
         "uniform", description="Inlet velocity profile shape"
     )
+    inlet_ramp_steps: int = Field(
+        0,
+        description=(
+            "Number of initial pseudo-time steps to linearly ramp inlet "
+            "velocity from 0 to full value. Useful for startup stability."
+        ),
+        ge=0,
+    )
     z0: float = Field(0.5, description="Roughness length [m] for log-law", gt=0)
     u_ref_height: float = Field(
         10.0, description="Reference measurement height [m]", gt=0
@@ -979,7 +987,20 @@ class UrbanWindSimulator:
             inlet_expr = self.inlet_expression
         else:
             inlet_expr = make_inlet_velocity_expression(params)
-        u_in_func.interpolate(inlet_expr)
+        ramp_steps = max(0, int(params.inlet_ramp_steps))
+        if ramp_steps > 0:
+            initial_scale = min(1.0, 1.0 / ramp_steps)
+
+            def _inlet_expr_scaled(x: np.ndarray, _scale=initial_scale) -> np.ndarray:
+                return _scale * inlet_expr(x)
+
+            u_in_func.interpolate(_inlet_expr_scaled)
+            info(
+                f"UrbanWind: inlet ramp enabled over {ramp_steps} steps "
+                f"(initial scale={initial_scale:.3f})"
+            )
+        else:
+            u_in_func.interpolate(inlet_expr)
 
         # Locate inlet dofs
         fdim = mesh.topology.dim - 1
@@ -1144,6 +1165,18 @@ class UrbanWindSimulator:
         info("UrbanWind: Starting pseudo-time loop …")
 
         for step in range(1, params.max_steps + 1):
+            # Smooth startup for challenging large-domain cases:
+            # ramp inlet forcing from 0 to full speed during first N steps.
+            if ramp_steps > 0:
+                inlet_scale = min(1.0, step / ramp_steps)
+
+                def _inlet_expr_scaled_step(
+                    x: np.ndarray, _scale=inlet_scale
+                ) -> np.ndarray:
+                    return _scale * inlet_expr(x)
+
+                u_in_func.interpolate(_inlet_expr_scaled_step)
+
             # Reassemble A1 with updated convection velocity (u_n)
             A1.zeroEntries()
             _fem_petsc.assemble_matrix_mat(A1, a1, bcs=bcs_vel)
@@ -1305,11 +1338,10 @@ class UrbanWindSimulator:
         ksp.setOptionsPrefix(f"urban_wind_{prefix}_")
         popts = PETSc.Options()
         for k, v in opts.items():
-            full_key = f"urban_wind_{prefix}_{k}"
             if v is None:
-                popts[full_key] = ""
-            else:
-                popts[full_key] = str(v)
+                continue
+            full_key = f"urban_wind_{prefix}_{k}"
+            popts[full_key] = str(v)
         ksp.setFromOptions()
         return ksp
 
