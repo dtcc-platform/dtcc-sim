@@ -66,6 +66,36 @@ class TestInletOutletSelection:
         assert inlet == -5
         assert outlet == -6
 
+    def test_mesh_inference_overrides_static_marker_ids(self, monkeypatch):
+        """When mesh inference is available, inlet/outlet follow inferred normals."""
+        import dtcc_sim.urban_wind as uw
+
+        class _Comm:
+            rank = 0
+
+        class _Mesh:
+            comm = _Comm()
+
+        # Deliberately rotated marker->normal mapping:
+        # marker -5 acts as xmin, marker -4 acts as xmax.
+        inferred = {
+            -3: (0.0, 1.0, 0.0),
+            -4: (1.0, 0.0, 0.0),
+            -5: (-1.0, 0.0, 0.0),
+            -6: (0.0, -1.0, 0.0),
+        }
+
+        monkeypatch.setattr(
+            uw, "_infer_bbox_marker_normals", lambda mesh, markers: inferred
+        )
+
+        # Wind from west -> flow +x: inlet should be xmin-normal marker (-5),
+        # outlet should be xmax-normal marker (-4).
+        params = uw.UrbanWindParameters(wind_speed=5.0, wind_dir_deg=270.0)
+        inlet, outlet = uw.select_inlet_outlet(params, mesh=_Mesh(), markers=object())
+        assert inlet == -5
+        assert outlet == -4
+
 
 # ---------------------------------------------------------------------------
 # 2) Wind vector computation
@@ -401,6 +431,22 @@ class TestUrbanWindParameters:
 
         p = UrbanWindParameters(nu=1e-5, nu_t=1e-3)
         assert abs(p.nu_eff - 1.01e-3) < 1e-10
+
+    def test_statistical_mode_parameters(self):
+        from dtcc_sim.urban_wind import UrbanWindParameters
+
+        p = UrbanWindParameters(
+            simulation_mode="statistical_steady",
+            stat_warmup_steps=10,
+            stat_window=20,
+            stat_tolerance=5e-3,
+            stat_divergence_tolerance=2e-2,
+        )
+        assert p.simulation_mode == "statistical_steady"
+        assert p.stat_warmup_steps == 10
+        assert p.stat_window == 20
+        assert math.isclose(p.stat_tolerance, 5e-3)
+        assert math.isclose(p.stat_divergence_tolerance, 2e-2)
 
 
 # ---------------------------------------------------------------------------
