@@ -1,8 +1,11 @@
-"""Urban Wind CFD Solver (IPCS / ABCN Fractional-Step Method)
+"""Urban Wind CFD Solver (Navier–Stokes IPCS + stationary Stokes)
 
-Solves the incompressible Navier–Stokes equations in pseudo-time using an
-Incremental Pressure-Correction Scheme (IPCS) with Adams–Bashforth /
-Crank–Nicolson (ABCN) time discretization on DTCC city air-volume meshes.
+Solves either
+- incompressible Navier–Stokes equations in pseudo-time using an
+  Incremental Pressure-Correction Scheme (IPCS) with Adams–Bashforth /
+  Crank–Nicolson (ABCN), or
+- a stationary mixed Stokes system (monolithic velocity-pressure solve),
+on DTCC city air-volume meshes.
 
 Physical model
 --------------
@@ -30,10 +33,11 @@ from __future__ import annotations
 
 from enum import IntEnum
 from pathlib import Path
+import time
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 import dolfinx
 import dolfinx.fem
@@ -114,7 +118,6 @@ BBOX_MARKER_NORMALS: Dict[int, Tuple[float, float, float]] = {
 DEFAULT_VELOCITY_PETSC: Dict[str, Any] = {
     "ksp_type": "gmres",
     "ksp_rtol": 1.0e-6,
-    "ksp_monitor": None,
     "pc_type": "hypre",
     "pc_hypre_type": "boomeramg",
 }
@@ -122,9 +125,67 @@ DEFAULT_VELOCITY_PETSC: Dict[str, Any] = {
 DEFAULT_PRESSURE_PETSC: Dict[str, Any] = {
     "ksp_type": "cg",
     "ksp_rtol": 1.0e-6,
-    "ksp_monitor": None,
     "pc_type": "hypre",
     "pc_hypre_type": "boomeramg",
+}
+
+DEFAULT_STOKES_PETSC_FIELDSPLIT: Dict[str, Any] = {
+    "ksp_type": "fgmres",
+    "ksp_rtol": 1.0e-8,
+    "ksp_max_it": 500,
+    "ksp_gmres_restart": 100,
+    "pc_type": "fieldsplit",
+    "pc_fieldsplit_type": "schur",
+    "pc_fieldsplit_schur_fact_type": "full",
+    "pc_fieldsplit_schur_precondition": "selfp",
+    "fieldsplit_u_ksp_type": "preonly",
+    "fieldsplit_u_pc_type": "hypre",
+    "fieldsplit_u_pc_hypre_type": "boomeramg",
+    "fieldsplit_p_ksp_type": "cg",
+    "fieldsplit_p_ksp_rtol": 1.0e-4,
+    "fieldsplit_p_pc_type": "hypre",
+    "fieldsplit_p_pc_hypre_type": "boomeramg",
+}
+
+# Default Stokes solver: iterative Schur-complement fieldsplit.
+# This is typically much faster than the "safe" fallback for mixed
+# velocity-pressure systems.
+DEFAULT_STOKES_PETSC_ITERATIVE: Dict[str, Any] = {
+    "ksp_type": "fgmres",
+    # Practical engineering default for the single-shot Stokes solve.
+    # Tighten in petsc_stokes if very high linear accuracy is required.
+    "ksp_rtol": 1.0e-5,
+    "ksp_max_it": 300,
+    # Larger restart helps avoid stagnation on tougher urban meshes.
+    "ksp_gmres_restart": 200,
+    "pc_type": "fieldsplit",
+    "pc_fieldsplit_type": "schur",
+    "pc_fieldsplit_schur_fact_type": "lower",
+    "pc_fieldsplit_schur_precondition": "selfp",
+    # Standard sign scaling for saddle-point Schur complements.
+    "pc_fieldsplit_schur_scale": -1.0,
+    "fieldsplit_u_ksp_type": "preonly",
+    "fieldsplit_u_pc_type": "hypre",
+    "fieldsplit_u_pc_hypre_type": "boomeramg",
+    # Pressure block preconditioner kept deliberately simple/robust; this
+    # has shown better outer convergence here than hypre in the Schur block.
+    "fieldsplit_p_ksp_type": "preonly",
+    "fieldsplit_p_pc_type": "jacobi",
+}
+
+# Safety-net iterative retry if the default iterative preconditioner fails.
+DEFAULT_STOKES_PETSC_SAFE_ITERATIVE: Dict[str, Any] = {
+    "ksp_type": "gmres",
+    "ksp_rtol": 1.0e-8,
+    "ksp_max_it": 1200,
+    "ksp_gmres_restart": 200,
+    "pc_type": "jacobi",
+}
+
+DEFAULT_STOKES_PETSC_FALLBACK_DIRECT: Dict[str, Any] = {
+    "ksp_type": "preonly",
+    "pc_type": "lu",
+    "pc_factor_mat_solver_type": "mumps",
 }
 
 
@@ -141,6 +202,8 @@ class UrbanWindParameters(BaseModel):
     Physical, wind forcing, mesh, FE/time-stepping, solver scheme,
     boundary-condition model, PETSc options.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # ---- 2.1 Physical ----
     rho: float = Field(1.2, description="Air density [kg/m³]", gt=0)
@@ -281,6 +344,14 @@ class UrbanWindParameters(BaseModel):
     )
 
     # ---- 2.5 Solver scheme ----
+    equations: Literal["navier_stokes", "stokes"] = Field(
+        "navier_stokes",
+        description=(
+            "Governing equations. 'navier_stokes' solves transient IPCS "
+            "pseudo-time stepping. 'stokes' solves the stationary mixed "
+            "Stokes system directly."
+        ),
+    )
     scheme: Literal["IPCS_ABCN"] = Field("IPCS_ABCN", description="Solver scheme")
     convective_form: Literal["standard", "skew_symmetric"] = Field(
         "standard",
@@ -426,6 +497,13 @@ class UrbanWindParameters(BaseModel):
     )
     petsc_pressure: Optional[Dict[str, Any]] = Field(
         None, description="PETSc options for pressure sub-solve"
+    )
+    petsc_stokes: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "PETSc options for stationary Stokes mixed solve "
+            "(monolithic velocity-pressure system)."
+        ),
     )
 
     @property
@@ -940,12 +1018,11 @@ def _relative_change(a: float, b: float, eps: float = 1e-14) -> float:
 
 
 class UrbanWindSimulator:
-    """Incompressible Navier–Stokes solver for urban wind simulation.
+    """Incompressible urban flow solver (Navier–Stokes or Stokes).
 
-    Implements the IPCS (Incremental Pressure-Correction Scheme) with
-    Adams–Bashforth / Crank–Nicolson time discretisation.  The solver
-    marches in pseudo-time until a steady state is detected or the step
-    limit is reached.
+    Supports:
+    - Navier–Stokes with IPCS pseudo-time stepping (default), and
+    - stationary mixed Stokes solve (monolithic).
 
     Usage
     -----
@@ -1145,6 +1222,458 @@ class UrbanWindSimulator:
             self.params = self.params.model_copy(
                 update={"wind_speed": ws, "wind_dir_deg": wd}
             )
+
+    # ----------------------------------------------------- output helpers
+    @staticmethod
+    def _write_solution_xdmf(
+        mesh: dolfinx.mesh.Mesh,
+        u_sol: Function,
+        p_sol: Function,
+        output_path: str,
+    ) -> None:
+        """Write velocity/pressure to separate XDMF files."""
+        from dolfinx.io import XDMFFile
+        import os
+
+        # XDMF requires functions of the same degree as the mesh (P1).
+        # Interpolate higher-order velocity down to P1 for output.
+        V1_out = FunctionSpace(mesh, "Lagrange", 1, dim=3)
+        u_out = Function(V1_out, name="velocity")
+        u_out.interpolate(u_sol)
+
+        p_out = Function(p_sol.function_space, name="pressure")
+        p_out.x.array[:] = p_sol.x.array
+        p_out.x.scatter_forward()
+
+        base, ext = os.path.splitext(output_path)
+        vel_path = f"{base}_velocity{ext}"
+        pres_path = f"{base}_pressure{ext}"
+
+        with XDMFFile(mesh.comm, vel_path, "w") as xdmf:
+            xdmf.write_mesh(mesh)
+            xdmf.write_function(u_out)
+        with XDMFFile(mesh.comm, pres_path, "w") as xdmf:
+            xdmf.write_mesh(mesh)
+            xdmf.write_function(p_out)
+        if mesh.comm.rank == 0:
+            info(
+                f"UrbanWind: Saved XDMF solution files to {vel_path} and {pres_path}"
+            )
+
+    def _finalize_result(
+        self,
+        mesh: dolfinx.mesh.Mesh,
+        u_sol: Function,
+        p_sol: Function,
+        *,
+        output_path: Optional[str],
+    ) -> Any:
+        """Handle optional XDMF output and return type conversion."""
+        if output_path is not None:
+            self._write_solution_xdmf(mesh, u_sol, p_sol, output_path)
+
+        if self.volume_mesh_dtcc is not None:
+            if mesh.comm.size > 1:
+                if mesh.comm.rank == 0:
+                    warning(
+                        "UrbanWind: dtcc-core VolumeMesh output is not "
+                        "supported in MPI mode (output mapping uses local DOFs). "
+                        "Returning dolfinx fields instead."
+                    )
+                return u_sol, p_sol
+            return _dolfinx_to_volume_mesh(mesh, u_sol, p_sol, self.volume_mesh_dtcc)
+
+        return u_sol, p_sol
+
+    @staticmethod
+    def _mixed_subspace_is(
+        W: dolfinx.fem.FunctionSpace, subspace: int
+    ) -> PETSc.IS:
+        """Create a global IS for owned dofs of a mixed subspace."""
+        _, parent_map = W.sub(subspace).collapse()
+        local_parent = np.unique(np.asarray(parent_map, dtype=np.int32))
+        n_owned = W.dofmap.index_map.size_local
+        local_parent = local_parent[local_parent < n_owned]
+        global_parent = np.asarray(
+            W.dofmap.index_map.local_to_global(local_parent), dtype=PETSc.IntType
+        )
+        return PETSc.IS().createGeneral(global_parent, comm=W.mesh.comm)
+
+    def _simulate_stokes(
+        self,
+        *,
+        mesh: dolfinx.mesh.Mesh,
+        params: UrbanWindParameters,
+        output_path: Optional[str],
+        fdim: int,
+        inlet_marker: int,
+        outlet_marker: Optional[int],
+        hmin: float,
+        use_weak_slip: bool,
+    ) -> Any:
+        """Solve stationary Stokes equations with a mixed (u,p) formulation."""
+        assert self.category_markers is not None
+        assert self.markers is not None
+
+        rank0 = mesh.comm.rank == 0
+        nu_eff = params.nu_eff
+        side_top_slip = params.side_top_boundary == "slip"
+
+        if rank0:
+            info("UrbanWind: Solving stationary Stokes system (monolithic mixed FEM)")
+
+        gdim = mesh.geometry.dim
+        vel_el = basix.ufl.element(
+            "Lagrange", mesh.basix_cell(), params.velocity_degree, shape=(gdim,)
+        )
+        pres_el = basix.ufl.element("Lagrange", mesh.basix_cell(), params.pressure_degree)
+        W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([vel_el, pres_el]))
+        (u_trial, p_trial) = ufl.TrialFunctions(W)
+        (v_test, q_test) = ufl.TestFunctions(W)
+
+        ds_cat = Measure("ds", domain=mesh, subdomain_data=self.category_markers)
+        n_vec = FacetNormal(mesh)
+        nu_c = Constant(mesh, PETSc.ScalarType(nu_eff))
+
+        a_expr = (
+            nu_c * inner(grad(u_trial), grad(v_test)) * dx
+            - inner(p_trial, div(v_test)) * dx
+            + inner(div(u_trial), q_test) * dx
+        )
+        # Tiny pressure-mass regularization to avoid singular factorisations
+        # in edge cases where pressure anchoring is weak or absent.
+        a_expr += PETSc.ScalarType(1e-10) * inner(p_trial, q_test) * dx
+        if params.grad_div_gamma > 0.0:
+            gamma_gd = Constant(mesh, PETSc.ScalarType(params.grad_div_gamma))
+            a_expr += gamma_gd * div(u_trial) * div(v_test) * dx
+        f_zero = Constant(mesh, np.zeros(gdim, dtype=PETSc.ScalarType))
+        L_expr = inner(f_zero, v_test) * dx
+
+        # ---- Boundary conditions on mixed space ----
+        W_u = W.sub(0)
+        V_u, _ = W_u.collapse()
+        inlet_fn = Function(V_u, name="u_inlet")
+        if self.inlet_expression is not None:
+            inlet_expr = self.inlet_expression
+        else:
+            inlet_expr = make_inlet_velocity_expression(params)
+        inlet_fn.interpolate(inlet_expr)
+
+        inlet_facets = self.category_markers.find(int(BndCat.INLET))
+        inlet_dofs = locate_dofs_topological((W_u, V_u), fdim, inlet_facets)
+        bcs_mixed: List[dolfinx.fem.DirichletBC] = [dirichletbc(inlet_fn, inlet_dofs, W_u)]
+
+        solid_tags = [int(BndCat.WALL), int(BndCat.ROOF), int(BndCat.GROUND)]
+        if params.wall_model == "noslip":
+            u_zero = Function(V_u)
+            for tag in solid_tags:
+                facets = self.category_markers.find(tag)
+                dofs = locate_dofs_topological((W_u, V_u), fdim, facets)
+                bcs_mixed.append(dirichletbc(u_zero, dofs, W_u))
+
+        weak_slip_tags: List[int] = []
+        weak_slip_gamma: Optional[Constant] = None
+        if side_top_slip:
+            if use_weak_slip:
+                weak_slip_tags = [int(BndCat.SIDE), int(BndCat.TOP)]
+                gamma_val = 20.0 * nu_eff / max(hmin, 1e-12)
+                weak_slip_gamma = Constant(mesh, PETSc.ScalarType(gamma_val))
+            else:
+                W_ux = W_u.sub(0)
+                W_uy = W_u.sub(1)
+                W_uz = W_u.sub(2)
+                V_ux, _ = W_ux.collapse()
+                V_uy, _ = W_uy.collapse()
+                V_uz, _ = W_uz.collapse()
+                u_zero_x = Function(V_ux)
+                u_zero_y = Function(V_uy)
+                u_zero_z = Function(V_uz)
+
+                top_facets = self.markers.find(-2)
+                if len(top_facets) > 0:
+                    dofs_z = locate_dofs_topological((W_uz, V_uz), fdim, top_facets)
+                    bcs_mixed.append(dirichletbc(u_zero_z, dofs_z, W_uz))
+
+                for marker in (-3, -4, -5, -6):
+                    if marker == inlet_marker or marker == outlet_marker:
+                        continue
+                    facets = self.markers.find(marker)
+                    if len(facets) == 0:
+                        continue
+                    if marker in (-3, -4):
+                        dofs_x = locate_dofs_topological((W_ux, V_ux), fdim, facets)
+                        bcs_mixed.append(dirichletbc(u_zero_x, dofs_x, W_ux))
+                    else:
+                        dofs_y = locate_dofs_topological((W_uy, V_uy), fdim, facets)
+                        bcs_mixed.append(dirichletbc(u_zero_y, dofs_y, W_uy))
+
+        if params.wall_model == "friction":
+            beta_c = Constant(mesh, PETSc.ScalarType(params.beta_wall))
+            gamma_val = (
+                params.gamma_normal
+                if params.gamma_normal is not None
+                else 50.0 * nu_eff / max(hmin, 1e-12)
+            )
+            gamma_c = Constant(mesh, PETSc.ScalarType(gamma_val))
+            for tag in solid_tags:
+                a_expr += (
+                    beta_c
+                    * (inner(u_trial, v_test) - inner(dot(u_trial, n_vec) * n_vec, v_test))
+                    * ds_cat(tag)
+                )
+                a_expr += (
+                    gamma_c * inner(dot(u_trial, n_vec), dot(v_test, n_vec)) * ds_cat(tag)
+                )
+
+        if weak_slip_gamma is not None:
+            for tag in weak_slip_tags:
+                a_expr += (
+                    weak_slip_gamma
+                    * inner(dot(u_trial, n_vec), dot(v_test, n_vec))
+                    * ds_cat(tag)
+                )
+
+        # Pressure outlet (same semantics as NS): p=0 on outlet if present.
+        W_p = W.sub(1)
+        Q_p, _ = W_p.collapse()
+        if self._has_outlet:
+            outlet_facets = self.category_markers.find(int(BndCat.OUTLET))
+            outlet_dofs = locate_dofs_topological((W_p, Q_p), fdim, outlet_facets)
+            p_zero = Function(Q_p)
+            bcs_mixed.append(dirichletbc(p_zero, outlet_dofs, W_p))
+        else:
+            raise NotImplementedError(
+                "UrbanWind: Stokes closed-cavity mode is not implemented yet. "
+                "Use an outlet marker / open boundary for Stokes runs."
+            )
+
+        a_stokes = _fem_form(a_expr)
+        L_stokes = _fem_form(L_expr)
+        A = _fem_petsc.assemble_matrix(a_stokes, bcs=bcs_mixed)
+        A.assemble()
+        b = _fem_petsc.assemble_vector(L_stokes)
+        _fem_petsc.apply_lifting(b, [a_stokes], [bcs_mixed])
+        b.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+        _fem_petsc.set_bc(b, bcs_mixed)
+
+        if params.petsc_stokes is not None:
+            stokes_opts = params.petsc_stokes
+        else:
+            stokes_opts = DEFAULT_STOKES_PETSC_ITERATIVE
+
+        use_fieldsplit = str(stokes_opts.get("pc_type", "")).lower() == "fieldsplit"
+        field_splits = None
+        if use_fieldsplit:
+            is_u = self._mixed_subspace_is(W, 0)
+            is_p = self._mixed_subspace_is(W, 1)
+            field_splits = (("u", is_u), ("p", is_p))
+
+        if rank0:
+            pc_desc = stokes_opts.get("pc_type", "default")
+            ksp_desc = stokes_opts.get("ksp_type", "default")
+            info(
+                "UrbanWind: Stokes linear solve config "
+                f"(ksp={ksp_desc}, pc={pc_desc}, fieldsplit={use_fieldsplit})"
+            )
+
+        ksp = self._make_ksp(
+            A,
+            stokes_opts,
+            "stokes",
+            field_splits=field_splits,
+        )
+        w = Function(W, name="w_stokes")
+        stokes_monitor = None
+        if rank0:
+            def _stokes_monitor(_ksp, its: int, rnorm: float) -> None:
+                info(f"UrbanWind: Stokes KSP iter={its:4d}  |r|={rnorm:.3e}")
+
+            stokes_monitor = _stokes_monitor
+            ksp.setMonitor(stokes_monitor)
+        if rank0:
+            info(
+                "UrbanWind: Stokes linear solve started "
+                "(PC setup may take time before first KSP iteration appears)"
+            )
+            info("UrbanWind: Stokes KSP setup started")
+        t_setup_start = time.perf_counter()
+        ksp.setUp()
+        t_setup_elapsed = time.perf_counter() - t_setup_start
+        if rank0:
+            info(f"UrbanWind: Stokes KSP setup done in {t_setup_elapsed:.2f}s")
+            info("UrbanWind: Stokes Krylov iterations started")
+        t_ksp_start = time.perf_counter()
+        ksp.solve(b, w.x.petsc_vec)
+        w.x.scatter_forward()
+        t_ksp_elapsed = time.perf_counter() - t_ksp_start
+        ksp_reason = ksp.getConvergedReason()
+        ksp_its = ksp.getIterationNumber()
+
+        # Stokes is a single linear solve: if default iterative setup fails,
+        # try a safer iterative variant before direct fallback.
+        if ksp_reason < 0 and params.petsc_stokes is None:
+            if rank0:
+                warning(
+                    "UrbanWind: Stokes default KSP diverged "
+                    f"(reason={ksp_reason}, its={ksp_its}); "
+                    "retrying with safe iterative preconditioner."
+                )
+
+            try:
+                safe_opts = DEFAULT_STOKES_PETSC_SAFE_ITERATIVE
+                safe_fieldsplit = None
+                if str(safe_opts.get("pc_type", "")).lower() == "fieldsplit":
+                    is_u_safe = self._mixed_subspace_is(W, 0)
+                    is_p_safe = self._mixed_subspace_is(W, 1)
+                    safe_fieldsplit = (("u", is_u_safe), ("p", is_p_safe))
+                ksp_fb = self._make_ksp(
+                    A,
+                    safe_opts,
+                    "stokes_safe",
+                    field_splits=safe_fieldsplit,
+                )
+                if rank0 and stokes_monitor is not None:
+                    ksp_fb.setMonitor(stokes_monitor)
+                if rank0:
+                    info("UrbanWind: Stokes safe-iterative KSP setup started")
+                t_setup_start = time.perf_counter()
+                ksp_fb.setUp()
+                t_setup_elapsed = time.perf_counter() - t_setup_start
+                if rank0:
+                    info(f"UrbanWind: Stokes safe-iterative KSP setup done in {t_setup_elapsed:.2f}s")
+                    info("UrbanWind: Stokes safe-iterative Krylov iterations started")
+                w.x.array[:] = 0.0
+                w.x.scatter_forward()
+                t_ksp_start = time.perf_counter()
+                ksp_fb.solve(b, w.x.petsc_vec)
+                w.x.scatter_forward()
+                t_ksp_elapsed = time.perf_counter() - t_ksp_start
+                ksp_reason = ksp_fb.getConvergedReason()
+                ksp_its = ksp_fb.getIterationNumber()
+            except Exception as exc:
+                if rank0:
+                    warning(
+                        "UrbanWind: safe-iterative Stokes retry failed with "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
+        if ksp_reason < 0 and params.petsc_stokes is None:
+            if rank0:
+                warning(
+                    "UrbanWind: safe iterative Stokes retry diverged "
+                    f"(reason={ksp_reason}, its={ksp_its}); "
+                    "retrying with direct LU (MUMPS)."
+                )
+            try:
+                ksp_fb = self._make_ksp(
+                    A,
+                    DEFAULT_STOKES_PETSC_FALLBACK_DIRECT,
+                    "stokes_fallback",
+                    field_splits=None,
+                )
+                if rank0:
+                    info("UrbanWind: Stokes fallback KSP setup started")
+                t_setup_start = time.perf_counter()
+                ksp_fb.setUp()
+                t_setup_elapsed = time.perf_counter() - t_setup_start
+                if rank0:
+                    info(
+                        f"UrbanWind: Stokes fallback KSP setup done in "
+                        f"{t_setup_elapsed:.2f}s"
+                    )
+                w.x.array[:] = 0.0
+                w.x.scatter_forward()
+                t_ksp_start = time.perf_counter()
+                ksp_fb.solve(b, w.x.petsc_vec)
+                w.x.scatter_forward()
+                t_ksp_elapsed = time.perf_counter() - t_ksp_start
+                ksp_reason = ksp_fb.getConvergedReason()
+                ksp_its = ksp_fb.getIterationNumber()
+            except Exception as exc:
+                if rank0:
+                    warning(
+                        "UrbanWind: direct Stokes fallback failed with "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
+        if ksp_reason < 0:
+            raise RuntimeError(
+                "UrbanWind: Stokes linear solve failed "
+                f"(reason={ksp_reason}, its={ksp_its}). "
+                "Provide `petsc_stokes` options for your MPI setup."
+            )
+
+        # Collapse subfunctions to standalone spaces for output/diagnostics
+        u_sol = w.sub(0).collapse()
+        p_sol = w.sub(1).collapse()
+        u_sol.name = "velocity"
+        p_sol.name = "pressure"
+
+        # Diagnostics
+        one_c = Constant(mesh, PETSc.ScalarType(1.0))
+        vol_form = _fem_form(one_c * dx)
+        div_norm_form = _fem_form(div(u_sol) * div(u_sol) * dx)
+        q_in_form = _fem_form(dot(u_sol, n_vec) * ds_cat(int(BndCat.INLET)))
+        q_open_form = _fem_form(dot(u_sol, n_vec) * ds_cat(int(BndCat.INLET)))
+        slip_un2_form = None
+        slip_area = 0.0
+        if self._has_outlet:
+            q_out_form = _fem_form(dot(u_sol, n_vec) * ds_cat(int(BndCat.OUTLET)))
+            q_open_measure = ds_cat(int(BndCat.INLET)) + ds_cat(int(BndCat.OUTLET))
+            if params.side_top_boundary == "open":
+                q_open_measure += ds_cat(int(BndCat.SIDE)) + ds_cat(int(BndCat.TOP))
+            q_open_form = _fem_form(dot(u_sol, n_vec) * q_open_measure)
+        else:
+            q_out_form = None
+        if side_top_slip:
+            slip_measure = ds_cat(int(BndCat.SIDE)) + ds_cat(int(BndCat.TOP))
+            slip_un2_form = _fem_form(dot(u_sol, n_vec) * dot(u_sol, n_vec) * slip_measure)
+            slip_area_form = _fem_form(one_c * slip_measure)
+            slip_area = float(
+                mesh.comm.allreduce(
+                    dolfinx.fem.assemble_scalar(slip_area_form), op=MPI.SUM
+                )
+            )
+
+        volume = float(mesh.comm.allreduce(dolfinx.fem.assemble_scalar(vol_form), op=MPI.SUM))
+        div_norm_sq = float(
+            mesh.comm.allreduce(dolfinx.fem.assemble_scalar(div_norm_form), op=MPI.SUM)
+        )
+        div_rms = float(np.sqrt(max(div_norm_sq, 0.0) / max(volume, 1e-14)))
+        q_in = -float(mesh.comm.allreduce(dolfinx.fem.assemble_scalar(q_in_form), op=MPI.SUM))
+        q_open = float(
+            mesh.comm.allreduce(dolfinx.fem.assemble_scalar(q_open_form), op=MPI.SUM)
+        )
+        flux_ref = abs(q_in)
+        if q_out_form is not None:
+            q_out = float(
+                mesh.comm.allreduce(dolfinx.fem.assemble_scalar(q_out_form), op=MPI.SUM)
+            )
+            flux_ref = abs(q_in) + abs(q_out)
+        flux_imbalance = abs(q_open) / max(flux_ref, 1e-14) if self._has_outlet else 0.0
+        slip_un_rms = float("nan")
+        if slip_un2_form is not None and slip_area > 0.0:
+            slip_un2 = float(
+                mesh.comm.allreduce(dolfinx.fem.assemble_scalar(slip_un2_form), op=MPI.SUM)
+            )
+            slip_un_rms = float(np.sqrt(max(slip_un2, 0.0) / max(slip_area, 1e-14)))
+
+        if rank0:
+            info(
+                f"UrbanWind: Stokes solve complete  "
+                f"KSP its={ksp_its} reason={ksp_reason}  "
+                f"t_solve={t_ksp_elapsed:.2f}s"
+            )
+            slip_part = f"  slip_un={slip_un_rms:.3e}" if not np.isnan(slip_un_rms) else ""
+            info(
+                f"UrbanWind: Stokes diagnostics  div_rms={div_rms:.3e}  "
+                f"flux_imb={flux_imbalance:.3e}{slip_part}"
+            )
+
+        ksp.destroy()
+        b.destroy()
+        A.destroy()
+        return self._finalize_result(mesh, u_sol, p_sol, output_path=output_path)
 
     # -------------------------------------------------------- main simulate
     def simulate(self, *, output_path: Optional[str] = None) -> Any:
@@ -1391,6 +1920,18 @@ class UrbanWindSimulator:
                     f"(hmin={hmin:.4g}, dt={dt_val:.4g})"
                 )
 
+        if params.equations == "stokes":
+            return self._simulate_stokes(
+                mesh=mesh,
+                params=params,
+                output_path=output_path,
+                fdim=fdim,
+                inlet_marker=inlet_marker,
+                outlet_marker=outlet_marker,
+                hmin=hmin,
+                use_weak_slip=use_weak_slip,
+            )
+
         if rank0:
             info("UrbanWind: setup phase 2/5 - building variational forms")
 
@@ -1537,7 +2078,6 @@ class UrbanWindSimulator:
             {
                 "ksp_type": "cg",
                 "ksp_rtol": 1e-8,
-                "ksp_monitor": None,
                 "pc_type": "jacobi",
             },
             "corr",
@@ -1946,51 +2486,7 @@ class UrbanWindSimulator:
         ksp1.destroy()
         ksp2.destroy()
         ksp3.destroy()
-
-        # ---- Output ----
-        if output_path is not None:
-            from dolfinx.io import XDMFFile
-
-            # XDMF requires functions of the same degree as the mesh (P1).
-            # Interpolate P2 velocity down to P1 for output.
-            V1_out = FunctionSpace(mesh, "Lagrange", 1, dim=3)
-            u_out = Function(V1_out, name="velocity")
-            u_out.interpolate(u_n)
-
-            p_out = Function(Q, name="pressure")
-            p_out.x.array[:] = p_n.x.array
-            p_out.x.scatter_forward()
-
-            # Write velocity and pressure to separate XDMF files so that
-            # ParaView does not mix them up when applying glyph filters.
-            import os
-
-            base, ext = os.path.splitext(output_path)
-            vel_path = f"{base}_velocity{ext}"
-            pres_path = f"{base}_pressure{ext}"
-
-            with XDMFFile(mesh.comm, vel_path, "w") as xdmf:
-                xdmf.write_mesh(mesh)
-                xdmf.write_function(u_out)
-            with XDMFFile(mesh.comm, pres_path, "w") as xdmf:
-                xdmf.write_mesh(mesh)
-                xdmf.write_function(p_out)
-            info(f"UrbanWind: Saved solution to {vel_path} and {pres_path}")
-
-        # ---- Convert to dtcc-core VolumeMesh ----
-        if self.volume_mesh_dtcc is not None:
-            if mesh.comm.size > 1:
-                if rank0:
-                    warning(
-                        "UrbanWind: dtcc-core VolumeMesh output is not "
-                        "supported in MPI mode (output mapping uses local DOFs). "
-                        "Returning dolfinx fields instead."
-                    )
-                return u_n, p_n
-            return _dolfinx_to_volume_mesh(mesh, u_n, p_n, self.volume_mesh_dtcc)
-
-        # Fallback when mesh was provided directly (no dtcc-core mesh)
-        return u_n, p_n
+        return self._finalize_result(mesh, u_n, p_n, output_path=output_path)
 
     # -------------------------------------------------------- PETSc helpers
     @staticmethod
@@ -1998,16 +2494,27 @@ class UrbanWindSimulator:
         A: PETSc.Mat,
         opts: Dict[str, Any],
         prefix: str,
+        field_splits: Optional[Sequence[Tuple[str, PETSc.IS]]] = None,
     ) -> PETSc.KSP:
         ksp = PETSc.KSP().create(A.getComm())
         ksp.setOperators(A)
         ksp.setOptionsPrefix(f"urban_wind_{prefix}_")
+        if field_splits:
+            pc = ksp.getPC()
+            pc.setType("fieldsplit")
+            pc.setFieldSplitIS(*field_splits)
         popts = PETSc.Options()
         for k, v in opts.items():
-            if v is None:
-                continue
             full_key = f"urban_wind_{prefix}_{k}"
-            popts[full_key] = str(v)
+            if v is None:
+                # PETSc "flag" options (e.g. ksp_monitor) are enabled by
+                # setting the key without a value.
+                popts.setValue(full_key, None)
+            elif isinstance(v, bool):
+                if v:
+                    popts.setValue(full_key, None)
+            else:
+                popts.setValue(full_key, str(v))
         ksp.setFromOptions()
         return ksp
 

@@ -1,11 +1,10 @@
 """
-Urban wind simulation — real-world city area
-=============================================
+Urban wind simulation (Stokes) — real-world city area
+======================================================
 
-Runs an urban wind CFD simulation on a real-world area in Gothenburg,
-Sweden.  Uses dtcc-core to build a 3D city volume mesh from geographic
-data and solves the incompressible Navier–Stokes equations with the
-IPCS fractional-step scheme.  The solution is saved as XDMF for
+Runs an urban flow simulation on a real-world area in Gothenburg, Sweden.
+Uses dtcc-core to build a 3D city volume mesh and solves the stationary
+incompressible Stokes equations. The solution is saved as XDMF for
 inspection in ParaView.
 """
 
@@ -27,28 +26,12 @@ bounds = (x0, y0, x0 + L, y0 + L)
 
 # Simulation parameters
 params = UrbanWindParameters(
+    equations="stokes",
     wind_speed=5.0,
     wind_dir_deg=270.0,
     nu_t=2.0,
     side_top_boundary="slip",
     inlet_profile="log_law",
-    dt=0.1,
-    adaptive_dt=True,
-    dt_max=0.1,
-    max_steps=500,
-    simulation_mode="statistical_steady",
-    stat_warmup_steps=60,
-    stat_window=20,
-    stat_tolerance=2.0e-2,
-    stat_divergence_tolerance=1.0e-1,
-    stat_flux_imbalance_tolerance=1.0e-1,
-    velocity_relaxation=0.3,
-    spike_rel_threshold=0.95,
-    spike_relaxation=0.2,
-    spike_min_step=120,
-    grad_div_gamma=3.0,
-    backflow_beta=2.0,
-    inlet_ramp_time=20.0,
     log_every_steps=1,
     log_initial_steps=0,
 )
@@ -62,9 +45,9 @@ if MPI.COMM_WORLD.rank == 0:
         raster_radius=params.mesh_raster_radius,
     )
     surface_mesh.offset_to_origin()
-    surface_mesh_path = output_dir / "urban_wind_simulation_surface_mesh.vtu"
+    surface_mesh_path = output_dir / "urban_wind_stokes_simulation_surface_mesh.vtu"
     surface_mesh.save(surface_mesh_path)
 
-# Run wind simulation
+# Run flow simulation
 sim = UrbanWindSimulator(bounds=bounds, params=params)
-sim.simulate(output_path=str(output_dir / "urban_wind_simulation.xdmf"))
+sim.simulate(output_path=str(output_dir / "urban_wind_stokes_simulation.xdmf"))

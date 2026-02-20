@@ -314,7 +314,166 @@ class TestSmokeIPCS:
 
 
 # ---------------------------------------------------------------------------
-# 5) Poiseuille channel flow validation
+# 5) Smoke test — stationary Stokes solve on a unit box
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def box_stokes_result():
+    """Run a minimal stationary Stokes solve on a tiny box and return (u, p)."""
+    import dolfinx.mesh
+    from mpi4py import MPI
+    from dtcc_sim.urban_wind import UrbanWindSimulator, UrbanWindParameters
+
+    mesh = dolfinx.mesh.create_box(
+        MPI.COMM_WORLD,
+        [[0.0, 0.0, 0.0], [2.0, 1.0, 1.0]],
+        [4, 2, 2],
+        dolfinx.mesh.CellType.tetrahedron,
+    )
+
+    fdim = mesh.topology.dim - 1
+    mesh.topology.create_entities(fdim)
+    mesh.topology.create_connectivity(fdim, mesh.topology.dim)
+
+    from dolfinx.mesh import exterior_facet_indices
+
+    boundary_facets = exterior_facet_indices(mesh.topology)
+    midpoints = dolfinx.mesh.compute_midpoints(mesh, fdim, boundary_facets)
+    markers_vals = np.full(len(boundary_facets), -7, dtype=np.int32)
+    tol = 1e-10
+    for i, mp in enumerate(midpoints):
+        x, y, z = mp
+        if abs(x) < tol:
+            markers_vals[i] = -3
+        elif abs(x - 2.0) < tol:
+            markers_vals[i] = -4
+        elif abs(y) < tol:
+            markers_vals[i] = -5
+        elif abs(y - 1.0) < tol:
+            markers_vals[i] = -6
+        elif abs(z) < tol:
+            markers_vals[i] = -1
+        elif abs(z - 1.0) < tol:
+            markers_vals[i] = -2
+
+    order = np.argsort(boundary_facets)
+    facet_tags = dolfinx.mesh.meshtags(
+        mesh, fdim, boundary_facets[order], markers_vals[order]
+    )
+
+    params = UrbanWindParameters(
+        equations="stokes",
+        wind_speed=1.0,
+        wind_dir_deg=270.0,
+        velocity_degree=2,
+        pressure_degree=1,
+        wall_model="noslip",
+        side_top_boundary="slip",
+        inlet_profile="uniform",
+        petsc_stokes={"ksp_type": "preonly", "pc_type": "lu"},
+    )
+
+    sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
+    result = sim.simulate()
+    return result
+
+
+@pytest.fixture(scope="module")
+def box_stokes_iterative_result():
+    """Run the same tiny Stokes case with an iterative linear solver."""
+    import dolfinx.mesh
+    from mpi4py import MPI
+    from dtcc_sim.urban_wind import UrbanWindSimulator, UrbanWindParameters
+
+    mesh = dolfinx.mesh.create_box(
+        MPI.COMM_WORLD,
+        [[0.0, 0.0, 0.0], [2.0, 1.0, 1.0]],
+        [4, 2, 2],
+        dolfinx.mesh.CellType.tetrahedron,
+    )
+
+    fdim = mesh.topology.dim - 1
+    mesh.topology.create_entities(fdim)
+    mesh.topology.create_connectivity(fdim, mesh.topology.dim)
+
+    from dolfinx.mesh import exterior_facet_indices
+
+    boundary_facets = exterior_facet_indices(mesh.topology)
+    midpoints = dolfinx.mesh.compute_midpoints(mesh, fdim, boundary_facets)
+    markers_vals = np.full(len(boundary_facets), -7, dtype=np.int32)
+    tol = 1e-10
+    for i, mp in enumerate(midpoints):
+        x, y, z = mp
+        if abs(x) < tol:
+            markers_vals[i] = -3
+        elif abs(x - 2.0) < tol:
+            markers_vals[i] = -4
+        elif abs(y) < tol:
+            markers_vals[i] = -5
+        elif abs(y - 1.0) < tol:
+            markers_vals[i] = -6
+        elif abs(z) < tol:
+            markers_vals[i] = -1
+        elif abs(z - 1.0) < tol:
+            markers_vals[i] = -2
+
+    order = np.argsort(boundary_facets)
+    facet_tags = dolfinx.mesh.meshtags(
+        mesh, fdim, boundary_facets[order], markers_vals[order]
+    )
+
+    params = UrbanWindParameters(
+        equations="stokes",
+        wind_speed=1.0,
+        wind_dir_deg=270.0,
+        velocity_degree=2,
+        pressure_degree=1,
+        wall_model="noslip",
+        side_top_boundary="slip",
+        inlet_profile="uniform",
+        petsc_stokes={
+            "ksp_type": "gmres",
+            "ksp_rtol": 1e-8,
+            "ksp_max_it": 400,
+            "pc_type": "jacobi",
+        },
+    )
+
+    sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
+    result = sim.simulate()
+    return result
+
+
+class TestSmokeStokes:
+    """Basic sanity checks on stationary Stokes output."""
+
+    def test_returns_tuple(self, box_stokes_result):
+        u, p = box_stokes_result
+        assert u is not None
+        assert p is not None
+
+    def test_velocity_finite(self, box_stokes_result):
+        u, _ = box_stokes_result
+        assert np.all(np.isfinite(u.x.array)), "Velocity contains non-finite values"
+
+    def test_pressure_finite(self, box_stokes_result):
+        _, p = box_stokes_result
+        assert np.all(np.isfinite(p.x.array)), "Pressure contains non-finite values"
+
+    def test_velocity_nonzero(self, box_stokes_result):
+        u, _ = box_stokes_result
+        assert np.max(np.abs(u.x.array)) > 0.0, "Velocity is all zero"
+
+    def test_iterative_solver_smoke(self, box_stokes_iterative_result):
+        u, p = box_stokes_iterative_result
+        assert np.all(np.isfinite(u.x.array)), "Iterative Stokes velocity has non-finite values"
+        assert np.all(np.isfinite(p.x.array)), "Iterative Stokes pressure has non-finite values"
+        assert np.max(np.abs(u.x.array)) > 0.0, "Iterative Stokes velocity is all zero"
+
+
+# ---------------------------------------------------------------------------
+# 6) Poiseuille channel flow validation
 # ---------------------------------------------------------------------------
 
 
@@ -414,7 +573,7 @@ class TestPoiseuille:
 
 
 # ---------------------------------------------------------------------------
-# 6) Parameters model validation
+# 7) Parameters model validation
 # ---------------------------------------------------------------------------
 
 
@@ -448,9 +607,22 @@ class TestUrbanWindParameters:
         assert math.isclose(p.stat_tolerance, 5e-3)
         assert math.isclose(p.stat_divergence_tolerance, 2e-2)
 
+    def test_stokes_equation_mode(self):
+        from dtcc_sim.urban_wind import UrbanWindParameters
+
+        p = UrbanWindParameters(equations="stokes")
+        assert p.equations == "stokes"
+
+    def test_extra_parameters_forbidden(self):
+        from pydantic import ValidationError
+        from dtcc_sim.urban_wind import UrbanWindParameters
+
+        with pytest.raises(ValidationError):
+            UrbanWindParameters(unknown_parameter=123)
+
 
 # ---------------------------------------------------------------------------
-# 7) Import smoke test
+# 8) Import smoke test
 # ---------------------------------------------------------------------------
 
 

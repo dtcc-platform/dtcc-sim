@@ -339,6 +339,10 @@ class UrbanWindSimulationArgs(DatasetBaseArgs):
     mesh_domain_height: float = Field(80.0, description="Domain height [m]")
 
     # Solver
+    equations: Literal["navier_stokes", "stokes"] = Field(
+        "navier_stokes",
+        description="Equation set: 'navier_stokes' (IPCS) or 'stokes' (stationary)",
+    )
     dt: float = Field(0.2, description="Pseudo-time step [s]")
     max_steps: int = Field(2000, description="Maximum number of time steps")
     steady_tolerance: float = Field(1e-4, description="Steady-state tolerance")
@@ -388,6 +392,7 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
     def build(self, args):
         bounds = self.parse_bounds(args.bounds)
         params = UrbanWindParameters(
+            equations=args.equations,
             use_weather=args.use_weather,
             weather_aggregation=args.weather_aggregation,
             wind_speed=args.wind_speed,
