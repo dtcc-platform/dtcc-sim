@@ -1,5 +1,7 @@
 """DTCC Sim package - Urban simulation tools."""
 
+import os
+
 from ._version import __version__
 from .urban_heat import (
     UrbanHeatSimulator,
@@ -27,10 +29,18 @@ from .datasets import (
     UrbanWindSimulationDataset,
 )
 
-# Set default log level to INFO for FEniCSx
-from .fenics import set_log_level, INFO
+# Default FEniCSx log level (override with DTCC_FENICSX_LOG_LEVEL).
+# Note: FEniCSx backend messages use FEniCSx-native formatting.
+from .fenics import set_log_level, DEBUG, INFO, WARNING, ERROR
 
-set_log_level(INFO)
+_fenicsx_log_name = os.getenv("DTCC_FENICSX_LOG_LEVEL", "INFO").strip().upper()
+_fenicsx_log_level = {
+    "DEBUG": DEBUG,
+    "INFO": INFO,
+    "WARNING": WARNING,
+    "ERROR": ERROR,
+}.get(_fenicsx_log_name, INFO)
+set_log_level(_fenicsx_log_level)
 
 __all__ = [
     "__version__",
