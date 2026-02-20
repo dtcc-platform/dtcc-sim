@@ -897,48 +897,30 @@ def _dolfinx_to_volume_mesh(
 ) -> Any:
     """Map dolfinx solution fields onto a dtcc-core VolumeMesh.
 
-    Interpolates P2 velocity to P1, extracts arrays, and attaches
-    ``velocity``, ``pressure``, and ``speed`` Fields.
+    Evaluates velocity and pressure directly at mesh vertices (no P2→P1
+    interpolation) and attaches ``velocity``, ``pressure``, and ``speed``
+    fields in dtcc-core vertex ordering.
     """
     from dtcc_core.model import Field as DtccField
 
-    # Create P1 vector space and interpolate velocity
-    V1 = FunctionSpace(dolfinx_mesh, "Lagrange", 1, dim=3)
-    u1 = Function(V1)
-    u1.interpolate(u_sol)
-
-    # Pressure is already P1
-    p1 = p_sol
-
-    # ---- extract dof coordinates & values ----
-    # Scalar P1 dof coords
-    Q1 = p1.function_space
-    dof_coords_q = Q1.tabulate_dof_coordinates()  # (ndof, 3)
-
-    # Velocity dof coords (every component shares the same geometric dofs for
-    # vector Lagrange elements; the first block of dof_coordinates corresponds
-    # to the x-component and repeats for y,z)
-    dof_coords_v = V1.tabulate_dof_coordinates()  # (ndof_per_comp, 3)
-
-    # Number of dofs per scalar component
-    ndof_comp = V1.dofmap.index_map.size_local
-    # velocity stored as interleaved or blocked depending on V1 block size
-    bs = V1.dofmap.index_map_bs
-    u_arr = u1.x.array[: ndof_comp * bs].reshape(ndof_comp, bs)
-    p_arr = p1.x.array[: Q1.dofmap.index_map.size_local].copy()
+    # Evaluate FE functions directly at mesh vertices.
+    # This avoids projected/interpolated output and returns vertex values.
+    u_arr = _evaluate_function_at_vertices(dolfinx_mesh, u_sol)
+    p_arr = _evaluate_function_at_vertices(dolfinx_mesh, p_sol).ravel()
+    fem_verts = np.asarray(dolfinx_mesh.geometry.x, dtype=np.float64)
 
     # ---- map to dtcc-core vertex ordering ----
     dtcc_verts = np.asarray(volume_mesh_dtcc.vertices, dtype=np.float64)  # (M,3)
 
-    # Build coordinate → index mapping via rounding for robustness
+    # The dolfinx mesh is shifted to origin for numerical robustness while
+    # dtcc-core vertices keep original coordinates. Remove translation before
+    # matching.
     decimals = 6
-    dtcc_keys = np.round(dtcc_verts, decimals)
-    fem_keys_v = np.round(dof_coords_v[:ndof_comp], decimals)
-    fem_keys_q = np.round(dof_coords_q[: Q1.dofmap.index_map.size_local], decimals)
+    dtcc_keys = np.round(dtcc_verts - np.min(dtcc_verts, axis=0), decimals)
+    fem_keys = np.round(fem_verts - np.min(fem_verts, axis=0), decimals)
 
-    # Fast lexsort-based reorder for velocity
-    u_mapped = _reorder_by_coords(fem_keys_v, u_arr, dtcc_keys)
-    p_mapped = _reorder_by_coords(fem_keys_q, p_arr.reshape(-1, 1), dtcc_keys).ravel()
+    u_mapped = _reorder_by_coords(fem_keys, u_arr, dtcc_keys)
+    p_mapped = _reorder_by_coords(fem_keys, p_arr.reshape(-1, 1), dtcc_keys).ravel()
 
     speed = np.linalg.norm(u_mapped, axis=1)
 
@@ -967,6 +949,56 @@ def _dolfinx_to_volume_mesh(
         ),
     ]
     return volume_mesh_dtcc
+
+
+def _evaluate_function_at_vertices(
+    mesh: dolfinx.mesh.Mesh, func: Function
+) -> np.ndarray:
+    """Evaluate a finite-element function at mesh vertices.
+
+    Returns values in local mesh vertex ordering. Shape is (n_vertices, value_dim),
+    with value_dim=1 for scalar functions.
+    """
+    tdim = mesh.topology.dim
+    mesh.topology.create_connectivity(0, tdim)
+    v2c = mesh.topology.connectivity(0, tdim)
+
+    x = np.asarray(mesh.geometry.x, dtype=np.float64)
+    n_vertices = x.shape[0]
+
+    cells = np.full(n_vertices, -1, dtype=np.int32)
+    for vi in range(n_vertices):
+        incident = v2c.links(vi)
+        if len(incident) > 0:
+            cells[vi] = int(incident[0])
+
+    valid = cells >= 0
+    if np.any(valid):
+        probe = np.asarray(func.eval(x[valid][:1], cells[valid][:1]), dtype=np.float64)
+        if probe.ndim == 0:
+            value_dim = 1
+        elif probe.ndim == 1:
+            # dolfinx may return shape (value_dim,) for a single point.
+            value_dim = int(probe.shape[0]) if probe.shape[0] > 1 else 1
+        else:
+            value_dim = probe.shape[1]
+
+        values = np.zeros((n_vertices, value_dim), dtype=np.float64)
+        sampled = np.asarray(func.eval(x[valid], cells[valid]), dtype=np.float64)
+        if sampled.ndim == 0:
+            sampled = sampled.reshape(1, 1)
+        elif sampled.ndim == 1:
+            sampled = sampled.reshape(-1, value_dim)
+        values[valid] = sampled
+    else:
+        values = np.zeros((n_vertices, 1), dtype=np.float64)
+
+    if not np.all(valid):
+        warning(
+            f"_evaluate_function_at_vertices: could evaluate {int(np.sum(valid))}/{n_vertices} "
+            "vertices; unmatched entries are zero."
+        )
+    return values
 
 
 def _reorder_by_coords(
