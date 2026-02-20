@@ -78,7 +78,7 @@ def main() -> None:
     summarize_result(result)
 
     if hasattr(result, "save"):
-        output_path = output_dir / "datset_urban_wind_stokes_simulation.pb"
+        output_path = output_dir / "dataset_urban_wind_stokes_simulation.pb"
         result.save(output_path)
         print(f"\nSaved volume mesh to: {output_path}")
 
