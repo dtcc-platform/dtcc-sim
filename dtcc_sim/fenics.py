@@ -71,6 +71,12 @@ from dolfinx.fem import petsc as _fem_petsc
 # Logging
 from dolfinx.log import LogLevel, log, set_log_level
 
+try:
+    from dtcc_core import get_python_logger
+    _sim_logger = get_python_logger("dtcc-sim")
+except Exception:
+    _sim_logger = None
+
 
 # -----------------------------------------------------------------------------
 # Public exports
@@ -158,18 +164,27 @@ ERROR = LogLevel.ERROR
 
 
 def info(message: str) -> None:
-    """Log an informational message via dolfinx.log."""
-    log(INFO, message)
+    """Log an informational message."""
+    if _sim_logger is not None:
+        _sim_logger.info(message)
+    else:
+        log(INFO, message)
 
 
 def warning(message: str) -> None:
-    """Log a warning message via dolfinx.log."""
-    log(WARNING, message)
+    """Log a warning message."""
+    if _sim_logger is not None:
+        _sim_logger.warning(message)
+    else:
+        log(WARNING, message)
 
 
 def error(message: str) -> None:
-    """Log an error message via dolfinx.log."""
-    log(ERROR, message)
+    """Log an error message."""
+    if _sim_logger is not None:
+        _sim_logger.error(message)
+    else:
+        log(ERROR, message)
 
 
 # -----------------------------------------------------------------------------
