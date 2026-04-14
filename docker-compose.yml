@@ -9,10 +9,14 @@ services:
       - redis-data:/data
 
   dtcc-sim:
+    image: ${DTCC_SIM_IMAGE:-dtcc-sim}:${DTCC_SIM_TAG:-local}
     platform: linux/amd64
     build:
-      context: ../..
-      dockerfile: temp/dtcc-sim/Dockerfile
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DTCC_TETGEN_WRAPPER_REF: ${DTCC_TETGEN_WRAPPER_REF:-main}
+        TETGEN_VERSION: ${TETGEN_VERSION:-v1.6.0}
     ports:
       - "8001:8001"
     environment:
@@ -36,10 +40,14 @@ services:
       retries: 3
 
   dtcc-sim-worker:
+    image: ${DTCC_SIM_IMAGE:-dtcc-sim}:${DTCC_SIM_TAG:-local}
     platform: linux/amd64
     build:
-      context: ../..
-      dockerfile: temp/dtcc-sim/Dockerfile
+      context: .
+      dockerfile: Dockerfile
+      args:
+        DTCC_TETGEN_WRAPPER_REF: ${DTCC_TETGEN_WRAPPER_REF:-main}
+        TETGEN_VERSION: ${TETGEN_VERSION:-v1.6.0}
     command: celery -A service.tasks:celery_app worker -Q dtcc-sim -c 2
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
