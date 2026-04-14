@@ -99,6 +99,8 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
         "bounds and returns temperature field as FEniCSx Function."
     )
     ArgsModel = UrbanHeatSimulationArgs
+    result_kind = "mesh"
+    timeout_hint = 600
 
     def build(self, args):
         bounds = self.parse_bounds(args.bounds)
@@ -250,6 +252,8 @@ class AirQualityFieldDataset(DatasetDescriptor):
         "Supports multiple pollutants (NO2, PM10, O3, etc.) with configurable regularization."
     )
     ArgsModel = AirQualityFieldArgs
+    result_kind = "mesh"
+    timeout_hint = 300
 
     def build(self, args):
         import dtcc_core.datasets as datasets
@@ -257,7 +261,7 @@ class AirQualityFieldDataset(DatasetDescriptor):
         bounds = self.parse_bounds(args.bounds)
 
         # Fetch air quality sensor data
-        sensors = datasets.airquality(
+        sensors = datasets.air_quality(
             bounds=bounds,
             phenomenon=args.phenomenon,
             crs=args.airquality_crs,
@@ -388,6 +392,8 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         "and speed fields suitable for pedestrian-comfort and urban-ventilation studies."
     )
     ArgsModel = UrbanWindSimulationArgs
+    result_kind = "mesh"
+    timeout_hint = 1800
 
     def build(self, args):
         bounds = self.parse_bounds(args.bounds)

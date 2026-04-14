@@ -8,6 +8,7 @@ to enable classic (pretty) FEniCS programming, in contrast to the verbose
 
 from __future__ import annotations
 
+import itertools
 from typing import (
     Any,
     Callable,
@@ -76,6 +77,9 @@ try:
     _sim_logger = get_python_logger("dtcc-sim")
 except Exception:
     _sim_logger = None
+
+
+_LINEAR_PROBLEM_COUNTER = itertools.count()
 
 
 # -----------------------------------------------------------------------------
@@ -746,17 +750,30 @@ def solve(
         V = _infer_solution_space_from_bilinear_form(a)
         u = Function(V)
 
-    problem = LinearProblem(
-        a,
-        L_form,
-        u=u,
-        bcs=bc_list,
-        petsc_options=dict(petsc_options) if petsc_options is not None else {},
-        form_compiler_options=(
+    problem_kwargs = {
+        "u": u,
+        "bcs": bc_list,
+        "petsc_options": dict(petsc_options) if petsc_options is not None else {},
+        "form_compiler_options": (
             dict(form_compiler_options) if form_compiler_options is not None else {}
         ),
-        jit_options=dict(jit_options) if jit_options is not None else {},
-    )
+        "jit_options": dict(jit_options) if jit_options is not None else {},
+    }
+
+    # Newer dolfinx releases require a unique PETSc options prefix for
+    # LinearProblem-managed solvers; older releases reject the keyword.
+    prefix = f"dtcc_sim_linear_problem_{next(_LINEAR_PROBLEM_COUNTER)}_"
+    try:
+        problem = LinearProblem(
+            a,
+            L_form,
+            petsc_options_prefix=prefix,
+            **problem_kwargs,
+        )
+    except TypeError as exc:
+        if "petsc_options_prefix" not in str(exc):
+            raise
+        problem = LinearProblem(a, L_form, **problem_kwargs)
     uh = problem.solve()
     return uh
 
