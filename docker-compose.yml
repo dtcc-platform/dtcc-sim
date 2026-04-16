@@ -1,7 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
-    platform: linux/amd64
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
     ports:
       - "6379:6379"
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -10,7 +10,7 @@ services:
 
   dtcc-sim:
     image: ${DTCC_SIM_IMAGE:-dtcc-sim}:${DTCC_SIM_TAG:-local}
-    platform: linux/amd64
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: .
       dockerfile: Dockerfile
@@ -41,7 +41,7 @@ services:
 
   dtcc-sim-worker:
     image: ${DTCC_SIM_IMAGE:-dtcc-sim}:${DTCC_SIM_TAG:-local}
-    platform: linux/amd64
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: .
       dockerfile: Dockerfile
