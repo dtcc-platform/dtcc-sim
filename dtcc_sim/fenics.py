@@ -9,6 +9,7 @@ to enable classic (pretty) FEniCS programming, in contrast to the verbose
 from __future__ import annotations
 
 import itertools
+import os
 from typing import (
     Any,
     Callable,
@@ -783,10 +784,16 @@ def solve(
 # -----------------------------------------------------------------------------
 
 
-def load_mesh(filename: str) -> dolfinx.mesh.Mesh:
-    """Load a mesh from an XDMF file (expects mesh stored under name='mesh')."""
+def _coerce_xdmf_filename(filename: str | os.PathLike[str]) -> str:
+    filename = os.fspath(filename)
     if not filename.endswith(".xdmf"):
-        raise ValueError("load_mesh: filename must end with .xdmf")
+        raise ValueError("filename must end with .xdmf")
+    return filename
+
+
+def load_mesh(filename: str | os.PathLike[str]) -> dolfinx.mesh.Mesh:
+    """Load a mesh from an XDMF file (expects mesh stored under name='mesh')."""
+    filename = _coerce_xdmf_filename(filename)
 
     with XDMFFile(MPI.COMM_WORLD, filename, "r") as xdmf:
         mesh = xdmf.read_mesh(name="mesh")
@@ -794,7 +801,7 @@ def load_mesh(filename: str) -> dolfinx.mesh.Mesh:
 
 
 def load_mesh_with_markers(
-    filename: str,
+    filename: str | os.PathLike[str],
 ) -> Tuple[dolfinx.mesh.Mesh, dolfinx.mesh.MeshTags]:
     """
     Load a mesh and facet markers from an XDMF file.
@@ -803,8 +810,7 @@ def load_mesh_with_markers(
     - mesh stored under name='mesh'
     - facet MeshTags stored under name='boundary_markers'
     """
-    if not filename.endswith(".xdmf"):
-        raise ValueError("load_mesh_with_markers: filename must end with .xdmf")
+    filename = _coerce_xdmf_filename(filename)
 
     with XDMFFile(MPI.COMM_WORLD, filename, "r") as xdmf:
         mesh = xdmf.read_mesh(name="mesh")

@@ -79,7 +79,6 @@ from dtcc_sim.fenics import (
     warning,
     load_mesh_with_markers,
     BoxMesh,
-    bounds as mesh_bounds,
     offset_to_origin,
 )
 
@@ -101,7 +100,7 @@ class BndCat(IntEnum):
     SIDE = 7  # lateral bbox faces that are neither inlet nor outlet
 
 
-# Marker → bbox face mapping (dtcc-core volumemesh convention)
+# Canonical dtcc bbox marker mapping.
 BBOX_MARKER_NORMALS: Dict[int, Tuple[float, float, float]] = {
     -3: (-1.0, 0.0, 0.0),  # xmin face
     -4: (1.0, 0.0, 0.0),  # xmax face
@@ -618,9 +617,6 @@ def select_inlet_outlet(
 ) -> Tuple[int, Optional[int]]:
     """Choose inlet and outlet bbox markers from wind direction.
 
-    Uses the known marker→normal mapping in :data:`BBOX_MARKER_NORMALS`.
-    The top face (-2) is excluded.
-
     Returns
     -------
     (inlet_marker, outlet_marker)  — outlet_marker is None for closed cavities.
@@ -634,24 +630,13 @@ def select_inlet_outlet(
     else:
         outlet_override = params.outlet_marker  # could be None → auto-detect
 
-    marker_normals = BBOX_MARKER_NORMALS
-    if mesh is not None and markers is not None:
-        inferred_normals = _infer_bbox_marker_normals(mesh, markers)
-        if len(inferred_normals) >= 2:
-            marker_normals = inferred_normals
-            if mesh.comm.rank == 0:
-                info(
-                    "UrbanWind: inferred lateral bbox marker orientations: "
-                    + ", ".join(
-                        f"{m}->{tuple(np.round(n, 3))}"
-                        for m, n in sorted(marker_normals.items())
-                    )
-                )
-        elif mesh.comm.rank == 0:
-            warning(
-                "UrbanWind: could not infer lateral bbox marker orientations "
-                "from mesh; falling back to built-in marker mapping."
-            )
+    _ = mesh, markers  # retained for backward compatibility with older call sites
+
+    marker_normals = {
+        marker: normal
+        for marker, normal in BBOX_MARKER_NORMALS.items()
+        if abs(normal[2]) <= 0.5
+    }
 
     wx, wy = params.wind_vector_xy
     w = np.array([wx, wy])
@@ -696,81 +681,6 @@ def select_inlet_outlet(
     return inlet, outlet
 
 
-def _infer_bbox_marker_normals(
-    mesh: dolfinx.mesh.Mesh,
-    markers: dolfinx.mesh.MeshTags,
-    top_tag: int = -2,
-    ground_tag: int = -1,
-) -> Dict[int, Tuple[float, float, float]]:
-    """Infer lateral bbox marker normals from facet centroids.
-
-    This makes inlet/outlet selection robust to mesh-generator marker
-    permutations (e.g. when -3/-4/-5/-6 do not match the assumed order).
-    """
-    g = mesh.geometry.x
-    if g.shape[0] > 0:
-        local_xmin = float(np.min(g[:, 0]))
-        local_xmax = float(np.max(g[:, 0]))
-        local_ymin = float(np.min(g[:, 1]))
-        local_ymax = float(np.max(g[:, 1]))
-    else:
-        local_xmin = float("inf")
-        local_xmax = float("-inf")
-        local_ymin = float("inf")
-        local_ymax = float("-inf")
-    xmin = float(mesh.comm.allreduce(local_xmin, op=MPI.MIN))
-    xmax = float(mesh.comm.allreduce(local_xmax, op=MPI.MAX))
-    ymin = float(mesh.comm.allreduce(local_ymin, op=MPI.MIN))
-    ymax = float(mesh.comm.allreduce(local_ymax, op=MPI.MAX))
-
-    vals = np.asarray(markers.values, dtype=np.int32)
-    local_markers = sorted(
-        set(int(v) for v in vals if v < ground_tag and int(v) != int(top_tag))
-    )
-    all_markers = mesh.comm.allgather(local_markers)
-    lateral_markers = sorted(set().union(*[set(v) for v in all_markers]))
-
-    fdim = mesh.topology.dim - 1
-    inferred: Dict[int, Tuple[float, float, float]] = {}
-    for marker in lateral_markers:
-        facets = markers.find(int(marker))
-        if len(facets) > 0:
-            mids = dolfinx.mesh.compute_midpoints(mesh, fdim, facets)
-            local_sum_x = float(np.sum(mids[:, 0]))
-            local_sum_y = float(np.sum(mids[:, 1]))
-            local_count = int(len(facets))
-        else:
-            local_sum_x = 0.0
-            local_sum_y = 0.0
-            local_count = 0
-
-        sum_x = float(mesh.comm.allreduce(local_sum_x, op=MPI.SUM))
-        sum_y = float(mesh.comm.allreduce(local_sum_y, op=MPI.SUM))
-        count = int(mesh.comm.allreduce(local_count, op=MPI.SUM))
-        if count == 0:
-            continue
-
-        cx = sum_x / count
-        cy = sum_y / count
-        dists = {
-            "xmin": abs(cx - xmin),
-            "xmax": abs(cx - xmax),
-            "ymin": abs(cy - ymin),
-            "ymax": abs(cy - ymax),
-        }
-        face = min(dists, key=dists.get)
-        if face == "xmin":
-            inferred[int(marker)] = (-1.0, 0.0, 0.0)
-        elif face == "xmax":
-            inferred[int(marker)] = (1.0, 0.0, 0.0)
-        elif face == "ymin":
-            inferred[int(marker)] = (0.0, -1.0, 0.0)
-        else:
-            inferred[int(marker)] = (0.0, 1.0, 0.0)
-
-    return inferred
-
-
 # ---------------------------------------------------------------------------
 # Helpers — marker validation
 # ---------------------------------------------------------------------------
@@ -801,7 +711,7 @@ def _validate_bbox_markers(
         raise RuntimeError(
             f"UrbanWind: inlet marker {inlet_marker} not found in mesh tags.  "
             f"Available markers: {sorted(global_available)}.  "
-            f"Expected BBOX_MARKER_NORMALS keys: {sorted(BBOX_MARKER_NORMALS.keys())}."
+            f"Expected bbox markers: {sorted(BBOX_MARKER_NORMALS.keys())}."
         )
 
     # Check outlet marker
@@ -1340,6 +1250,8 @@ class UrbanWindSimulator:
         fdim: int,
         inlet_marker: int,
         outlet_marker: Optional[int],
+        top_marker: int,
+        lateral_marker_normals: Dict[int, Tuple[float, float, float]],
         hmin: float,
         use_weak_slip: bool,
     ) -> Any:
@@ -1421,18 +1333,18 @@ class UrbanWindSimulator:
                 u_zero_y = Function(V_uy)
                 u_zero_z = Function(V_uz)
 
-                top_facets = self.markers.find(-2)
+                top_facets = self.markers.find(int(top_marker))
                 if len(top_facets) > 0:
                     dofs_z = locate_dofs_topological((W_uz, V_uz), fdim, top_facets)
                     bcs_mixed.append(dirichletbc(u_zero_z, dofs_z, W_uz))
 
-                for marker in (-3, -4, -5, -6):
+                for marker, normal in lateral_marker_normals.items():
                     if marker == inlet_marker or marker == outlet_marker:
                         continue
                     facets = self.markers.find(marker)
                     if len(facets) == 0:
                         continue
-                    if marker in (-3, -4):
+                    if abs(normal[0]) >= abs(normal[1]):
                         dofs_x = locate_dofs_topological((W_ux, V_ux), fdim, facets)
                         bcs_mixed.append(dirichletbc(u_zero_x, dofs_x, W_ux))
                     else:
@@ -1748,8 +1660,14 @@ class UrbanWindSimulator:
         # ---- boundary setup ----
         self.num_buildings = infer_num_buildings(mesh, self.markers)
         info(f"UrbanWind: inferred {self.num_buildings} buildings")
+        top_marker = -2
+        lateral_marker_normals = {
+            marker: normal
+            for marker, normal in BBOX_MARKER_NORMALS.items()
+            if marker != top_marker and abs(normal[2]) <= 0.5
+        }
 
-        inlet_marker, outlet_marker = select_inlet_outlet(params, mesh=mesh, markers=self.markers)
+        inlet_marker, outlet_marker = select_inlet_outlet(params)
         self._has_outlet = outlet_marker is not None and not params.closed_cavity
 
         # --- Validate that expected bbox markers exist in the mesh ---
@@ -1762,6 +1680,7 @@ class UrbanWindSimulator:
             f"outlet marker = {outlet_marker}"
             f"{'' if self._has_outlet else ' (closed cavity – no outlet)'}"
         )
+        info(f"UrbanWind: top marker = {top_marker}")
         info(f"UrbanWind: side/top boundary model = {params.side_top_boundary}")
 
         self.category_markers = categorize_boundary(
@@ -1770,6 +1689,7 @@ class UrbanWindSimulator:
             self.num_buildings,
             inlet_marker=inlet_marker,
             outlet_marker=outlet_marker,
+            top_tag=top_marker,
         )
 
         # ---- function spaces (Taylor–Hood) ----
@@ -1864,10 +1784,6 @@ class UrbanWindSimulator:
                 bcs_vel.append(dirichletbc(u_zero, dofs))
 
         # Optional free-slip/no-penetration on side and top bbox faces.
-        # We enforce axis-aligned normal components strongly:
-        # top (-2): u_z = 0
-        # x-faces (-3/-4): u_x = 0, y-faces (-5/-6): u_y = 0
-        # for faces not selected as inlet/outlet.
         if side_top_slip:
             if use_weak_slip:
                 weak_slip_tags = [int(BndCat.SIDE), int(BndCat.TOP)]
@@ -1879,21 +1795,20 @@ class UrbanWindSimulator:
             else:
                 if rank0:
                     info("UrbanWind: setup phase 1c/5 - applying side/top slip BCs")
-                top_facets = self.markers.find(-2)
+                top_facets = self.markers.find(int(top_marker))
                 if len(top_facets) > 0:
                     if rank0:
                         info("UrbanWind: setup phase 1c.1 - top uz dofs")
                     dofs_z = locate_dofs_topological(V.sub(2), fdim, top_facets)
                     bcs_vel.append(dirichletbc(PETSc.ScalarType(0.0), dofs_z, V.sub(2)))
 
-                side_markers = [-3, -4, -5, -6]
-                for marker in side_markers:
+                for marker, normal in lateral_marker_normals.items():
                     if marker == inlet_marker or marker == outlet_marker:
                         continue
                     facets = self.markers.find(marker)
                     if len(facets) == 0:
                         continue
-                    if marker in (-3, -4):
+                    if abs(normal[0]) >= abs(normal[1]):
                         if rank0:
                             info(
                                 f"UrbanWind: setup phase 1c.2 - side marker {marker} ux dofs"
@@ -1960,6 +1875,8 @@ class UrbanWindSimulator:
                 fdim=fdim,
                 inlet_marker=inlet_marker,
                 outlet_marker=outlet_marker,
+                top_marker=top_marker,
+                lateral_marker_normals=lateral_marker_normals,
                 hmin=hmin,
                 use_weak_slip=use_weak_slip,
             )

@@ -66,36 +66,6 @@ class TestInletOutletSelection:
         assert inlet == -5
         assert outlet == -6
 
-    def test_mesh_inference_overrides_static_marker_ids(self, monkeypatch):
-        """When mesh inference is available, inlet/outlet follow inferred normals."""
-        import dtcc_sim.urban_wind as uw
-
-        class _Comm:
-            rank = 0
-
-        class _Mesh:
-            comm = _Comm()
-
-        # Deliberately rotated marker->normal mapping:
-        # marker -5 acts as xmin, marker -4 acts as xmax.
-        inferred = {
-            -3: (0.0, 1.0, 0.0),
-            -4: (1.0, 0.0, 0.0),
-            -5: (-1.0, 0.0, 0.0),
-            -6: (0.0, -1.0, 0.0),
-        }
-
-        monkeypatch.setattr(
-            uw, "_infer_bbox_marker_normals", lambda mesh, markers: inferred
-        )
-
-        # Wind from west -> flow +x: inlet should be xmin-normal marker (-5),
-        # outlet should be xmax-normal marker (-4).
-        params = uw.UrbanWindParameters(wind_speed=5.0, wind_dir_deg=270.0)
-        inlet, outlet = uw.select_inlet_outlet(params, mesh=_Mesh(), markers=object())
-        assert inlet == -5
-        assert outlet == -4
-
 
 # ---------------------------------------------------------------------------
 # 2) Wind vector computation
