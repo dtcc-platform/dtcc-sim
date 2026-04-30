@@ -890,8 +890,18 @@ def cell_markers_to_facet_markers(
     return dolfinx.mesh.meshtags(mesh, fdim, fi[perm], fv[perm])
 
 
+def _ensure_parent_dir(filename: str) -> str:
+    """Create the parent directory for an output file if needed."""
+    filename = os.fspath(filename)
+    dirname = os.path.dirname(os.path.abspath(filename))
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+    return filename
+
+
 def _save_mesh(self: dolfinx.mesh.Mesh, filename: str) -> None:
     """Monkeypatched convenience: `mesh.save("file.xdmf")`."""
+    filename = _ensure_parent_dir(filename)
     info(f"Saving mesh to file {filename}")
     if not filename.endswith(".xdmf"):
         raise ValueError("Mesh.save: filename must end with .xdmf")
@@ -901,6 +911,7 @@ def _save_mesh(self: dolfinx.mesh.Mesh, filename: str) -> None:
 
 def _save_function(self: Function, filename: str, t: Optional[float] = None) -> None:
     """Monkeypatched convenience: `u.save("file.xdmf", t=...)`."""
+    filename = _ensure_parent_dir(filename)
     info(f"Saving function to file {filename}")
     if not filename.endswith(".xdmf"):
         raise ValueError("Function.save: filename must end with .xdmf")

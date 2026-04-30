@@ -8,27 +8,32 @@ incompressible Stokes equations. The solution is saved as XDMF for
 inspection in ParaView.
 """
 
-from pathlib import Path
 from mpi4py import MPI
 
-import dtcc_core.datasets as datasets
+import dtcc_core as dtcc
 from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
 
-# Output directory
-output_dir = Path(__file__).parent / "output"
-output_dir.mkdir(exist_ok=True)
+# Center coordinates (Poseidon statue in Gothenburg)
+x0 = 319995.962899
+y0 = 6399009.716755
 
-# Gothenburg city centre (SWEREF 99 TM)
-x0 = 319_995.96
-y0 = 6_399_009.72
-L = 200.0
-bounds = (x0, y0, x0 + L, y0 + L)
+# Meshing parameters
+H = 80.0   # domain height
+L = 100.0  # domain size (use 500m to get same domain as in dtcc-core demo build_meshes.py)
+h = 10.0   # max mesh size (needs to be smaller than 25m to get a sensible solution)
+d = 1.0    # min building detail
+
+# Define bounds
+bounds = dtcc.Bounds(x0 - 0.5 * L, y0 - 0.5 * L, x0 + 0.5 * L, y0 + 0.5 * L)
 
 # Simulation parameters
 params = UrbanWindParameters(
     equations="stokes",
     wind_speed=5.0,
     wind_dir_deg=270.0,
+    mesh_max_mesh_size=h,
+    mesh_domain_height=H,
+    mesh_min_building_detail=d,
     nu_t=2.0,
     side_top_boundary="slip",
     inlet_profile="log_law",
@@ -38,16 +43,14 @@ params = UrbanWindParameters(
 
 # Surface mesh for visualization
 if MPI.COMM_WORLD.rank == 0:
-    surface_mesh = datasets.city_surface_mesh(
+    surface_mesh = dtcc.datasets.city_surface_mesh(
         bounds=bounds,
-        max_mesh_size=params.mesh_max_mesh_size,
-        raster_cell_size=params.mesh_raster_cell_size,
-        raster_radius=params.mesh_raster_radius,
+        max_mesh_size=h,
+        min_building_detail=d,
     )
     surface_mesh.offset_to_origin()
-    surface_mesh_path = output_dir / "urban_wind_stokes_simulation_surface_mesh.vtu"
-    surface_mesh.save(surface_mesh_path)
+    surface_mesh.save("output/urban_wind_stokes_simulation_surface_mesh.vtu")
 
 # Run flow simulation
 sim = UrbanWindSimulator(bounds=bounds, params=params)
-sim.simulate(output_path=str(output_dir / "urban_wind_stokes_simulation.xdmf"))
+sim.simulate(output_path="output/urban_wind_stokes_simulation.xdmf")

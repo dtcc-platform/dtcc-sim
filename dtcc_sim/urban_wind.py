@@ -75,6 +75,7 @@ from ufl import (
 
 from dtcc_sim.fenics import (
     FunctionSpace,
+    _ensure_parent_dir,
     info,
     warning,
     load_mesh_with_markers,
@@ -231,6 +232,9 @@ class UrbanWindParameters(BaseModel):
     # ---- 2.3 Mesh parameters ----
     mesh_max_mesh_size: float = Field(25.0, description="Max mesh element size [m]")
     mesh_domain_height: float = Field(80.0, description="Domain height [m]")
+    mesh_min_building_detail: float = Field(
+        0.5, description="Minimum building feature size to resolve [m]"
+    )
     mesh_raster_cell_size: float = Field(2.0, description="Terrain raster cell size")
     mesh_raster_radius: float = Field(
         3.0, description="Terrain raster interpolation radius"
@@ -1018,6 +1022,7 @@ class UrbanWindSimulator:
                 bounds=self.bounds,
                 max_mesh_size=self.params.mesh_max_mesh_size,
                 domain_height=self.params.mesh_domain_height,
+                min_building_detail=self.params.mesh_min_building_detail,
                 raster_cell_size=self.params.mesh_raster_cell_size,
                 raster_radius=self.params.mesh_raster_radius,
             )
@@ -1190,6 +1195,8 @@ class UrbanWindSimulator:
         base, ext = os.path.splitext(output_path)
         vel_path = f"{base}_velocity{ext}"
         pres_path = f"{base}_pressure{ext}"
+        _ensure_parent_dir(vel_path)
+        _ensure_parent_dir(pres_path)
 
         with XDMFFile(mesh.comm, vel_path, "w") as xdmf:
             xdmf.write_mesh(mesh)
