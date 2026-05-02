@@ -14,6 +14,36 @@ supported by Sweden’s Innovation Agency Vinnova under Grant No. 2019-421 00041
 This project is documented as part of the
 [DTCC Platform Documentation](https://platform.dtcc.chalmers.se/).
 
+## Dataset Integration
+
+`dtcc-sim` registers simulation datasets into the `dtcc_core.datasets`
+registry when `dtcc_sim.datasets` is imported:
+
+    import dtcc_core.datasets as datasets
+    import dtcc_sim.datasets
+
+    result = datasets.urban_wind_simulation(bounds=[xmin, ymin, xmax, ymax])
+
+Simulation datasets follow the same descriptor contract as core datasets:
+
+- `format=None` returns a Python simulation result.
+- `format=<value>` returns serialized bytes for direct download paths.
+- `describe()` exposes `data_category="simulation"`, `result_kind`,
+  `python_return_type`, `supported_formats`, and `timeout_hint`.
+
+Current simulation datasets:
+
+| Dataset | Python result | Formats | Notes |
+| --- | --- | --- | --- |
+| `urban_heat_simulation` | `dolfinx.fem.Function` | `xdmf` | Steady-state heat equation. `xdmf` is multi-file. |
+| `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf` | PDE-smoothed sensor field. `xdmf` is multi-file. |
+| `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `pb` | CFD wind result with velocity, pressure, and speed fields. |
+
+The service wrapper strips `format` before running a dataset, then serializes
+the returned Python object in `service.results.handle_result()`. This is
+intentional: it preserves companion files for multi-file outputs such as
+`xdmf`.
+
 ## Installation
 
 ### Install Conda

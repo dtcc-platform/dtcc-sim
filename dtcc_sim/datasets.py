@@ -99,8 +99,11 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
         "bounds and returns temperature field as FEniCSx Function."
     )
     ArgsModel = UrbanHeatSimulationArgs
+    data_category = "simulation"
     result_kind = "mesh"
+    python_return_type = "dolfinx.fem.Function"
     timeout_hint = 600
+    multi_file_formats = ("xdmf",)
 
     def build(self, args):
         bounds = self.parse_bounds(args.bounds)
@@ -252,8 +255,11 @@ class AirQualityFieldDataset(DatasetDescriptor):
         "Supports multiple pollutants (NO2, PM10, O3, etc.) with configurable regularization."
     )
     ArgsModel = AirQualityFieldArgs
+    data_category = "simulation"
     result_kind = "mesh"
+    python_return_type = "dtcc_core.model.VolumeMesh"
     timeout_hint = 300
+    multi_file_formats = ("xdmf",)
 
     def build(self, args):
         import dtcc_core.datasets as datasets
@@ -392,7 +398,9 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         "and speed fields suitable for pedestrian-comfort and urban-ventilation studies."
     )
     ArgsModel = UrbanWindSimulationArgs
+    data_category = "simulation"
     result_kind = "mesh"
+    python_return_type = "dtcc_core.model.VolumeMesh"
     timeout_hint = 1800
 
     def build(self, args):

@@ -89,14 +89,18 @@ def list_datasets():
     dataset_info = {}
     for name, ds in service_datasets.items():
         schema = ds.show_options()
-        formats = _extract_formats(schema)
+        descriptor = ds.describe() if hasattr(ds, "describe") else {}
+        formats = descriptor.get("supported_formats") or _extract_formats(schema)
 
         dataset_info[name] = {
             "name": name,
             "description": ds.description,
             "args_schema": schema,
+            "data_category": descriptor.get("data_category", "simulation"),
             "result_kind": getattr(ds, "result_kind", "unknown"),
+            "python_return_type": descriptor.get("python_return_type", "object"),
             "supported_formats": formats or ["bin"],
+            "formats": descriptor.get("formats", []),
             "timeout_hint": getattr(ds, "timeout_hint", None),
         }
 
