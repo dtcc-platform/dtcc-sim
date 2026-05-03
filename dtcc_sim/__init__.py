@@ -20,11 +20,17 @@ from .urban_wind import (
     UrbanWindParameters,
     BndCat as WindBndCat,
 )
+from .traffic import (
+    TrafficAssignmentSimulator,
+    TrafficAssignmentParameters,
+)
 from .datasets import (
     UrbanHeatSimulationArgs,
     UrbanHeatSimulationDataset,
     AirQualityFieldArgs,
     AirQualityFieldDataset,
+    TrafficSimulationArgs,
+    TrafficSimulationDataset,
     UrbanWindSimulationArgs,
     UrbanWindSimulationDataset,
 )
@@ -55,10 +61,14 @@ __all__ = [
     "UrbanWindSimulator",
     "UrbanWindParameters",
     "WindBndCat",
+    "TrafficAssignmentSimulator",
+    "TrafficAssignmentParameters",
     "UrbanHeatSimulationArgs",
     "UrbanHeatSimulationDataset",
     "AirQualityFieldArgs",
     "AirQualityFieldDataset",
+    "TrafficSimulationArgs",
+    "TrafficSimulationDataset",
     "UrbanWindSimulationArgs",
     "UrbanWindSimulationDataset",
 ]

@@ -17,6 +17,7 @@ from .smooth_reconstruction import (
     SmoothReconstructionParameters,
 )
 from .urban_wind import UrbanWindSimulator, UrbanWindParameters
+from .traffic import TrafficAssignmentSimulator, TrafficAssignmentParameters
 
 
 class UrbanHeatSimulationArgs(DatasetBaseArgs):
@@ -317,11 +318,151 @@ class AirQualityFieldDataset(DatasetDescriptor):
         return volume_mesh
 
 
+# ---------------------------------------------------------------------------
+# Traffic Simulation Dataset
+# ---------------------------------------------------------------------------
+
+
+class TrafficSimulationArgs(DatasetBaseArgs):
+    """Arguments for static road traffic simulation."""
+
+    trips_per_employed: float = Field(
+        2.0,
+        ge=0.0,
+        description="Daily vehicle-trip production per employed resident.",
+    )
+    peak_hour_factor: float = Field(
+        0.10,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of daily trips assigned to the simulated peak hour.",
+    )
+    population_attraction_weight: float = Field(
+        0.25,
+        ge=0.0,
+        description="Attraction weight for DeSO population.",
+    )
+    employment_attraction_weight: float = Field(
+        1.0,
+        ge=0.0,
+        description="Attraction weight for employed residents.",
+    )
+    gravity_gamma: float = Field(
+        0.08,
+        ge=0.0,
+        description="Gravity model decay per minute of free-flow travel time.",
+    )
+    alpha: float = Field(0.15, ge=0.0, description="BPR alpha parameter.")
+    beta: float = Field(4.0, gt=0.0, description="BPR beta parameter.")
+    capacity_per_lane: float = Field(
+        1800.0,
+        gt=0.0,
+        description="Nominal hourly road capacity per lane.",
+    )
+    background_flow_fraction: float = Field(
+        0.0,
+        ge=0.0,
+        description=(
+            "Exogenous background traffic as a fraction of each directed arc capacity."
+        ),
+    )
+    default_speed_kmh: float = Field(
+        40.0,
+        gt=0.0,
+        description="Fallback speed for roads without OSM maxspeed/highway data.",
+    )
+    default_lanes: float = Field(
+        2.0,
+        gt=0.0,
+        description="Fallback physical lane count for roads without OSM lanes data.",
+    )
+    bidirectional: bool = Field(
+        True,
+        description="Use reverse arcs for non-oneway road segments.",
+    )
+    max_iterations: int = Field(
+        30,
+        ge=1,
+        description="Maximum Frank-Wolfe assignment iterations.",
+    )
+    relative_gap_tolerance: float = Field(
+        1.0e-4,
+        ge=0.0,
+        description="Relative assignment gap convergence tolerance.",
+    )
+    statistics_year: Optional[int] = Field(
+        None,
+        description="Reference year for DeSO statistics; defaults to latest per topic.",
+    )
+    format: Optional[Literal["pb"]] = Field(None, description="Output format")
+
+
+class TrafficSimulationDataset(DatasetDescriptor):
+    """Static traffic assignment as a DTCC simulation dataset.
+
+    Builds roads and DeSO statistics from the requested bounds, creates a
+    synthetic gravity-model OD matrix, and solves a Wardrop user-equilibrium
+    road assignment with BPR volume-delay costs using Frank-Wolfe.
+    """
+
+    name = "traffic_simulation"
+    description = (
+        "Static road traffic assignment on a DTCC RoadNetwork. Downloads roads and "
+        "DeSO statistics, builds a synthetic gravity-model OD matrix, and solves a "
+        "Wardrop user-equilibrium assignment with BPR link costs using Frank-Wolfe. "
+        "Returns a RoadNetwork with flow, capacity, travel_time, speed, and "
+        "volume_capacity_ratio edge attributes."
+    )
+    ArgsModel = TrafficSimulationArgs
+    data_category = "simulation"
+    result_kind = "road_network"
+    python_return_type = "dtcc_core.model.RoadNetwork"
+    timeout_hint = 600
+
+    def build(self, args):
+        import dtcc_core.datasets as datasets
+
+        bounds = self.parse_bounds(args.bounds)
+        roads = datasets.roads(bounds=bounds)
+        deso = datasets.deso(
+            bounds=bounds,
+            statistics=["population", "cars", "employment"],
+            statistics_year=args.statistics_year,
+        )
+        params = TrafficAssignmentParameters(
+            trips_per_employed=args.trips_per_employed,
+            peak_hour_factor=args.peak_hour_factor,
+            population_attraction_weight=args.population_attraction_weight,
+            employment_attraction_weight=args.employment_attraction_weight,
+            gravity_gamma=args.gravity_gamma,
+            alpha=args.alpha,
+            beta=args.beta,
+            capacity_per_lane=args.capacity_per_lane,
+            background_flow_fraction=args.background_flow_fraction,
+            default_speed_kmh=args.default_speed_kmh,
+            default_lanes=args.default_lanes,
+            bidirectional=args.bidirectional,
+            max_iterations=args.max_iterations,
+            relative_gap_tolerance=args.relative_gap_tolerance,
+        )
+        result = TrafficAssignmentSimulator(
+            roads=roads,
+            zones=deso,
+            params=params,
+        ).simulate()
+
+        if args.format == "pb":
+            return result.to_proto().SerializeToString()
+        return result
+
+
 __all__ = [
     "UrbanHeatSimulationArgs",
     "UrbanHeatSimulationDataset",
     "AirQualityFieldArgs",
     "AirQualityFieldDataset",
+    "TrafficSimulationArgs",
+    "TrafficSimulationDataset",
     "UrbanWindSimulationArgs",
     "UrbanWindSimulationDataset",
 ]

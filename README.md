@@ -38,6 +38,7 @@ Current simulation datasets:
 | `urban_heat_simulation` | `dolfinx.fem.Function` | `xdmf` | Steady-state heat equation. `xdmf` is multi-file. |
 | `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf` | PDE-smoothed sensor field. `xdmf` is multi-file. |
 | `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `pb` | CFD wind result with velocity, pressure, and speed fields. |
+| `traffic_simulation` | `dtcc_core.model.RoadNetwork` | `pb` | Static user-equilibrium road assignment with synthetic DeSO demand. |
 
 The service wrapper strips `format` before running a dataset, then serializes
 the returned Python object in `service.results.handle_result()`. This is
