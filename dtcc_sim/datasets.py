@@ -11,12 +11,6 @@ from pydantic import Field
 
 from dtcc_core.datasets import DatasetDescriptor, DatasetBaseArgs
 
-from .urban_heat import UrbanHeatSimulator, UrbanHeatParameters
-from .smooth_reconstruction import (
-    SmoothReconstructionSimulator,
-    SmoothReconstructionParameters,
-)
-from .urban_wind import UrbanWindSimulator, UrbanWindParameters
 from .traffic import TrafficAssignmentSimulator, TrafficAssignmentParameters
 
 
@@ -107,6 +101,8 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
     multi_file_formats = ("xdmf",)
 
     def build(self, args):
+        from .urban_heat import UrbanHeatSimulator, UrbanHeatParameters
+
         bounds = self.parse_bounds(args.bounds)
         params = UrbanHeatParameters(
             kappa=args.kappa,
@@ -263,6 +259,11 @@ class AirQualityFieldDataset(DatasetDescriptor):
     multi_file_formats = ("xdmf",)
 
     def build(self, args):
+        from .smooth_reconstruction import (
+            SmoothReconstructionSimulator,
+            SmoothReconstructionParameters,
+        )
+
         import dtcc_core.datasets as datasets
 
         bounds = self.parse_bounds(args.bounds)
@@ -545,6 +546,8 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
     timeout_hint = 1800
 
     def build(self, args):
+        from .urban_wind import UrbanWindSimulator, UrbanWindParameters
+
         bounds = self.parse_bounds(args.bounds)
         params = UrbanWindParameters(
             equations=args.equations,
