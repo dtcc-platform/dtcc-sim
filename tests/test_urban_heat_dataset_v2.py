@@ -60,7 +60,7 @@ def test_urban_heat_dataset_xdmf_serializes_fenics_solution(monkeypatch):
         assert fmt == "xdmf"
         return b"xdmf"
 
-    monkeypatch.setattr("dtcc_sim.datasets.UrbanHeatSimulator", FakeSimulator)
+    monkeypatch.setattr("dtcc_sim.urban_heat.UrbanHeatSimulator", FakeSimulator)
     monkeypatch.setattr(dataset, "export_to_bytes", fake_export)
 
     payload = dataset.build(
