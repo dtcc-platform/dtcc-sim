@@ -349,14 +349,16 @@ class SmoothReconstructionSimulator:
 
         return weights
 
-    def simulate(self, *, output_path: Optional[str] = None) -> Function:
+    def simulate(self, *, output_path: Optional[str] = None) -> Any:
         """Run the smooth field reconstruction.
 
         Args:
             output_path: Optional path to save solution (XDMF format)
 
         Returns:
-            Reconstructed field as dolfinx Function
+            A dtcc-core VolumeMesh with the reconstructed Field when this
+            simulator built the mesh from bounds; otherwise the reconstructed
+            field as a dolfinx Function.
         """
         # Load mesh and prepare point data
         self._load_if_needed()
@@ -492,7 +494,53 @@ class SmoothReconstructionSimulator:
             info(f"SmoothReconstruction: Saving solution to {output_path}")
             self.solution.save(output_path)
 
+        if self.volume_mesh_dtcc is not None:
+            return _attach_scalar_field_to_volume_mesh(
+                self.mesh,
+                self.solution,
+                self.volume_mesh_dtcc,
+                name=self.field_name,
+                unit=self.field_unit,
+            )
+
         return self.solution
+
+
+def _attach_scalar_field_to_volume_mesh(
+    dolfinx_mesh: dolfinx.mesh.Mesh,
+    solution: Function,
+    volume_mesh_dtcc: Any,
+    *,
+    name: str,
+    unit: str,
+) -> Any:
+    """Attach a scalar dolfinx solution to a dtcc-core VolumeMesh."""
+    from dtcc_core.model import Field as DtccField
+    from dtcc_sim.urban_wind import _evaluate_function_at_vertices, _reorder_by_coords
+
+    values = _evaluate_function_at_vertices(dolfinx_mesh, solution).reshape(-1, 1)
+    fem_verts = np.asarray(dolfinx_mesh.geometry.x, dtype=np.float64)
+    dtcc_verts = np.asarray(volume_mesh_dtcc.vertices, dtype=np.float64)
+
+    decimals = 6
+    fem_keys = np.round(fem_verts - np.min(fem_verts, axis=0), decimals)
+    dtcc_keys = np.round(dtcc_verts - np.min(dtcc_verts, axis=0), decimals)
+    mapped = _reorder_by_coords(fem_keys, values, dtcc_keys)
+
+    field = DtccField(
+        name=name,
+        dim=1,
+        values=mapped,
+        unit=unit,
+        description=f"Reconstructed scalar field {name}",
+    )
+    existing_fields = [
+        existing
+        for existing in getattr(volume_mesh_dtcc, "fields", [])
+        if getattr(existing, "name", None) != name
+    ]
+    volume_mesh_dtcc.fields = [*existing_fields, field]
+    return volume_mesh_dtcc
 
 
 __all__ = ["SmoothReconstructionParameters", "SmoothReconstructionSimulator"]
