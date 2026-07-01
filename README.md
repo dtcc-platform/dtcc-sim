@@ -35,16 +35,16 @@ Current simulation datasets:
 
 | Dataset | Python result | Formats | Notes |
 | --- | --- | --- | --- |
-| `urban_heat_simulation` | `dolfinx.fem.Function` | `xdmf` | Steady-state heat equation. `xdmf` is multi-file. Dataset v2 alignment gap: still needs a native DTCC mesh plus temperature `Field` return. |
+| `urban_heat_simulation` | `dtcc_core.model.VolumeMesh` | `xdmf` | Steady-state heat equation with temperature attached as a `Field`. `xdmf` is multi-file. |
 | `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf` | PDE-smoothed sensor field attached as a `Field`. `xdmf` is multi-file. |
 | `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `pb` | CFD wind result with velocity, pressure, and speed fields. |
 | `traffic_simulation` | `dtcc_core.model.RoadNetwork` | `pb` | Static user-equilibrium road assignment with synthetic DeSO demand. |
 
-Dataset v2 review status: `air_quality_field`, `urban_wind_simulation`, and
-`traffic_simulation` return native DTCC model objects when `format` is omitted.
-`urban_heat_simulation` is the remaining known exception and should be migrated
-to return a `VolumeMesh` with a temperature `Field` before it is advertised as
-fully object-first.
+Dataset v2 review status: all registered simulation datasets return native DTCC
+model objects when `format` is omitted. `urban_heat_simulation` and
+`air_quality_field` return `VolumeMesh` objects with scalar fields attached;
+`urban_wind_simulation` returns a `VolumeMesh` with velocity, pressure, and
+speed fields; `traffic_simulation` returns a `RoadNetwork`.
 
 The service wrapper strips `format` before running a dataset, then serializes
 the returned Python object in `service.results.handle_result()`. This is

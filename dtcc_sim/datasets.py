@@ -68,7 +68,7 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
         1. Takes a bounding box as input (geographic coordinates)
         2. Auto-generates a 3D tetrahedral volume mesh including buildings and terrain
         3. Solves the steady-state heat equation using finite elements
-        4. Returns the temperature field as a FEniCSx Function
+        4. Returns a DTCC VolumeMesh with the temperature field attached
 
     Example:
         >>> import dtcc_core.datasets as datasets
@@ -97,12 +97,12 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
         "boundary conditions on buildings, ground, and domain boundaries. Models air "
         "temperature distribution for urban heat island analysis, thermal comfort assessment, "
         "and climate adaptation studies. Automatically generates volume mesh from geographic "
-        "bounds and returns temperature field as FEniCSx Function."
+        "bounds and returns a DTCC VolumeMesh with a temperature Field."
     )
     ArgsModel = UrbanHeatSimulationArgs
     data_category = "simulation"
     result_kind = "mesh"
-    python_return_type = "dolfinx.fem.Function"
+    python_return_type = "dtcc_core.model.VolumeMesh"
     timeout_hint = 600
     multi_file_formats = ("xdmf",)
 
@@ -121,10 +121,15 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
             mesh_domain_height=args.mesh_domain_height,
         )
         sim = UrbanHeatSimulator(bounds=bounds, params=params)
-        T = sim.simulate()
+        result = sim.simulate()
         if args.format:
-            return self.export_to_bytes(T, args.format)
-        return T
+            if sim.solution is None:
+                raise RuntimeError(
+                    "urban_heat_simulation did not produce a FEniCS solution "
+                    f"for format={args.format!r} serialization."
+                )
+            return self.export_to_bytes(sim.solution, args.format)
+        return result
 
 
 class AirQualityFieldArgs(DatasetBaseArgs):
