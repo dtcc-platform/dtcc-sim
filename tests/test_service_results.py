@@ -4,6 +4,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pytest
+import dtcc_core.io
 from dtcc_core.model import Field, VolumeMesh
 
 from service import results
