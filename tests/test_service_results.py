@@ -1,7 +1,10 @@
 import tarfile
 from pathlib import Path
 
+import h5py
+import numpy as np
 import pytest
+from dtcc_core.model import Field, VolumeMesh
 
 from service import results
 
@@ -12,6 +15,25 @@ class _SavableResult:
 
     def save(self, target):
         self._writer(Path(target))
+
+
+def _field_volume_mesh(field_name="temperature"):
+    mesh = VolumeMesh(
+        vertices=np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            dtype=float,
+        ),
+        cells=np.array([[0, 1, 2, 3]], dtype=np.int64),
+    )
+    mesh.add_field(
+        Field(name=field_name, values=np.array([18.0, 19.0, 20.0, 21.0]), dim=1)
+    )
+    return mesh
 
 
 @pytest.fixture(autouse=True)
@@ -53,9 +75,100 @@ def test_handle_result_archives_multi_file_output(tmp_path):
         assert sorted(tar.getnames()) == ["data.h5", "data.xdmf"]
 
 
+@pytest.mark.parametrize("field_name", ["temperature", "NO2"])
+def test_handle_result_preserves_volume_mesh_fields_in_xdmf_archive(
+    tmp_path, field_name
+):
+    meta = results.handle_result(
+        _field_volume_mesh(field_name), "xdmf", f"job-{field_name}"
+    )
+
+    assert meta["result_file"] == f"job-{field_name}.tar.gz"
+    archive = tmp_path / f"job-{field_name}.tar.gz"
+
+    with tarfile.open(archive, "r:gz") as tar:
+        assert sorted(tar.getnames()) == ["data.h5", "data.xdmf"]
+        xdmf = tar.extractfile("data.xdmf").read().decode()
+        h5_bytes = tar.extractfile("data.h5").read()
+
+    assert f'Attribute Name="{field_name}"' in xdmf
+    h5_path = tmp_path / "extracted-data.h5"
+    h5_path.write_bytes(h5_bytes)
+    with h5py.File(h5_path, "r") as h5_file:
+        fields_group = h5_file["Mesh/mesh/fields"]
+        datasets = {
+            dataset.attrs["name"]: dataset[()] for dataset in fields_group.values()
+        }
+        np.testing.assert_allclose(
+            datasets[field_name], [18.0, 19.0, 20.0, 21.0]
+        )
+
+
+def test_handle_result_rejects_xdmf_that_drops_expected_fields():
+    def write_fieldless_xdmf_bundle(target):
+        target.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Xdmf Version="3.0">
+  <Domain>
+    <Grid Name="mesh" GridType="Uniform">
+      <Topology TopologyType="Tetrahedron" NumberOfElements="1" NodesPerElement="4">
+        <DataItem Format="HDF" NumberType="Int" Precision="8" Dimensions="1 4">
+          data.h5:/Mesh/mesh/topology
+        </DataItem>
+      </Topology>
+      <Geometry GeometryType="XYZ">
+        <DataItem Format="HDF" NumberType="Float" Precision="8" Dimensions="4 3">
+          data.h5:/Mesh/mesh/geometry
+        </DataItem>
+      </Geometry>
+    </Grid>
+  </Domain>
+</Xdmf>
+"""
+        )
+        with h5py.File(target.with_suffix(".h5"), "w") as h5_file:
+            mesh_group = h5_file.require_group("Mesh/mesh")
+            mesh_group.create_dataset(
+                "geometry", data=_field_volume_mesh().vertices, dtype="float64"
+            )
+            mesh_group.create_dataset(
+                "topology", data=_field_volume_mesh().cells, dtype="int64"
+            )
+
+    result = _SavableResult(write_fieldless_xdmf_bundle)
+    result.fields = _field_volume_mesh("temperature").fields
+
+    with pytest.raises(RuntimeError, match="temperature"):
+        results.handle_result(result, "xdmf", "job-fieldless")
+
+
+def test_handle_result_rejects_xdmf_with_missing_hdf5_companion():
+    def write_xdmf_without_hdf5(target):
+        target.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<Xdmf Version="3.0">
+  <Domain>
+    <Grid Name="mesh" GridType="Uniform">
+      <Topology TopologyType="Tetrahedron" NumberOfElements="1" NodesPerElement="4">
+        <DataItem Format="HDF" NumberType="Int" Precision="8" Dimensions="1 4">
+          data.h5:/Mesh/mesh/topology
+        </DataItem>
+      </Topology>
+    </Grid>
+  </Domain>
+</Xdmf>
+"""
+        )
+
+    with pytest.raises(RuntimeError, match="missing HDF5 companion"):
+        results.handle_result(_SavableResult(write_xdmf_without_hdf5), "xdmf", "job-7")
+
+
 def test_handle_result_requires_format_for_non_bytes():
     with pytest.raises(ValueError, match="format_ext is required"):
-        results.handle_result(_SavableResult(lambda target: target.write_bytes(b"x")), None, "job-4")
+        results.handle_result(
+            _SavableResult(lambda target: target.write_bytes(b"x")), None, "job-4"
+        )
 
 
 def test_handle_result_rejects_object_without_save():

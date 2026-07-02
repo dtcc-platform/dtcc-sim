@@ -320,7 +320,12 @@ class AirQualityFieldDataset(DatasetDescriptor):
         volume_mesh = sim.simulate()
 
         if args.format:
-            return self.export_to_bytes(volume_mesh, args.format)
+            if sim.solution is None:
+                raise RuntimeError(
+                    "air_quality_field did not produce a FEniCS solution "
+                    f"for format={args.format!r} serialization."
+                )
+            return self.export_to_bytes(sim.solution, args.format)
         return volume_mesh
 
 
