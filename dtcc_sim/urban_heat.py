@@ -17,6 +17,7 @@ import dolfinx
 from pydantic import BaseModel, Field
 
 from dtcc_sim.fenics import *  # FEniCSx wrapper
+from dtcc_sim.smooth_reconstruction import _attach_scalar_field_to_volume_mesh
 
 
 # -----------------------------------------------------------------------------
@@ -404,6 +405,7 @@ class UrbanHeatSimulator:
         self.num_buildings: Optional[int] = None
         self.category_markers: Optional[dolfinx.mesh.MeshTags] = None
         self.solution: Optional[Function] = None
+        self.volume_mesh_dtcc: Optional[Any] = None
 
     def _build_mesh_from_bounds(self) -> None:
         """Build volume mesh from bounds using dtcc_core.datasets.city_volume_mesh."""
@@ -425,6 +427,7 @@ class UrbanHeatSimulator:
             raster_cell_size=self.params.mesh_raster_cell_size,
             raster_radius=self.params.mesh_raster_radius,
         )
+        self.volume_mesh_dtcc = volume_mesh
 
         # Save to temporary file and load with FEniCSx
         import tempfile
@@ -510,14 +513,16 @@ class UrbanHeatSimulator:
 
         raise TypeError(f"Unsupported BC spec type: {type(spec)}")
 
-    def simulate(self, *, output_path: Optional[str] = None) -> Function:
+    def simulate(self, *, output_path: Optional[str] = None) -> Any:
         """Run the urban heat simulation.
 
         Args:
             output_path: Optional path to save solution (XDMF format)
 
         Returns:
-            Temperature field as dolfinx Function
+            A DTCC ``VolumeMesh`` with a temperature ``Field`` when the
+            simulator builds the mesh from bounds, otherwise the temperature
+            field as a dolfinx Function.
         """
         self._load_if_needed()
         assert self.mesh is not None and self.markers is not None
@@ -575,4 +580,24 @@ class UrbanHeatSimulator:
             info(f"UrbanHeat: Saving solution to {output_path}")
             self.solution.save(output_path)
 
+        if self.volume_mesh_dtcc is not None:
+            return self._attach_temperature_field()
+
         return self.solution
+
+    def _attach_temperature_field(self) -> Any:
+        if self.mesh is None or self.solution is None:
+            raise RuntimeError(
+                "UrbanHeatSimulator cannot attach a temperature field before "
+                "a mesh and solution are available."
+            )
+        if self.volume_mesh_dtcc is None:
+            return self.solution
+
+        return _attach_scalar_field_to_volume_mesh(
+            self.mesh,
+            self.solution,
+            self.volume_mesh_dtcc,
+            name="temperature",
+            unit="degC",
+        )
