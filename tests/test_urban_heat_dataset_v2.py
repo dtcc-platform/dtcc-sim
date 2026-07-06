@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from dtcc_sim.datasets import UrbanHeatSimulationArgs, UrbanHeatSimulationDataset
+
+pytest.importorskip("dolfinx", reason="urban heat dataset tests require dolfinx")
+
 from dtcc_sim.urban_heat import UrbanHeatSimulator
 
 

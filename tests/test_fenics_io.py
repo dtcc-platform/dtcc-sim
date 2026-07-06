@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("dolfinx", reason="FEniCS I/O tests require dolfinx")
+
 from dtcc_sim import fenics
 
 

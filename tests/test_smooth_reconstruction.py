@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from dtcc_core.model import Field
+
+pytest.importorskip("dolfinx", reason="smooth reconstruction tests require dolfinx")
+
 from dtcc_sim.smooth_reconstruction import _attach_scalar_field_to_volume_mesh
 
 

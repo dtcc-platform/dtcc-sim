@@ -10,6 +10,8 @@ import math
 import numpy as np
 import pytest
 
+pytest.importorskip("dolfinx", reason="urban wind tests require dolfinx")
+
 # ---------------------------------------------------------------------------
 # 1) Inlet / outlet face selection
 # ---------------------------------------------------------------------------
