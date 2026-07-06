@@ -406,6 +406,7 @@ class UrbanHeatSimulator:
         self.category_markers: Optional[dolfinx.mesh.MeshTags] = None
         self.solution: Optional[Function] = None
         self.volume_mesh_dtcc: Optional[Any] = None
+        self.diagnostics: dict[str, Any] = {}
 
     def _build_mesh_from_bounds(self) -> None:
         """Build volume mesh from bounds using dtcc_core.datasets.city_volume_mesh."""
@@ -574,6 +575,7 @@ class UrbanHeatSimulator:
         info("UrbanHeat: Solving linear system...")
         self.solution = solve(a == L, bcs=bcs, petsc_options=self.petsc_options)
         info("UrbanHeat: Solution complete")
+        self._record_diagnostics(V)
 
         # Output
         if output_path is not None:
@@ -585,6 +587,58 @@ class UrbanHeatSimulator:
 
         return self.solution
 
+    def _record_diagnostics(self, V: dolfinx.fem.FunctionSpace) -> None:
+        """Record finite, local solver diagnostics available after a solve."""
+        if self.mesh is None or self.solution is None:
+            raise RuntimeError("UrbanHeat diagnostics require mesh and solution.")
+
+        values = np.real(np.asarray(self.solution.x.array))
+        local_count = int(values.size)
+        if local_count:
+            local_min = float(np.min(values))
+            local_max = float(np.max(values))
+            local_sum = float(np.sum(values))
+            local_l2_sq = float(np.dot(values, values))
+        else:
+            local_min = float("inf")
+            local_max = float("-inf")
+            local_sum = 0.0
+            local_l2_sq = 0.0
+
+        comm = self.mesh.comm
+        global_count = int(comm.allreduce(local_count, op=MPI.SUM))
+        global_min = float(comm.allreduce(local_min, op=MPI.MIN))
+        global_max = float(comm.allreduce(local_max, op=MPI.MAX))
+        global_sum = float(comm.allreduce(local_sum, op=MPI.SUM))
+        global_l2_sq = float(comm.allreduce(local_l2_sq, op=MPI.SUM))
+
+        category_counts: dict[str, int] = {}
+        if self.category_markers is not None:
+            marker_values = np.asarray(self.category_markers.values, dtype=np.int32)
+            for category in BndCat:
+                local_category_count = int(
+                    np.count_nonzero(marker_values == int(category))
+                )
+                category_counts[category.name.lower()] = int(
+                    comm.allreduce(local_category_count, op=MPI.SUM)
+                )
+
+        self.diagnostics = {
+            "degrees_of_freedom": int(V.dofmap.index_map.size_global),
+            "num_buildings": int(self.num_buildings or 0),
+            "boundary_category_counts": category_counts,
+            "temperature_min": global_min if global_count else None,
+            "temperature_max": global_max if global_count else None,
+            "temperature_mean": (
+                global_sum / global_count if global_count else None
+            ),
+            "temperature_l2_norm": float(np.sqrt(global_l2_sq)),
+            "solver_convergence": "not_exposed_by_dtcc_sim_fenics_solve_wrapper",
+            "residual_l2_norm": None,
+            "residual_status": "not_available_from_dtcc_sim_fenics_solve_wrapper",
+            "petsc_options": dict(self.petsc_options),
+        }
+
     def _attach_temperature_field(self) -> Any:
         if self.mesh is None or self.solution is None:
             raise RuntimeError(
@@ -594,10 +648,12 @@ class UrbanHeatSimulator:
         if self.volume_mesh_dtcc is None:
             return self.solution
 
-        return _attach_scalar_field_to_volume_mesh(
+        result = _attach_scalar_field_to_volume_mesh(
             self.mesh,
             self.solution,
             self.volume_mesh_dtcc,
             name="temperature",
             unit="degC",
         )
+        setattr(result, "simulation_diagnostics", dict(self.diagnostics))
+        return result

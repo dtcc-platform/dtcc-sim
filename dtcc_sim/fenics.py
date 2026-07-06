@@ -9,6 +9,7 @@ to enable classic (pretty) FEniCS programming, in contrast to the verbose
 from __future__ import annotations
 
 import itertools
+import inspect
 import os
 from typing import (
     Any,
@@ -762,18 +763,18 @@ def solve(
     }
 
     # Newer dolfinx releases require a unique PETSc options prefix for
-    # LinearProblem-managed solvers; older releases reject the keyword.
-    prefix = f"dtcc_sim_linear_problem_{next(_LINEAR_PROBLEM_COUNTER)}_"
-    try:
+    # LinearProblem-managed solvers; older releases reject the keyword. Inspect
+    # first to avoid constructing a partially initialized LinearProblem that can
+    # warn during garbage collection.
+    if "petsc_options_prefix" in inspect.signature(LinearProblem).parameters:
+        prefix = f"dtcc_sim_linear_problem_{next(_LINEAR_PROBLEM_COUNTER)}_"
         problem = LinearProblem(
             a,
             L_form,
             petsc_options_prefix=prefix,
             **problem_kwargs,
         )
-    except TypeError as exc:
-        if "petsc_options_prefix" not in str(exc):
-            raise
+    else:
         problem = LinearProblem(a, L_form, **problem_kwargs)
     uh = problem.solve()
     return uh

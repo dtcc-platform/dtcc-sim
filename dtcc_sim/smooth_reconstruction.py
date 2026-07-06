@@ -168,6 +168,9 @@ class SmoothReconstructionSimulator:
         # Will be populated during simulation
         self.volume_mesh_dtcc: Optional[Any] = None  # dtcc-core VolumeMesh
         self.solution: Optional[Function] = None
+        self.diagnostics: dict[str, Any] = {}
+        self._raw_observation_count = 0
+        self._dropped_nonfinite_observation_count = 0
 
         # Enforce P1
         if self.params.degree != 1:
@@ -241,11 +244,28 @@ class SmoothReconstructionSimulator:
                 "These should be provided at initialization."
             )
 
-        points = self.point_coords.copy()
-        values = self.point_values.copy()
+        points = np.asarray(self.point_coords, dtype=float).copy()
+        values = np.asarray(self.point_values, dtype=float).reshape(-1).copy()
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError(
+                "SmoothReconstructionSimulator requires point_coords as an "
+                f"Nx3 array; got shape {points.shape}."
+            )
+        if points.shape[0] != values.size:
+            raise ValueError(
+                "SmoothReconstructionSimulator requires one point value per "
+                f"coordinate; got {points.shape[0]} coordinates and "
+                f"{values.size} values."
+            )
+        if not np.all(np.isfinite(points)):
+            raise ValueError(
+                "SmoothReconstructionSimulator point_coords must be finite."
+            )
+        self._raw_observation_count = int(values.size)
 
         # Filter out NaNs
-        valid = ~np.isnan(values)
+        valid = np.isfinite(values)
+        self._dropped_nonfinite_observation_count = int(np.count_nonzero(~valid))
         points = points[valid]
         values = values[valid]
 
@@ -262,6 +282,66 @@ class SmoothReconstructionSimulator:
         info(f"SmoothReconstruction: Using {len(values)} point observations")
 
         return points, values
+
+    def _record_diagnostics(
+        self,
+        *,
+        V: dolfinx.fem.FunctionSpace,
+        background_value: float,
+        valid_observation_count: int,
+        located_observation_count: int,
+        constraints_added: int,
+        ksp: Any,
+    ) -> None:
+        """Record solver and reconstruction diagnostics from a completed run."""
+        if self.solution is None:
+            raise RuntimeError("SmoothReconstruction diagnostics require a solution.")
+
+        values = np.real(np.asarray(self.solution.x.array))
+        finite = bool(np.all(np.isfinite(values)))
+        if values.size:
+            field_min = float(np.min(values))
+            field_max = float(np.max(values))
+            field_mean = float(np.mean(values))
+            field_l2 = float(np.sqrt(np.dot(values, values)))
+        else:
+            field_min = field_max = field_mean = field_l2 = float("nan")
+
+        self.diagnostics = {
+            "field_name": self.field_name,
+            "field_unit": self.field_unit,
+            "degree": int(self.params.degree),
+            "lambda_smooth": float(self.params.lambda_smooth),
+            "alpha": float(self.params.alpha),
+            "data_weight": float(self.params.data_weight),
+            "background_value": float(background_value),
+            "raw_observation_count": int(self._raw_observation_count),
+            "valid_observation_count": int(valid_observation_count),
+            "dropped_nonfinite_observation_count": int(
+                self._dropped_nonfinite_observation_count
+            ),
+            "located_observation_count": int(located_observation_count),
+            "points_outside_mesh": int(
+                valid_observation_count - located_observation_count
+            ),
+            "constraints_added": int(constraints_added),
+            "degrees_of_freedom": int(V.dofmap.index_map.size_global),
+            "field": {
+                "dim": 1,
+                "unit": self.field_unit,
+                "finite": finite,
+                "min": field_min,
+                "max": field_max,
+                "mean": field_mean,
+                "l2_norm": field_l2,
+            },
+            "linear_solve": {
+                "converged_reason": int(ksp.getConvergedReason()),
+                "iterations": int(ksp.getIterationNumber()),
+                "residual_norm": float(ksp.getResidualNorm()),
+            },
+            "residual_status": "PETSc KSP residual norm recorded after linear solve",
+        }
 
     def _locate_points(
         self, mesh: dolfinx.mesh.Mesh, points: np.ndarray
@@ -421,6 +501,12 @@ class SmoothReconstructionSimulator:
         valid_points = point_coords[mask]
         valid_values = point_values[mask]
         valid_cells = cells[mask]
+        if len(valid_values) == 0:
+            raise RuntimeError(
+                "SmoothReconstruction: no point observations were located inside "
+                "the mesh. Enlarge the bounds, adjust z_offset, or provide points "
+                "inside the reconstruction domain."
+            )
 
         info(
             f"SmoothReconstruction: Adding {len(valid_values)} point observation penalties..."
@@ -464,6 +550,11 @@ class SmoothReconstructionSimulator:
         b.assemble()
 
         info(f"SmoothReconstruction: Successfully added {num_added} point constraints")
+        if num_added == 0:
+            raise RuntimeError(
+                "SmoothReconstruction: no point constraints were assembled. "
+                "Check point locations and mesh quality."
+            )
 
         # Solve the linear system
         info("SmoothReconstruction: Solving linear system...")
@@ -483,11 +574,25 @@ class SmoothReconstructionSimulator:
         uh = dolfinx.fem.Function(V)
         ksp.solve(b, uh.x.petsc_vec)
         uh.x.scatter_forward()
+        if ksp.getConvergedReason() < 0:
+            raise RuntimeError(
+                "SmoothReconstruction: linear solve failed "
+                f"(reason={ksp.getConvergedReason()}, "
+                f"its={ksp.getIterationNumber()})."
+            )
 
         info("SmoothReconstruction: Solution complete")
 
         # Store solution
         self.solution = uh
+        self._record_diagnostics(
+            V=V,
+            background_value=u_bg,
+            valid_observation_count=len(point_values),
+            located_observation_count=len(valid_values),
+            constraints_added=num_added,
+            ksp=ksp,
+        )
 
         # Output
         if output_path is not None:
@@ -495,13 +600,15 @@ class SmoothReconstructionSimulator:
             self.solution.save(output_path)
 
         if self.volume_mesh_dtcc is not None:
-            return _attach_scalar_field_to_volume_mesh(
+            result = _attach_scalar_field_to_volume_mesh(
                 self.mesh,
                 self.solution,
                 self.volume_mesh_dtcc,
                 name=self.field_name,
                 unit=self.field_unit,
             )
+            setattr(result, "simulation_diagnostics", dict(self.diagnostics))
+            return result
 
         return self.solution
 
@@ -540,7 +647,40 @@ def _attach_scalar_field_to_volume_mesh(
         if getattr(existing, "name", None) != name
     ]
     volume_mesh_dtcc.fields = [*existing_fields, field]
+    _validate_attached_scalar_field(volume_mesh_dtcc, name=name, unit=unit)
     return volume_mesh_dtcc
+
+
+def _validate_attached_scalar_field(
+    volume_mesh_dtcc: Any, *, name: str, unit: str
+) -> None:
+    """Validate scalar field attachment against the target VolumeMesh vertices."""
+    vertices = np.asarray(volume_mesh_dtcc.vertices, dtype=np.float64)
+    n_vertices = int(vertices.shape[0])
+    fields = {field.name: field for field in getattr(volume_mesh_dtcc, "fields", [])}
+    if name not in fields:
+        raise RuntimeError(f"SmoothReconstruction: missing scalar field {name!r}.")
+
+    field = fields[name]
+    if int(field.dim) != 1:
+        raise RuntimeError(
+            f"SmoothReconstruction: field {name!r} has dim={field.dim}; expected 1."
+        )
+    if field.unit != unit:
+        raise RuntimeError(
+            f"SmoothReconstruction: field {name!r} has unit={field.unit!r}; "
+            f"expected {unit!r}."
+        )
+    values = np.asarray(field.values)
+    if values.size != n_vertices:
+        raise RuntimeError(
+            f"SmoothReconstruction: field {name!r} has {values.size} values; "
+            f"expected {n_vertices} for the target VolumeMesh vertices."
+        )
+    if not np.all(np.isfinite(values)):
+        raise RuntimeError(
+            f"SmoothReconstruction: field {name!r} contains non-finite values."
+        )
 
 
 __all__ = ["SmoothReconstructionParameters", "SmoothReconstructionSimulator"]

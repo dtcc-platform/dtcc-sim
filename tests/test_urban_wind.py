@@ -10,6 +10,8 @@ import math
 import numpy as np
 import pytest
 
+pytestmark = [pytest.mark.simulation, pytest.mark.fenics]
+
 pytest.importorskip("dolfinx", reason="urban wind tests require dolfinx")
 
 # ---------------------------------------------------------------------------
@@ -173,13 +175,116 @@ class TestInletProfiles:
 
 
 # ---------------------------------------------------------------------------
-# 4) Smoke test — IPCS solver on a unit box (no buildings, synthetic markers)
+# 4) VolumeMesh output field contract
+# ---------------------------------------------------------------------------
+
+
+class _FakeDolfinxGeometry:
+    x = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+
+
+class _FakeDolfinxMesh:
+    geometry = _FakeDolfinxGeometry()
+
+
+class _FakeVolumeMesh:
+    vertices = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+
+
+def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypatch):
+    from dtcc_sim.urban_wind import _dolfinx_to_volume_mesh
+
+    def fake_evaluate(_mesh, solution):
+        if solution == "velocity":
+            return np.array([[3.0, 4.0, 0.0], [0.0, 0.0, 2.0]])
+        return np.array([[10.0], [20.0]])
+
+    monkeypatch.setattr(
+        "dtcc_sim.urban_wind._evaluate_function_at_vertices",
+        fake_evaluate,
+    )
+    monkeypatch.setattr(
+        "dtcc_sim.urban_wind._reorder_by_coords",
+        lambda _source_keys, values, _target_keys: values,
+    )
+
+    result = _dolfinx_to_volume_mesh(
+        _FakeDolfinxMesh(),
+        "velocity",
+        "pressure",
+        _FakeVolumeMesh(),
+    )
+
+    fields = {field.name: field for field in result.fields}
+    assert set(fields) == {"velocity", "pressure", "speed"}
+    assert fields["velocity"].dim == 3
+    assert fields["velocity"].unit == "m/s"
+    assert fields["velocity"].values.shape == (2, 3)
+    assert fields["pressure"].dim == 1
+    assert fields["pressure"].unit == "m^2/s^2"
+    assert fields["pressure"].values.size == 2
+    assert fields["speed"].dim == 1
+    assert fields["speed"].unit == "m/s"
+    np.testing.assert_allclose(fields["speed"].values, np.array([5.0, 2.0]))
+
+
+def test_volume_mesh_output_validation_rejects_inconsistent_speed():
+    from dtcc_core.model import Field
+    from dtcc_sim.urban_wind import _validate_wind_volume_fields
+
+    volume_mesh = _FakeVolumeMesh()
+    volume_mesh.fields = [
+        Field(
+            name="velocity",
+            values=np.array([[3.0, 4.0, 0.0], [0.0, 0.0, 2.0]]),
+            dim=3,
+            unit="m/s",
+        ),
+        Field(
+            name="pressure",
+            values=np.array([10.0, 20.0]),
+            dim=1,
+            unit="m^2/s^2",
+        ),
+        Field(
+            name="speed",
+            values=np.array([4.0, 2.0]),
+            dim=1,
+            unit="m/s",
+        ),
+    ]
+
+    with pytest.raises(RuntimeError, match="speed field is inconsistent"):
+        _validate_wind_volume_fields(volume_mesh)
+
+
+def test_use_weather_requires_usable_wind_data(monkeypatch):
+    import dtcc_core.datasets as datasets
+    from dtcc_sim.urban_wind import UrbanWindParameters, UrbanWindSimulator
+
+    class EmptyWeather:
+        def to_arrays(self, _field_name):
+            return np.empty((0, 2)), np.array([])
+
+    monkeypatch.setattr(datasets, "weather", lambda **_kwargs: EmptyWeather())
+
+    sim = UrbanWindSimulator(
+        bounds=(0.0, 0.0, 1.0, 1.0),
+        params=UrbanWindParameters(use_weather=True),
+    )
+
+    with pytest.raises(RuntimeError, match="use_weather=True.*wind_speed"):
+        sim._maybe_fetch_weather()
+
+
+# ---------------------------------------------------------------------------
+# 5) Smoke test — IPCS solver on a unit box (no buildings, synthetic markers)
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
-def box_sim_result():
-    """Run a minimal IPCS solve on a tiny box and return (u, p)."""
+def box_sim_run():
+    """Run a minimal IPCS solve on a tiny box and return (result, simulator)."""
     import dolfinx.mesh
     from mpi4py import MPI
     from dtcc_sim.urban_wind import (
@@ -244,11 +349,27 @@ def box_sim_result():
 
     sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
     result = sim.simulate()
-    return result  # tuple (u, p) since no volume_mesh_dtcc
+    return result, sim  # tuple (u, p) since no volume_mesh_dtcc
+
+
+@pytest.fixture(scope="module")
+def box_sim_result(box_sim_run):
+    """Return the IPCS output tuple from the shared tiny-box run."""
+    result, _sim = box_sim_run
+    return result
+
+
+@pytest.fixture(scope="module")
+def box_simulator(box_sim_run):
+    """Return the simulator from the shared tiny-box run."""
+    _result, sim = box_sim_run
+    return sim
 
 
 class TestSmokeIPCS:
     """Basic sanity checks on the IPCS solver output."""
+
+    pytestmark = pytest.mark.slow
 
     def test_returns_tuple(self, box_sim_result):
         u, p = box_sim_result
@@ -284,9 +405,27 @@ class TestSmokeIPCS:
         # this is just a "not NaN / not astronomical" sanity check.
         assert div_norm < 200.0, f"Divergence norm too large: {div_norm}"
 
+    def test_records_convergence_and_field_diagnostics(self, box_simulator):
+        diagnostics = box_simulator.diagnostics
+
+        assert diagnostics["equations"] == "navier_stokes"
+        assert diagnostics["scheme"] == "IPCS_ABCN"
+        assert diagnostics["stop_reason"] in {"steady_criteria", "max_steps"}
+        assert diagnostics["steps"] > 0
+        assert diagnostics["fields"]["velocity"]["unit"] == "m/s"
+        assert diagnostics["fields"]["velocity"]["dim"] == 3
+        assert diagnostics["fields"]["pressure"]["unit"] == "m^2/s^2"
+        assert diagnostics["fields"]["pressure"]["dim"] == 1
+        assert diagnostics["fields"]["speed"]["unit"] == "m/s"
+        assert diagnostics["boundary_category_counts"]["inlet"] > 0
+        assert diagnostics["boundary_category_counts"]["outlet"] > 0
+        assert diagnostics["convergence"]["divergence_rms"] is not None
+        assert diagnostics["convergence"]["flux_imbalance"] is not None
+        assert diagnostics["linear_solves"]["velocity"]["iterations"] >= 0
+
 
 # ---------------------------------------------------------------------------
-# 5) Smoke test — stationary Stokes solve on a unit box
+# 6) Smoke test — stationary Stokes solve on a unit box
 # ---------------------------------------------------------------------------
 
 
@@ -420,6 +559,8 @@ def box_stokes_iterative_result():
 class TestSmokeStokes:
     """Basic sanity checks on stationary Stokes output."""
 
+    pytestmark = pytest.mark.slow
+
     def test_returns_tuple(self, box_stokes_result):
         u, p = box_stokes_result
         assert u is not None
@@ -445,7 +586,7 @@ class TestSmokeStokes:
 
 
 # ---------------------------------------------------------------------------
-# 6) Poiseuille channel flow validation
+# 7) Poiseuille channel flow validation
 # ---------------------------------------------------------------------------
 
 
@@ -523,6 +664,8 @@ def poiseuille_result():
 class TestPoiseuille:
     """Check basic physical plausibility of channel flow."""
 
+    pytestmark = pytest.mark.slow
+
     def test_finite(self, poiseuille_result):
         u, p = poiseuille_result
         assert np.all(np.isfinite(u.x.array))
@@ -545,7 +688,7 @@ class TestPoiseuille:
 
 
 # ---------------------------------------------------------------------------
-# 7) Parameters model validation
+# 8) Parameters model validation
 # ---------------------------------------------------------------------------
 
 
@@ -594,7 +737,7 @@ class TestUrbanWindParameters:
 
 
 # ---------------------------------------------------------------------------
-# 8) Import smoke test
+# 9) Import smoke test
 # ---------------------------------------------------------------------------
 
 

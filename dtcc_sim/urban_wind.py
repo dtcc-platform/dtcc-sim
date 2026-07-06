@@ -862,7 +862,59 @@ def _dolfinx_to_volume_mesh(
             description="Wind speed |u| from urban wind CFD solver",
         ),
     ]
+    _validate_wind_volume_fields(volume_mesh_dtcc)
     return volume_mesh_dtcc
+
+
+def _validate_wind_volume_fields(volume_mesh_dtcc: Any) -> None:
+    """Fail loudly if required wind fields do not match the mesh contract."""
+    vertices = np.asarray(volume_mesh_dtcc.vertices, dtype=np.float64)
+    n_vertices = int(vertices.shape[0])
+    fields = {field.name: field for field in getattr(volume_mesh_dtcc, "fields", [])}
+    required = {
+        "velocity": {"dim": 3, "unit": "m/s"},
+        "pressure": {"dim": 1, "unit": "m^2/s^2"},
+        "speed": {"dim": 1, "unit": "m/s"},
+    }
+
+    missing = [name for name in required if name not in fields]
+    if missing:
+        raise RuntimeError(
+            "UrbanWind: VolumeMesh output is missing required field(s): "
+            f"{', '.join(missing)}."
+        )
+
+    for name, expected in required.items():
+        field = fields[name]
+        if int(field.dim) != expected["dim"]:
+            raise RuntimeError(
+                f"UrbanWind: field {name!r} has dim={field.dim}; "
+                f"expected dim={expected['dim']}."
+            )
+        if field.unit != expected["unit"]:
+            raise RuntimeError(
+                f"UrbanWind: field {name!r} has unit={field.unit!r}; "
+                f"expected {expected['unit']!r}."
+            )
+        values = np.asarray(field.values)
+        if values.size != n_vertices * expected["dim"]:
+            raise RuntimeError(
+                f"UrbanWind: field {name!r} has {values.size} scalar values; "
+                f"expected {n_vertices * expected['dim']} for {n_vertices} "
+                f"vertices and dim={expected['dim']}."
+            )
+        if not np.all(np.isfinite(values)):
+            raise RuntimeError(f"UrbanWind: field {name!r} contains non-finite values.")
+
+    velocity = np.asarray(fields["velocity"].values, dtype=np.float64).reshape(
+        n_vertices, 3
+    )
+    speed = np.asarray(fields["speed"].values, dtype=np.float64).reshape(n_vertices)
+    expected_speed = np.linalg.norm(velocity, axis=1)
+    if not np.allclose(speed, expected_speed, rtol=1.0e-8, atol=1.0e-10):
+        raise RuntimeError(
+            "UrbanWind: speed field is inconsistent with velocity magnitude."
+        )
 
 
 def _evaluate_function_at_vertices(
@@ -1001,8 +1053,171 @@ class UrbanWindSimulator:
         self.volume_mesh_dtcc: Optional[Any] = None
         self.num_buildings: int = 0
         self.category_markers: Optional[dolfinx.mesh.MeshTags] = None
+        self.diagnostics: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------ mesh
+    def _boundary_category_counts(self, mesh: dolfinx.mesh.Mesh) -> Dict[str, int]:
+        """Return global counts for collapsed boundary categories."""
+        if self.category_markers is None:
+            return {}
+        values = np.asarray(self.category_markers.values, dtype=np.int32)
+        names = {
+            BndCat.WALL: "wall",
+            BndCat.ROOF: "roof",
+            BndCat.GROUND: "ground",
+            BndCat.INLET: "inlet",
+            BndCat.OUTLET: "outlet",
+            BndCat.TOP: "top",
+            BndCat.SIDE: "side",
+        }
+        counts: Dict[str, int] = {}
+        for category, name in names.items():
+            local_count = int(np.count_nonzero(values == int(category)))
+            counts[name] = int(mesh.comm.allreduce(local_count, op=MPI.SUM))
+        return counts
+
+    @staticmethod
+    def _function_stats(function: Function) -> Dict[str, Any]:
+        """Return global finite/range/L2 diagnostics for a FE function array."""
+        mesh = function.function_space.mesh
+        values = np.real(np.asarray(function.x.array))
+        finite_local = bool(np.all(np.isfinite(values)))
+        finite = bool(mesh.comm.allreduce(int(finite_local), op=MPI.MIN))
+        if values.size:
+            local_min = float(np.min(values))
+            local_max = float(np.max(values))
+            local_l2_sq = float(np.dot(values, values))
+        else:
+            local_min = float("inf")
+            local_max = float("-inf")
+            local_l2_sq = 0.0
+        global_min = float(mesh.comm.allreduce(local_min, op=MPI.MIN))
+        global_max = float(mesh.comm.allreduce(local_max, op=MPI.MAX))
+        global_l2_sq = float(mesh.comm.allreduce(local_l2_sq, op=MPI.SUM))
+        return {
+            "finite": finite,
+            "min": global_min,
+            "max": global_max,
+            "l2_norm": float(np.sqrt(max(global_l2_sq, 0.0))),
+        }
+
+    @staticmethod
+    def _function_dof_count(function: Function) -> int:
+        """Return the global scalar DOF count for a function."""
+        dofmap = function.function_space.dofmap
+        return int(dofmap.index_map.size_global * dofmap.index_map_bs)
+
+    @staticmethod
+    def _optional_float(value: float) -> Optional[float]:
+        """Return None for NaN/inf so diagnostics are JSON-friendly."""
+        return float(value) if np.isfinite(value) else None
+
+    @staticmethod
+    def _ksp_info(ksp: PETSc.KSP) -> Dict[str, Any]:
+        """Return the KSP convergence information currently exposed by PETSc."""
+        return {
+            "converged_reason": int(ksp.getConvergedReason()),
+            "iterations": int(ksp.getIterationNumber()),
+            "residual_norm": float(ksp.getResidualNorm()),
+        }
+
+    def _record_diagnostics(
+        self,
+        *,
+        mesh: dolfinx.mesh.Mesh,
+        params: UrbanWindParameters,
+        u_sol: Function,
+        p_sol: Function,
+        inlet_marker: int,
+        outlet_marker: Optional[int],
+        hmin: float,
+        stop_reason: str,
+        steps: int,
+        time_s: Optional[float],
+        dt_final: Optional[float],
+        relative_update: Optional[float],
+        divergence_rms: Optional[float],
+        flux_imbalance: Optional[float],
+        cfl: Optional[float],
+        slip_normal_velocity_rms: Optional[float],
+        linear_solves: Dict[str, Any],
+        statistical_diagnostics: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record solver and field diagnostics from the completed run."""
+        self.diagnostics = {
+            "equations": params.equations,
+            "scheme": (
+                params.scheme
+                if params.equations == "navier_stokes"
+                else "mixed_stokes"
+            ),
+            "simulation_mode": params.simulation_mode,
+            "stop_reason": stop_reason,
+            "steps": int(steps),
+            "time_s": self._optional_float(time_s) if time_s is not None else None,
+            "dt_final": (
+                self._optional_float(dt_final) if dt_final is not None else None
+            ),
+            "wind_speed": float(params.wind_speed),
+            "wind_dir_deg": float(params.wind_dir_deg),
+            "wind_vector_xy": tuple(float(v) for v in params.wind_vector_xy),
+            "inlet_marker": int(inlet_marker),
+            "outlet_marker": int(outlet_marker) if outlet_marker is not None else None,
+            "closed_cavity": bool(params.closed_cavity),
+            "wall_model": params.wall_model,
+            "side_top_boundary": params.side_top_boundary,
+            "inlet_profile": params.inlet_profile,
+            "z0": float(params.z0),
+            "u_ref_height": float(params.u_ref_height),
+            "power_law_alpha": float(params.power_law_alpha),
+            "rho": float(params.rho),
+            "nu": float(params.nu),
+            "nu_t": float(params.nu_t),
+            "nu_eff": float(params.nu_eff),
+            "num_buildings": int(self.num_buildings),
+            "mesh_hmin": float(hmin),
+            "degrees_of_freedom": {
+                "velocity": self._function_dof_count(u_sol),
+                "pressure": self._function_dof_count(p_sol),
+            },
+            "boundary_category_counts": self._boundary_category_counts(mesh),
+            "fields": {
+                "velocity": {
+                    "dim": 3,
+                    "unit": "m/s",
+                    **self._function_stats(u_sol),
+                },
+                "pressure": {
+                    "dim": 1,
+                    "unit": "m^2/s^2",
+                    **self._function_stats(p_sol),
+                },
+                "speed": {
+                    "dim": 1,
+                    "unit": "m/s",
+                    "source": "computed as the velocity magnitude on VolumeMesh output",
+                },
+            },
+            "convergence": {
+                "relative_update": relative_update,
+                "divergence_rms": divergence_rms,
+                "flux_imbalance": flux_imbalance,
+                "cfl": cfl,
+                "slip_normal_velocity_rms": slip_normal_velocity_rms,
+                "steady_tolerance": float(params.steady_tolerance),
+                "divergence_tolerance": float(params.divergence_tolerance),
+                "flux_imbalance_tolerance": float(params.flux_imbalance_tolerance),
+                "steady_window": int(params.steady_window),
+            },
+            "linear_solves": linear_solves,
+            "residual_status": (
+                "last-step PETSc KSP residual norms are recorded when available; "
+                "a full nonlinear CFD residual is not assembled by this wrapper"
+            ),
+        }
+        if statistical_diagnostics is not None:
+            self.diagnostics["statistical_diagnostics"] = statistical_diagnostics
+
     def _build_mesh_from_bounds(self) -> None:
         comm = MPI.COMM_WORLD
         rank = comm.rank
@@ -1113,55 +1328,69 @@ class UrbanWindSimulator:
         comm = MPI.COMM_WORLD
         rank = comm.rank
         weather_data: Optional[Tuple[float, float]] = None
+        weather_error: Optional[str] = None
 
         # Only rank 0 performs the HTTP fetch
         if rank == 0:
             try:
                 import dtcc_core.datasets as datasets
-            except ImportError:
-                warning("UrbanWind: dtcc_core not available; skipping weather fetch.")
-                weather_data = None
-                comm.bcast(weather_data, root=0)
-                return
-
-            info("UrbanWind: Fetching weather data …")
-            try:
-                sensors = datasets.weather(
-                    bounds=self.bounds,
-                    parameters=["wind_speed", "wind_direction"],
+            except ImportError as exc:
+                weather_error = (
+                    "UrbanWind: use_weather=True requires dtcc_core.datasets "
+                    f"so reference wind can be fetched. Original error: {exc}"
                 )
+                datasets = None
 
-                pts_ws, ws_vals = sensors.to_arrays("wind_speed")
-                pts_wd, wd_vals = sensors.to_arrays("wind_direction")
-
-                if len(ws_vals) > 0 and len(wd_vals) > 0:
-                    agg = self.params.weather_aggregation
-                    if agg == "nearest":
-                        idx_ws = self._nearest_station_index(pts_ws)
-                        idx_wd = self._nearest_station_index(pts_wd)
-                        ws = float(ws_vals[idx_ws])
-                        wd = float(wd_vals[idx_wd])
-                    elif agg == "mean":
-                        ws = float(np.mean(ws_vals))
-                        wd = self._circular_mean_deg(wd_vals)
-                    elif agg == "median":
-                        ws = float(np.median(ws_vals))
-                        wd = self._circular_median_deg(wd_vals)
-                    else:
-                        ws = float(ws_vals[0])
-                        wd = float(wd_vals[0])
-                    weather_data = (ws, wd)
-                else:
-                    warning(
-                        "UrbanWind: weather data incomplete; using manual wind params."
+            if weather_error is None:
+                info("UrbanWind: Fetching weather data …")
+                try:
+                    sensors = datasets.weather(
+                        bounds=self.bounds,
+                        parameters=["wind_speed", "wind_direction"],
                     )
-            except Exception as exc:
-                warning(
-                    f"UrbanWind: weather fetch failed ({exc}); using manual params."
-                )
 
-        # Broadcast result to all ranks
-        weather_data = comm.bcast(weather_data, root=0)
+                    pts_ws, ws_vals = sensors.to_arrays("wind_speed")
+                    pts_wd, wd_vals = sensors.to_arrays("wind_direction")
+
+                    if len(ws_vals) > 0 and len(wd_vals) > 0:
+                        agg = self.params.weather_aggregation
+                        if agg == "nearest":
+                            idx_ws = self._nearest_station_index(pts_ws)
+                            idx_wd = self._nearest_station_index(pts_wd)
+                            ws = float(ws_vals[idx_ws])
+                            wd = float(wd_vals[idx_wd])
+                        elif agg == "mean":
+                            ws = float(np.mean(ws_vals))
+                            wd = self._circular_mean_deg(wd_vals)
+                        elif agg == "median":
+                            ws = float(np.median(ws_vals))
+                            wd = self._circular_median_deg(wd_vals)
+                        else:
+                            ws = float(ws_vals[0])
+                            wd = float(wd_vals[0])
+                        weather_data = (ws, wd)
+                    else:
+                        weather_error = (
+                            "UrbanWind: use_weather=True but weather data did "
+                            "not include both wind_speed and wind_direction "
+                            "values for the requested bounds."
+                        )
+                except Exception as exc:
+                    weather_error = (
+                        "UrbanWind: use_weather=True but the weather fetch "
+                        "failed. Disable use_weather or provide manual "
+                        "wind_speed and wind_dir_deg. "
+                        f"Original error: {exc}"
+                    )
+
+        # Broadcast result or provider failure to all ranks before raising.
+        weather_data, weather_error = comm.bcast(
+            (weather_data, weather_error),
+            root=0,
+        )
+
+        if weather_error is not None:
+            raise RuntimeError(weather_error)
 
         if weather_data is not None:
             ws, wd = weather_data
@@ -1169,6 +1398,11 @@ class UrbanWindSimulator:
             self.params = self.params.model_copy(
                 update={"wind_speed": ws, "wind_dir_deg": wd}
             )
+            return
+
+        raise RuntimeError(
+            "UrbanWind: use_weather=True but no usable wind data was returned."
+        )
 
     # ----------------------------------------------------- output helpers
     @staticmethod
@@ -1230,7 +1464,12 @@ class UrbanWindSimulator:
                         "Returning dolfinx fields instead."
                     )
                 return u_sol, p_sol
-            return _dolfinx_to_volume_mesh(mesh, u_sol, p_sol, self.volume_mesh_dtcc)
+            result = _dolfinx_to_volume_mesh(mesh, u_sol, p_sol, self.volume_mesh_dtcc)
+            try:
+                setattr(result, "simulation_diagnostics", dict(self.diagnostics))
+            except Exception:
+                warning("UrbanWind: could not attach simulation diagnostics.")
+            return result
 
         return u_sol, p_sol
 
@@ -1433,6 +1672,8 @@ class UrbanWindSimulator:
             "stokes",
             field_splits=field_splits,
         )
+        ksps_to_destroy = [ksp]
+        active_ksp = ksp
         w = Function(W, name="w_stokes")
         stokes_monitor = None
         if rank0:
@@ -1459,6 +1700,7 @@ class UrbanWindSimulator:
         t_ksp_elapsed = time.perf_counter() - t_ksp_start
         ksp_reason = ksp.getConvergedReason()
         ksp_its = ksp.getIterationNumber()
+        active_ksp = ksp
 
         # Stokes is a single linear solve: if default iterative setup fails,
         # try a safer iterative variant before direct fallback.
@@ -1483,6 +1725,7 @@ class UrbanWindSimulator:
                     "stokes_safe",
                     field_splits=safe_fieldsplit,
                 )
+                ksps_to_destroy.append(ksp_fb)
                 if rank0 and stokes_monitor is not None:
                     ksp_fb.setMonitor(stokes_monitor)
                 if rank0:
@@ -1491,7 +1734,10 @@ class UrbanWindSimulator:
                 ksp_fb.setUp()
                 t_setup_elapsed = time.perf_counter() - t_setup_start
                 if rank0:
-                    info(f"UrbanWind: Stokes safe-iterative KSP setup done in {t_setup_elapsed:.2f}s")
+                    info(
+                        "UrbanWind: Stokes safe-iterative KSP setup done in "
+                        f"{t_setup_elapsed:.2f}s"
+                    )
                     info("UrbanWind: Stokes safe-iterative Krylov iterations started")
                 w.x.array[:] = 0.0
                 w.x.scatter_forward()
@@ -1501,6 +1747,7 @@ class UrbanWindSimulator:
                 t_ksp_elapsed = time.perf_counter() - t_ksp_start
                 ksp_reason = ksp_fb.getConvergedReason()
                 ksp_its = ksp_fb.getIterationNumber()
+                active_ksp = ksp_fb
             except Exception as exc:
                 if rank0:
                     warning(
@@ -1522,6 +1769,7 @@ class UrbanWindSimulator:
                     "stokes_fallback",
                     field_splits=None,
                 )
+                ksps_to_destroy.append(ksp_fb)
                 if rank0:
                     info("UrbanWind: Stokes fallback KSP setup started")
                 t_setup_start = time.perf_counter()
@@ -1540,6 +1788,7 @@ class UrbanWindSimulator:
                 t_ksp_elapsed = time.perf_counter() - t_ksp_start
                 ksp_reason = ksp_fb.getConvergedReason()
                 ksp_its = ksp_fb.getIterationNumber()
+                active_ksp = ksp_fb
             except Exception as exc:
                 if rank0:
                     warning(
@@ -1621,7 +1870,28 @@ class UrbanWindSimulator:
                 f"flux_imb={flux_imbalance:.3e}{slip_part}"
             )
 
-        ksp.destroy()
+        self._record_diagnostics(
+            mesh=mesh,
+            params=params,
+            u_sol=u_sol,
+            p_sol=p_sol,
+            inlet_marker=inlet_marker,
+            outlet_marker=outlet_marker,
+            hmin=hmin,
+            stop_reason="linear_solve_converged",
+            steps=1,
+            time_s=t_ksp_elapsed,
+            dt_final=None,
+            relative_update=None,
+            divergence_rms=self._optional_float(div_rms),
+            flux_imbalance=self._optional_float(flux_imbalance),
+            cfl=None,
+            slip_normal_velocity_rms=self._optional_float(slip_un_rms),
+            linear_solves={"stokes": self._ksp_info(active_ksp)},
+        )
+
+        for solver in ksps_to_destroy:
+            solver.destroy()
         b.destroy()
         A.destroy()
         return self._finalize_result(mesh, u_sol, p_sol, output_path=output_path)
@@ -2437,6 +2707,49 @@ class UrbanWindSimulator:
                     f"mean_flux_imb_window={fluximb_curr:.3e}"
                 )
             info(summary)
+
+        statistical_diagnostics = None
+        if params.simulation_mode == "statistical_steady":
+            statistical_diagnostics = {
+                "kinetic_energy_relative_change": self._optional_float(ke_rel),
+                "flux_relative_change": self._optional_float(flux_rel),
+                "mean_divergence_rms": self._optional_float(div_curr),
+                "mean_flux_imbalance": self._optional_float(fluximb_curr),
+                "window": int(params.stat_window),
+                "warmup_steps": int(params.stat_warmup_steps),
+                "stat_tolerance": float(params.stat_tolerance),
+                "stat_divergence_tolerance": float(
+                    params.stat_divergence_tolerance
+                ),
+                "stat_flux_imbalance_tolerance": float(
+                    params.stat_flux_imbalance_tolerance
+                ),
+            }
+
+        self._record_diagnostics(
+            mesh=mesh,
+            params=params,
+            u_sol=u_n,
+            p_sol=p_n,
+            inlet_marker=inlet_marker,
+            outlet_marker=outlet_marker,
+            hmin=hmin,
+            stop_reason=stop_reason,
+            steps=step,
+            time_s=self._optional_float(t_sim),
+            dt_final=self._optional_float(dt_val),
+            relative_update=self._optional_float(rel),
+            divergence_rms=self._optional_float(div_rms),
+            flux_imbalance=self._optional_float(flux_imbalance),
+            cfl=self._optional_float(cfl),
+            slip_normal_velocity_rms=self._optional_float(slip_un_rms),
+            linear_solves={
+                "velocity": self._ksp_info(ksp1),
+                "pressure": self._ksp_info(ksp2),
+                "correction": self._ksp_info(ksp3),
+            },
+            statistical_diagnostics=statistical_diagnostics,
+        )
 
         # ---- Cleanup KSPs ----
         ksp1.destroy()

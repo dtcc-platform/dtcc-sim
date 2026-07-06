@@ -7,6 +7,9 @@ import pytest
 from dtcc_sim.datasets import AirQualityFieldArgs, AirQualityFieldDataset
 
 
+pytestmark = pytest.mark.simulation
+
+
 class _FakeSensors:
     def to_arrays(self, *, field_name):
         assert field_name == "NO2"
@@ -23,6 +26,12 @@ def _patch_air_quality_fetch(monkeypatch):
     import dtcc_core.datasets as datasets
 
     monkeypatch.setattr(datasets, "air_quality", lambda **kwargs: _FakeSensors())
+
+
+def _patch_air_quality_fetch_with(monkeypatch, sensors):
+    import dtcc_core.datasets as datasets
+
+    monkeypatch.setattr(datasets, "air_quality", lambda **kwargs: sensors)
 
 
 def _patch_smooth_reconstruction(monkeypatch, simulator_cls):
@@ -119,3 +128,33 @@ def test_air_quality_field_without_format_returns_volume_mesh(monkeypatch):
     result = dataset.build(AirQualityFieldArgs(bounds=(0.0, 0.0, 1.0, 1.0)))
 
     assert result is volume_mesh
+
+
+def test_air_quality_field_requires_station_unit(monkeypatch):
+    dataset = AirQualityFieldDataset()
+
+    class SensorsWithoutUnit(_FakeSensors):
+        def stations(self):
+            return [SimpleNamespace(attributes={})]
+
+    _patch_air_quality_fetch_with(monkeypatch, SensorsWithoutUnit())
+
+    with pytest.raises(RuntimeError, match="non-empty unit"):
+        dataset.build(AirQualityFieldArgs(bounds=(0.0, 0.0, 1.0, 1.0)))
+
+
+def test_air_quality_field_requires_observations(monkeypatch):
+    dataset = AirQualityFieldDataset()
+
+    class EmptySensors:
+        def to_arrays(self, *, field_name):
+            assert field_name == "NO2"
+            return np.empty((0, 3)), np.empty(0)
+
+        def stations(self):
+            return [SimpleNamespace(attributes={"unit": "ug/m3"})]
+
+    _patch_air_quality_fetch_with(monkeypatch, EmptySensors())
+
+    with pytest.raises(RuntimeError, match="at least one station coordinate"):
+        dataset.build(AirQualityFieldArgs(bounds=(0.0, 0.0, 1.0, 1.0)))

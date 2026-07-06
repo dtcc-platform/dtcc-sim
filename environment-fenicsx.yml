@@ -1,0 +1,14 @@
+name: fenicsx-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - fenics-dolfinx
+  - mpich
+  - pyvista
+  - h5py
+  - numpy
+  - pip
+  - pip:
+      - -e ../dtcc-core
+      - -e .[test,service]

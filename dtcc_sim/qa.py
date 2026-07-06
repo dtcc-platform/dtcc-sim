@@ -43,33 +43,62 @@ VALIDATION_CASES: tuple[SimulationValidationCase, ...] = (
         family="urban_heat",
         dataset="urban_heat_simulation",
         status="implemented",
-        scope="field attachment and XDMF serialization contract",
+        scope=(
+            "field attachment, boundary parameter plumbing, XDMF serialization, "
+            "and tiny bounded Dirichlet box validation"
+        ),
         test_reference="tests/test_urban_heat_dataset_v2.py",
-        notes="Full solver validation remains a slow/FEniCSx environment concern.",
+        notes=(
+            "Tiny FEniCSx validation checks finite values and bounds; full "
+            "city-scale validation remains expensive/manual."
+        ),
     ),
     SimulationValidationCase(
         family="urban_wind",
         dataset="urban_wind_simulation",
         status="implemented",
-        scope="wind direction/profile math plus a small IPCS smoke test",
+        scope=(
+            "wind direction/profile math, VolumeMesh field contract checks, "
+            "solver diagnostics, and small IPCS/Stokes smoke tests"
+        ),
         test_reference="tests/test_urban_wind.py",
-        notes="The small IPCS case covers numerical sanity; larger CFD validation is planned separately.",
+        notes=(
+            "Tiny FEniCSx cases check finite fields and diagnostics; "
+            "city-scale CFD validation remains expensive/manual."
+        ),
     ),
     SimulationValidationCase(
         family="air_quality_field",
         dataset="air_quality_field",
         status="implemented",
-        scope="sensor-to-field plumbing and XDMF serialization contract",
-        test_reference="tests/test_air_quality_dataset_v2.py",
-        notes="Live SMHI/provider drift is intentionally outside default CI.",
+        scope=(
+            "descriptor context, provider observation validation, unit "
+            "propagation, scalar field attachment, tiny synthetic "
+            "reconstruction, diagnostics, and XDMF serialization contract"
+        ),
+        test_reference=(
+            "tests/test_air_quality_dataset_v2.py; "
+            "tests/test_smooth_reconstruction.py"
+        ),
+        notes=(
+            "Synthetic tests validate reconstruction plumbing and field "
+            "contracts; live SMHI/provider drift remains outside default CI."
+        ),
     ),
     SimulationValidationCase(
         family="traffic",
         dataset="traffic_simulation",
         status="implemented",
-        scope="deterministic road assignment flow/capacity attributes",
+        scope=(
+            "descriptor context, deterministic synthetic assignment, "
+            "flow/capacity/travel-time attributes, one-way behavior, "
+            "required DeSO statistics, diagnostics, and protobuf serialization"
+        ),
         test_reference="tests/test_traffic.py",
-        notes="Uses small synthetic roads/zones and no provider network access.",
+        notes=(
+            "Uses small synthetic roads/zones and no provider network access; "
+            "real calibration and live upstream data remain out of default CI."
+        ),
     ),
 )
 

@@ -34,3 +34,9 @@ include = ["dtcc_sim*", "service*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+markers = [
+  "simulation: simulation dataset or solver validation tests",
+  "fenics: tests that require a FEniCSx/dolfinx runtime",
+  "slow: intentionally small but slower numerical tests",
+  "expensive: expensive/manual simulations; skipped unless --run-expensive is passed",
+]

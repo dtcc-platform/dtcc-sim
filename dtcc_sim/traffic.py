@@ -274,11 +274,40 @@ class TrafficAssignmentSimulator:
         self.diagnostics = {
             "iterations": iterations,
             "relative_gap": float(relative_gap),
+            "converged": bool(
+                relative_gap <= self.params.relative_gap_tolerance
+                or demand.sum() <= 0.0
+            ),
             "total_demand": float(demand.sum()),
             "assigned_demand": float(assigned_demand),
             "unassigned_demand": float(max(demand.sum() - assigned_demand, 0.0)),
             "background_link_flow": float(background_arc_flow.sum()),
             "zone_count": int(len(zone_vertices)),
+            "road_edge_count": int(len(np.asarray(self.roads.edges).reshape((-1, 2)))),
+            "directed_arc_count": int(len(graph.tail)),
+            "drivable_edge_count": int(len(np.unique(graph.edge_index))),
+            "excluded_edge_count": int(
+                len(np.asarray(self.roads.edges).reshape((-1, 2)))
+                - len(np.unique(graph.edge_index))
+            ),
+            "capacity_per_lane": float(self.params.capacity_per_lane),
+            "background_flow_fraction": float(self.params.background_flow_fraction),
+            "bidirectional": bool(self.params.bidirectional),
+            "bpr_alpha": float(self.params.alpha),
+            "bpr_beta": float(self.params.beta),
+            "output_edge_attributes": [
+                "flow",
+                "flow_forward",
+                "flow_reverse",
+                "flow_assigned",
+                "flow_background",
+                "capacity",
+                "free_flow_time",
+                "travel_time",
+                "speed",
+                "volume_capacity_ratio",
+                "traffic_excluded",
+            ],
         }
         return result
 
@@ -376,8 +405,13 @@ class TrafficAssignmentSimulator:
             zones,
             len(centroids),
             ("population_total", "population"),
-            default=1.0,
+            default=None,
         )
+        if population is None:
+            raise ValueError(
+                "Traffic assignment requires DeSO zone population fields "
+                "('population_total' or 'population')."
+            )
         employed = self._zone_values(
             zones,
             len(centroids),
@@ -385,7 +419,14 @@ class TrafficAssignmentSimulator:
             default=None,
         )
         if employed is None:
-            employed = population.copy()
+            raise ValueError(
+                "Traffic assignment requires DeSO zone employment fields "
+                "('employed_residents_total', 'employment_total', or 'employment')."
+            )
+        if not np.any(np.isfinite(population)):
+            raise ValueError("Traffic assignment population fields are all non-finite.")
+        if not np.any(np.isfinite(employed)):
+            raise ValueError("Traffic assignment employment fields are all non-finite.")
 
         attractions = (
             self.params.population_attraction_weight * population

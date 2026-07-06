@@ -53,61 +53,87 @@ intentional: it preserves companion files for multi-file outputs such as
 
 ## Installation
 
-### Install Conda
+### Recommended FEniCSx Developer Environment
 
-The first step is to install (mini) Conda. Follow these instructions:
+Install Miniconda or another Conda-compatible distribution first:
 
     https://www.anaconda.com/docs/getting-started/miniconda/
 
-### Install FEniCSx
+Create the FEniCSx development environment from the checked-in recipe:
 
-The next step is to create and activate a new environment fenicsx-env:
+```bash
+conda env create -f environment-fenicsx.yml
+conda activate fenicsx-env
+```
 
-    source ~/miniconda3/bin/activate
-    conda create -n fenicsx-env python=3.12
-    conda activate fenicsx-env
+The recipe installs Python 3.12, FEniCSx/dolfinx, MPI/PETSc bindings, PyVista,
+test dependencies, the sibling `../dtcc-core` checkout, and this package in
+editable mode.
 
-Note the use of Python v3.12 which is required for installation of DTCC (below).
+Verify the environment imports before running solver tests:
 
-Next, we install FEniCSx and some other packages:
+```bash
+python -c "import dolfinx, mpi4py, petsc4py, dtcc_core, dtcc_sim"
+```
 
-    conda install -c conda-forge fenics-dolfinx mpich pyvista
+### Activating The Environment
 
-### Install DTCC Platform
+For new shells:
 
-Install DTCC Platform via PyPi:
+```bash
+conda activate fenicsx-env
+```
 
-    pip install dtcc dtcc-viewer
+If Conda has not initialized the shell yet, run the activation script first:
 
-### Install DTCC TetGen wrapper
+```bash
+source ~/miniconda3/bin/activate
+conda activate fenicsx-env
+```
 
-Install the DTCC TetGen wrapper. This needs to be installed from source
-since we don't yet provide a PyPi package:
+### Test Tiers
 
-    git clone git@github.com:dtcc-platform/dtcc-tetgen-wrapper.git
-    cd dtcc-tetgen-wrapper
-    bash vendor_tetgen.sh
-    pip install .
+Static and cheap tests are the default development loop:
 
-### Activating the environment (in new sessions)
+```bash
+pytest tests/test_dataset_qa.py tests/test_import.py tests/test_traffic.py
+```
 
-If you have followed all the above instructions, you should have a
-Conda environment that has both FEniCSx and DTCC Platform.
+Simulation tests use pytest markers:
 
-To activate the environment in new sessions (terminals), run the
-commands
+- `simulation`: simulation dataset or solver validation tests.
+- `fenics`: tests that require a FEniCSx/dolfinx runtime.
+- `slow`: small numerical tests that are slower than pure unit tests.
+- `expensive`: manual-scale or city-scale simulations.
 
-    source ~/miniconda3/bin/activate
-    conda activate fenicsx-env
+Run non-expensive simulation checks:
 
-### Testing the environment
+```bash
+pytest -m "simulation and not expensive"
+```
 
-To test the environment, run the following commands from inside
-the dtcc-repository:
+Run FEniCSx-specific checks:
 
-    cd sandbox
-    python build_volume_mesh_gbg.py
-    python solve_poisson.py
+```bash
+pytest -m "fenics and not expensive"
+```
+
+Run slower numerical smoke tests:
+
+```bash
+pytest -m "slow and not expensive"
+```
+
+Expensive tests are skipped by default even when selected. They require an
+explicit flag:
+
+```bash
+pytest -m expensive --run-expensive
+```
+
+If FEniCSx is not installed, FEniCS-only tests skip with an explicit reason
+instead of failing during import. Dataset contract tests and traffic tests do
+not require FEniCSx.
 
 ## Authors (in order of appearance)
 
