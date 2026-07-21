@@ -1,6 +1,6 @@
 name: dtcc-core contract
 
-run-name: dtcc-core contract at ${{ inputs.core_sha }}
+run-name: dtcc-core contract at ${{ github.event.client_payload.core_sha || inputs.core_sha }}
 
 on:
   workflow_dispatch:
@@ -9,6 +9,8 @@ on:
         description: Full dtcc-core commit SHA to test
         required: true
         type: string
+  repository_dispatch:
+    types: [dtcc-core-contract]
 
 permissions:
   contents: read
@@ -17,7 +19,7 @@ jobs:
   contract:
     runs-on: ubuntu-latest
     env:
-      CORE_SHA: ${{ inputs.core_sha }}
+      CORE_SHA: ${{ github.event.client_payload.core_sha || inputs.core_sha }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
