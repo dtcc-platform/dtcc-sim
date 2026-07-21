@@ -12,6 +12,10 @@ on:
   repository_dispatch:
     types: [dtcc-core-contract]
 
+concurrency:
+  group: dtcc-core-contract-${{ github.event_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -45,7 +49,7 @@ jobs:
       - name: Install dtcc-sim contract tests
         run: |
           python -m pip install pytest
-          # Keep the requested core SHA instead of resolving pyproject's @develop pin.
+          # Keep the requested core SHA instead of resolving pyproject's pinned dependency.
           python -m pip install --no-deps -e .
 
       - name: Verify installed dtcc-core SHA
@@ -67,3 +71,95 @@ jobs:
           python -m pytest -q \
             tests/test_dtcc_core_contract.py \
             tests/test_dataset_qa.py
+
+  bump-core-pin:
+    needs: contract
+    if: github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      CORE_SHA: ${{ github.event.client_payload.core_sha }}
+      BRANCH: automation/dtcc-core-pin
+    steps:
+      - name: Check out develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          token: ${{ secrets.DTCC_CORE_BUMP_TOKEN }}
+
+      - name: Update dtcc-core pin
+        id: update
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path("pyproject.toml")
+          text = path.read_text(encoding="utf-8")
+          pattern = (
+              r"(dtcc-core @ git\+https://github\.com/"
+              r"dtcc-platform/dtcc-core\.git@)"
+              r"(?:develop|[0-9a-f]{40})"
+          )
+          updated, count = re.subn(
+              pattern,
+              rf"\g<1>{os.environ['CORE_SHA']}",
+              text,
+          )
+          if count != 1:
+              raise SystemExit("Expected exactly one dtcc-core dependency")
+          path.write_text(updated, encoding="utf-8")
+          PY
+
+          if git diff --quiet -- pyproject.toml; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Push pin branch
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null 2>&1; then
+            git fetch origin \
+              "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "${BRANCH}"
+          git add pyproject.toml
+          short_sha="${CORE_SHA:0:12}"
+          git commit -m "Build: Pinned dtcc-core to ${short_sha}"
+          git push --force-with-lease origin "HEAD:refs/heads/${BRANCH}"
+
+      - name: Open or update draft pull request
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.DTCC_CORE_BUMP_TOKEN }}
+        run: |
+          title="Build: Update dtcc-core pin"
+          body="Updates the pinned dtcc-core commit to ${CORE_SHA} after contract tests passed in ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+          pr_number="$(gh pr list \
+            --head "${BRANCH}" \
+            --base develop \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [[ -z "${pr_number}" ]]; then
+            gh pr create \
+              --draft \
+              --base develop \
+              --head "${BRANCH}" \
+              --title "${title}" \
+              --body "${body}"
+          else
+            gh api \
+              --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
+              --field title="${title}" \
+              --field body="${body}" \
+              >/dev/null
+          fi
