@@ -1,0 +1,67 @@
+name: dtcc-core contract
+
+run-name: dtcc-core contract at ${{ inputs.core_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_sha:
+        description: Full dtcc-core commit SHA to test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    env:
+      CORE_SHA: ${{ inputs.core_sha }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate dtcc-core SHA
+        run: |
+          if [[ ! "${CORE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "core_sha must be a full lowercase 40-character commit SHA"
+            exit 1
+          fi
+
+      - name: Install dtcc-core at requested SHA
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install \
+            "dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@${CORE_SHA}"
+
+      - name: Install dtcc-sim contract tests
+        run: |
+          python -m pip install pytest
+          # Keep the requested core SHA instead of resolving pyproject's @develop pin.
+          python -m pip install --no-deps -e .
+
+      - name: Verify installed dtcc-core SHA
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from importlib.metadata import distribution
+
+          direct_url = distribution("dtcc-core").read_text("direct_url.json")
+          metadata = json.loads(direct_url)
+          installed_sha = metadata["vcs_info"]["commit_id"]
+          expected_sha = os.environ["CORE_SHA"]
+          assert installed_sha == expected_sha, (installed_sha, expected_sha)
+          PY
+
+      - name: Run dtcc-core contract tests
+        run: |
+          python -m pytest -q \
+            tests/test_dtcc_core_contract.py \
+            tests/test_dataset_qa.py
