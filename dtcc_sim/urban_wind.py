@@ -841,6 +841,7 @@ def _dolfinx_to_volume_mesh(
     # Attach fields
     volume_mesh_dtcc.fields = [
         DtccField(
+            association="vertex",
             name="velocity",
             dim=3,
             values=u_mapped,
@@ -848,6 +849,7 @@ def _dolfinx_to_volume_mesh(
             description="Velocity field from urban wind CFD solver",
         ),
         DtccField(
+            association="vertex",
             name="pressure",
             dim=1,
             values=p_mapped,
@@ -855,6 +857,7 @@ def _dolfinx_to_volume_mesh(
             description="Pressure field from urban wind CFD solver",
         ),
         DtccField(
+            association="vertex",
             name="speed",
             dim=1,
             values=speed,

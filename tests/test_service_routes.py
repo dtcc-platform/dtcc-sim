@@ -89,20 +89,20 @@ def test_extract_formats_supports_enum_and_anyof(routes_env):
     routes, _ = routes_env
 
     assert routes._extract_formats(
-        {"properties": {"format": {"enum": ["pb", None, "xdmf"]}}}
-    ) == ["pb", "xdmf"]
+        {"properties": {"format": {"enum": ["dtcc", None, "xdmf"]}}}
+    ) == ["dtcc", "xdmf"]
     assert routes._extract_formats(
         {
             "properties": {
                 "format": {
                     "anyOf": [
                         {"const": "xdmf"},
-                        {"enum": ["pb", None]},
+                        {"enum": ["dtcc", None]},
                     ]
                 }
             }
         }
-    ) == ["xdmf", "pb"]
+    ) == ["xdmf", "dtcc"]
 
 
 def test_list_datasets_only_exposes_service_owned_descriptors(routes_env):
@@ -116,7 +116,7 @@ def test_list_datasets_only_exposes_service_owned_descriptors(routes_env):
         timeout_hint=900,
     )
     registry["external_dataset"] = _make_dataset(
-        {"properties": {"format": {"enum": ["pb"]}}},
+        {"properties": {"format": {"enum": ["dtcc"]}}},
         module_name="other_service.datasets",
     )
 
@@ -204,7 +204,7 @@ def test_sse_stream_emits_pending_then_completed(routes_env, monkeypatch):
         _FakeAsyncResult("PENDING"),
         _FakeAsyncResult(
             "SUCCESS",
-            result={"result_file": "job-1.pb", "size_bytes": 42},
+            result={"result_file": "job-1.dtcc", "size_bytes": 42},
         ),
     ]
 
@@ -227,7 +227,7 @@ def test_sse_stream_emits_pending_then_completed(routes_env, monkeypatch):
 
     assert payloads == [
         {"status": "pending", "progress": 0, "message": ""},
-        {"status": "completed", "result_file": "job-1.pb", "size_bytes": 42},
+        {"status": "completed", "result_file": "job-1.dtcc", "size_bytes": 42},
     ]
 
 

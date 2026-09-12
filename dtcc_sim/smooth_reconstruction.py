@@ -635,6 +635,7 @@ def _attach_scalar_field_to_volume_mesh(
     mapped = _reorder_by_coords(fem_keys, values, dtcc_keys)
 
     field = DtccField(
+        association="vertex",
         name=name,
         dim=1,
         values=mapped,

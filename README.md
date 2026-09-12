@@ -1,5 +1,12 @@
 # DTCC Sim
 
+Native traffic and wind exports use `format="dtcc"` and `.dtcc` files, decoded by
+Core's public `dtcc.proto` (`DTCC.ModelFile`). Vertex-valued simulation fields
+carry `association="vertex"`. Legacy `.pb` model files are not supported by the
+updated Core dependency. The Core contract workflow checks native result delivery
+as well as dataset descriptions.
+
+
 DTCC Sim is a simulation package for DTCC Platform. It provides simulation
 utilities and example workflows built around FEniCSx.
 
@@ -37,8 +44,8 @@ Current simulation datasets:
 | --- | --- | --- | --- |
 | `urban_heat_simulation` | `dtcc_core.model.VolumeMesh` | `xdmf` | Steady-state heat equation with temperature attached as a `Field`. `xdmf` is multi-file. |
 | `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf` | PDE-smoothed sensor field attached as a `Field`. `xdmf` is multi-file. |
-| `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `pb` | CFD wind result with velocity, pressure, and speed fields. |
-| `traffic_simulation` | `dtcc_core.model.RoadNetwork` | `pb` | Static user-equilibrium road assignment with synthetic DeSO demand. |
+| `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `dtcc` | CFD wind result with velocity, pressure, and speed fields. |
+| `traffic_simulation` | `dtcc_core.model.RoadNetwork` | `dtcc` | Static user-equilibrium road assignment with synthetic DeSO demand. |
 
 Dataset v2 review status: all registered simulation datasets return native DTCC
 model objects when `format` is omitted. `urban_heat_simulation` and

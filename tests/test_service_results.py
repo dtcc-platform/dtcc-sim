@@ -32,7 +32,8 @@ def _field_volume_mesh(field_name="temperature"):
         cells=np.array([[0, 1, 2, 3]], dtype=np.int64),
     )
     mesh.add_field(
-        Field(name=field_name, values=np.array([18.0, 19.0, 20.0, 21.0]), dim=1)
+        Field(name=field_name, values=np.array([18.0, 19.0, 20.0, 21.0]), dim=1,
+              association="vertex", unit="degC")
     )
     return mesh
 
@@ -45,20 +46,37 @@ def _shared_results_dir(tmp_path, monkeypatch):
 
 
 def test_handle_result_writes_bytes_result(tmp_path):
-    meta = results.handle_result(b"mesh-bytes", "pb", "job-1")
+    meta = results.handle_result(b"mesh-bytes", "dtcc", "job-1")
 
-    assert meta == {"result_file": "job-1.pb", "size_bytes": 10}
-    assert (tmp_path / "job-1.pb").read_bytes() == b"mesh-bytes"
+    assert meta == {"result_file": "job-1.dtcc", "size_bytes": 10}
+    assert (tmp_path / "job-1.dtcc").read_bytes() == b"mesh-bytes"
+
+
+def test_native_result_delivery_preserves_fields_and_rejects_ambiguous_association(tmp_path):
+    mesh = _field_volume_mesh()
+    meta = results.handle_result(mesh, "dtcc", "native-result")
+    restored = VolumeMesh()
+    restored.from_proto((tmp_path / meta["result_file"]).read_bytes())
+    np.testing.assert_array_equal(restored.vertices, mesh.vertices)
+    np.testing.assert_array_equal(restored.cells, mesh.cells)
+    np.testing.assert_array_equal(restored.fields[0].values, mesh.fields[0].values)
+    assert restored.fields[0].association == "vertex"
+    assert restored.fields[0].unit == "degC"
+
+    mesh.fields[0].association = None
+    with pytest.raises(ValueError, match="explicit.*association"):
+        results.handle_result(mesh, "dtcc", "ambiguous-result")
+    assert not (tmp_path / "ambiguous-result.dtcc").exists()
 
 
 def test_handle_result_moves_single_output_file(tmp_path):
     def write_single_file(target):
         target.write_bytes(b"pb-data")
 
-    meta = results.handle_result(_SavableResult(write_single_file), "pb", "job-2")
+    meta = results.handle_result(_SavableResult(write_single_file), "dtcc", "job-2")
 
-    assert meta == {"result_file": "job-2.pb", "size_bytes": 7}
-    assert (tmp_path / "job-2.pb").read_bytes() == b"pb-data"
+    assert meta == {"result_file": "job-2.dtcc", "size_bytes": 7}
+    assert (tmp_path / "job-2.dtcc").read_bytes() == b"pb-data"
 
 
 def test_handle_result_archives_multi_file_output(tmp_path):
@@ -174,9 +192,9 @@ def test_handle_result_requires_format_for_non_bytes():
 
 def test_handle_result_rejects_object_without_save():
     with pytest.raises(TypeError, match="has no save"):
-        results.handle_result(object(), "pb", "job-5")
+        results.handle_result(object(), "dtcc", "job-5")
 
 
 def test_handle_result_rejects_empty_serialization_output():
     with pytest.raises(RuntimeError, match="produced no files"):
-        results.handle_result(_SavableResult(lambda target: None), "pb", "job-6")
+        results.handle_result(_SavableResult(lambda target: None), "dtcc", "job-6")

@@ -214,7 +214,7 @@ def test_traffic_simulation_dataset_protobuf_format(monkeypatch):
         trips_per_employed=1.0,
         peak_hour_factor=1.0,
         max_iterations=3,
-        format="pb",
+        format="dtcc",
     )
     restored = RoadNetwork()
     restored.from_proto(payload)

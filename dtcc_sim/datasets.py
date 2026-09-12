@@ -849,7 +849,7 @@ class TrafficSimulationArgs(DatasetBaseArgs):
         None,
         description="Reference year for DeSO statistics; defaults to latest per topic.",
     )
-    format: Optional[Literal["pb"]] = Field(None, description="Output format")
+    format: Optional[Literal["dtcc"]] = Field(None, description="Output format")
 
 
 class TrafficSimulationDataset(DatasetDescriptor):
@@ -1065,7 +1065,7 @@ class TrafficSimulationDataset(DatasetDescriptor):
         result = sim.simulate()
         result.attributes["simulation_diagnostics"] = sim.diagnostics
 
-        if args.format == "pb":
+        if args.format == "dtcc":
             return result.to_proto().SerializeToString()
         return result
 
@@ -1176,7 +1176,7 @@ class UrbanWindSimulationArgs(DatasetBaseArgs):
         description="Use a pressure null-space instead of an outlet boundary.",
     )
 
-    format: Optional[Literal["pb"]] = Field(None, description="Output format")
+    format: Optional[Literal["dtcc"]] = Field(None, description="Output format")
 
 
 class UrbanWindSimulationDataset(DatasetDescriptor):

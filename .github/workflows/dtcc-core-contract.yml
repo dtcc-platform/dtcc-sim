@@ -70,7 +70,9 @@ jobs:
         run: |
           python -m pytest -q \
             tests/test_dtcc_core_contract.py \
-            tests/test_dataset_qa.py
+            tests/test_dataset_qa.py \
+            tests/test_traffic.py \
+            tests/test_service_results.py
 
   bump-core-pin:
     needs: contract
