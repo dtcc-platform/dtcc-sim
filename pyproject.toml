@@ -40,3 +40,7 @@ markers = [
   "slow: intentionally small but slower numerical tests",
   "expensive: expensive/manual simulations; skipped unless --run-expensive is passed",
 ]
+
+[dependency-groups]
+# Include the service dependencies used by the test suite.
+dev = ["dtcc-sim[test,service]"]
