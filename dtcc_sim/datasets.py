@@ -82,7 +82,7 @@ class UrbanHeatSimulationArgs(DatasetBaseArgs):
     mesh_max_mesh_size: float = Field(25.0, description="Max mesh size in meters")
     mesh_domain_height: float = Field(80.0, description="Domain height in meters")
 
-    format: Optional[Literal["xdmf"]] = Field(None, description="Output format")
+    format: Optional[Literal["xdmf", "dtcc"]] = Field(None, description="Output format")
 
 
 class UrbanHeatSimulationDataset(DatasetDescriptor):
@@ -201,7 +201,7 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
         "Assemble the steady diffusion/reaction finite-element problem",
         "Apply Dirichlet, Neumann, or Robin boundary conditions by surface category",
         "Solve the linear system with PETSc through the dtcc_sim FEniCS wrapper",
-        "Attach a temperature Field to the DTCC VolumeMesh or serialize XDMF output",
+        "Attach a temperature Field to the DTCC VolumeMesh; optionally serialize DTCC or XDMF output",
     ]
     presentation_headline = "Steady Urban Heat Field"
     presentation_summary = (
@@ -306,6 +306,8 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
         )
         sim = UrbanHeatSimulator(bounds=bounds, params=params)
         result = sim.simulate()
+        if args.format == "dtcc":
+            return self.export_to_bytes(result, args.format)
         if args.format:
             if sim.solution is None:
                 raise RuntimeError(
@@ -382,7 +384,7 @@ class AirQualityFieldArgs(DatasetBaseArgs):
         0.0, description="Vertical offset to add to sensor z-coordinates"
     )
 
-    format: Optional[Literal["xdmf"]] = Field(None, description="Output format")
+    format: Optional[Literal["xdmf", "dtcc"]] = Field(None, description="Output format")
 
 
 class AirQualityFieldDataset(DatasetDescriptor):
@@ -696,6 +698,8 @@ class AirQualityFieldDataset(DatasetDescriptor):
 
         volume_mesh = sim.simulate()
 
+        if args.format == "dtcc":
+            return self.export_to_bytes(volume_mesh, args.format)
         if args.format:
             if sim.solution is None:
                 raise RuntimeError(

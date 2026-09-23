@@ -1,6 +1,6 @@
 # DTCC Sim
 
-Native traffic and wind exports use `format="dtcc"` and `.dtcc` files, decoded by
+Native simulation exports use `format="dtcc"` and `.dtcc` files, decoded by
 Core's public `dtcc.proto` (`DTCC.ModelFile`). Vertex-valued simulation fields
 carry `association="vertex"`. Legacy `.pb` model files are not supported by the
 updated Core dependency. The Core contract workflow checks native result delivery
@@ -42,8 +42,8 @@ Current simulation datasets:
 
 | Dataset | Python result | Formats | Notes |
 | --- | --- | --- | --- |
-| `urban_heat_simulation` | `dtcc_core.model.VolumeMesh` | `xdmf` | Steady-state heat equation with temperature attached as a `Field`. `xdmf` is multi-file. |
-| `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf` | PDE-smoothed sensor field attached as a `Field`. `xdmf` is multi-file. |
+| `urban_heat_simulation` | `dtcc_core.model.VolumeMesh` | `xdmf`, `dtcc` | Steady-state heat equation with temperature attached as a `Field`. `dtcc` is single-file; `xdmf` is multi-file. |
+| `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf`, `dtcc` | PDE-smoothed sensor field attached as a `Field`. `dtcc` is single-file; `xdmf` is multi-file. |
 | `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `dtcc` | CFD wind result with velocity, pressure, and speed fields. |
 | `traffic_simulation` | `dtcc_core.model.RoadNetwork` | `dtcc` | Static user-equilibrium road assignment with synthetic DeSO demand. |
 
@@ -52,6 +52,13 @@ model objects when `format` is omitted. `urban_heat_simulation` and
 `air_quality_field` return `VolumeMesh` objects with scalar fields attached;
 `urban_wind_simulation` returns a `VolumeMesh` with velocity, pressure, and
 speed fields; `traffic_simulation` returns a `RoadNetwork`.
+
+For heat and air quality, request `format="dtcc"` to receive a single native
+artifact containing the mesh and its vertex-associated scalar field. Save the
+returned bytes to a `.dtcc` file and load it with `dtcc_core.io.load_model(path)`.
+This preserves the nodal samples, not the full FEniCS function space. XDMF remains
+available, and remains the service default when no format is supplied for these
+two datasets.
 
 The service wrapper strips `format` before running a dataset, then serializes
 the returned Python object in `service.results.handle_result()`. This is
