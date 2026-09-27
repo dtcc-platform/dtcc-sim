@@ -16,7 +16,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = ["dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@5ca2ca410f24763591dc62c7b61f870cef13f717"]
+dependencies = ["dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@b375f479793dfb10df747ed3ec09375a97fa5968"]
 
 [project.optional-dependencies]
 test = ["pytest"]
