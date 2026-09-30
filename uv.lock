@@ -732,7 +732,7 @@ wheels = [
 [[package]]
 name = "dtcc-core"
 version = "0.9.8.dev0"
-source = { git = "https://github.com/dtcc-platform/dtcc-core.git?rev=5ca2ca410f24763591dc62c7b61f870cef13f717#5ca2ca410f24763591dc62c7b61f870cef13f717" }
+source = { git = "https://github.com/dtcc-platform/dtcc-core.git?rev=develop#2289d11f85049e13d5042e5cb3e5627c6568765f" }
 dependencies = [
     { name = "affine" },
     { name = "aiohttp" },
@@ -754,7 +754,6 @@ dependencies = [
     { name = "protobuf" },
     { name = "psutil" },
     { name = "pyassimp" },
-    { name = "pybind11" },
     { name = "pydantic" },
     { name = "pygltflib" },
     { name = "pypoints2grid" },
@@ -808,7 +807,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "celery", extras = ["redis"], marker = "extra == 'service'", specifier = ">=5.4" },
-    { name = "dtcc-core", git = "https://github.com/dtcc-platform/dtcc-core.git?rev=5ca2ca410f24763591dc62c7b61f870cef13f717" },
+    { name = "dtcc-core", git = "https://github.com/dtcc-platform/dtcc-core.git?rev=develop" },
     { name = "fastapi", marker = "extra == 'service'", specifier = ">=0.125.0" },
     { name = "httpx", marker = "extra == 'service'", specifier = ">=0.27" },
     { name = "pytest", marker = "extra == 'test'" },
@@ -2388,15 +2387,6 @@ name = "pyassimp"
 version = "5.2.5"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/99/5f/f5577fe7f48be4d2bdf7e3284285469da80b99e4a4c34d4c927466317053/pyassimp-5.2.5.tar.gz", hash = "sha256:107d93780e4300d70698c4291c54dd32ff78e8cf0dafd56ac1801cd0260c36f3", size = 101072, upload-time = "2023-06-20T20:31:27.18Z" }
-
-[[package]]
-name = "pybind11"
-version = "3.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/76/f3/95b0f40b31df41dbfe6bb0857419c9442c15839cbac4796f1c26ae0b6081/pybind11-3.1.0.tar.gz", hash = "sha256:a1cc06b524ab3edca51f8ad3895f9c4fa20b8b19283173dff4ae781449dc9639", size = 603746, upload-time = "2026-08-06T23:33:00.675Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/33/fd/8762f7ee3e4e4be6d1d846cffb4916dd9bb02b2f800d3603718a0efe494c/pybind11-3.1.0-py3-none-any.whl", hash = "sha256:b8488090f8acffbcb6b5d6a85571a6827a0a2981ffb75e5a0b27b87c4a6b7dd0", size = 319402, upload-time = "2026-08-06T23:32:59.047Z" },
-]
 
 [[package]]
 name = "pydantic"

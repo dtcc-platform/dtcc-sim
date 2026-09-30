@@ -107,20 +107,42 @@ uv run pytest tests/test_dataset_qa.py tests/test_import.py tests/test_traffic.p
 
 `uv sync` creates `.venv`, installs the versions recorded in `uv.lock`, and
 installs Sim in editable mode with test and service dependencies. It uses the
-Core commit pinned in `pyproject.toml`. Python edits take effect immediately.
+Core development branch declared in `pyproject.toml`; `uv.lock` records its
+resolved commit. Python edits take effect immediately.
 This environment supports traffic, dataset contracts, and service development;
 FEniCSx solver work uses the Conda environment below.
 
 | Task | Command |
 | --- | --- |
 | Set up or update the environment | `uv sync` |
+| Adopt the latest Core `develop` | `uv sync --upgrade-package dtcc-core` |
 | Run the test suite (solver tests skip without FEniCSx) | `uv run pytest` |
 | Build a source distribution and wheel | `uv build` |
 | Add a dependency | `uv add <package>` |
 | Upgrade a locked dependency | `uv lock --upgrade-package <package>` |
 
 Commit `uv.lock` with dependency changes in `pyproject.toml`. CI uses
-`uv sync --locked`; the Core pin automation updates both files together.
+`uv sync --locked` for the reproducible snapshot. A separate integration job
+tests the latest Core `develop`, including the numerical solvers on DOLFINx
+0.11. Core pull requests call that same workflow against their proposed commit.
+
+After successful Core pushes, the Core contract workflow refreshes only
+`uv.lock` and opens or updates a ready pull request with auto-merge. It skips
+snapshot adoption if Core has advanced beyond the tested commit. To activate
+this automation after pushing the workflows:
+
+- Push Sim's reusable workflow before Core's caller workflow.
+- Enable auto-merge in the Sim repository and retain `DTCC_CORE_BUMP_TOKEN`
+  with permission to push its automation branch and manage pull requests.
+- Require `build-and-test` and `fenics-tests / contract` on Sim's `develop`
+  branch, with branches required to be up to date before merging.
+- Require `sim-compatibility / contract` on Core's `develop` branch, alongside
+  its existing checks. Confirm the check names after their first hosted run.
+
+Auto-merge fails clearly if Sim's auto-merge setting or required checks are
+missing. Core and Sim develop together; historical Core releases are not a
+separate compatibility target. Release and deployment snapshots can retain
+their exact locked commits.
 
 To test with a sibling Core checkout:
 
@@ -130,7 +152,7 @@ uv run --no-sync pytest tests/test_dtcc_core_contract.py
 ```
 
 Use `--no-sync` for commands using that override. Run `uv sync` to restore the
-pinned Core version.
+locked Core snapshot.
 
 ### FEniCSx developer environment
 
@@ -147,7 +169,7 @@ uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,service]"
 ```
 
 Conda supplies Python 3.12, DOLFINx 0.11.0, MPI/PETSc bindings, PyVista, and uv.
-The `uv pip install` command adds Sim, its pinned Core dependency, and the test
+The `uv pip install` command adds Sim, Core from `develop`, and the test
 and service extras to that environment. To use local Core changes, follow it
 with `uv pip install --python "$CONDA_PREFIX/bin/python" -e ../dtcc-core`.
 

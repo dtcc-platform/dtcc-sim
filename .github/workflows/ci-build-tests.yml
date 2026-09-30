@@ -26,24 +26,6 @@ jobs:
         run: uv build
 
   fenics-tests:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: conda-incubator/setup-miniconda@v4
-        with:
-          miniforge-version: latest
-          activate-environment: fenicsx-env
-          environment-file: environment-fenicsx.yml
-      - name: Install package and test dependencies
-        run: uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,service]"
-      - name: Verify solver runtime
-        run: |
-          python - <<'PY'
-          import dolfinx, mpi4py, petsc4py, dtcc_core, dtcc_sim
-          assert dolfinx.__version__ == "0.11.0", dolfinx.__version__
-          PY
-      - name: Run FEniCSx tests
-        run: python -m pytest -m "fenics and not expensive"
+    uses: ./.github/workflows/dtcc-core-contract.yml
+    with:
+      sim_ref: ${{ github.sha }}
