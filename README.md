@@ -72,6 +72,10 @@ The numerical heat, wind, and field-reconstruction solvers require a working
 FEniCSx/dolfinx runtime with MPI/PETSc. Conda is the documented way to provide
 that runtime; Conda itself is not a requirement of the Python package.
 
+DOLFINx 0.11.0 is the supported solver baseline, pinned in the Conda recipe
+and Docker image and exercised by the FEniCSx CI job. Other releases are not
+part of the tested support contract.
+
 | Capability | uv environment without FEniCSx |
 | --- | --- |
 | Import `dtcc_sim`; list datasets and inspect their arguments and descriptions | Supported |
@@ -142,10 +146,16 @@ conda activate fenicsx-env
 uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,service]"
 ```
 
-Conda supplies Python 3.12, FEniCSx/dolfinx, MPI/PETSc bindings, PyVista, and uv.
+Conda supplies Python 3.12, DOLFINx 0.11.0, MPI/PETSc bindings, PyVista, and uv.
 The `uv pip install` command adds Sim, its pinned Core dependency, and the test
 and service extras to that environment. To use local Core changes, follow it
 with `uv pip install --python "$CONDA_PREFIX/bin/python" -e ../dtcc-core`.
+
+To update an existing environment to the checked-in solver baseline:
+
+```bash
+conda env update -f environment-fenicsx.yml
+```
 
 Keep this solver environment separate from the project `.venv`: run its commands
 with `python` / `python -m pytest` after activating Conda. Do not use `uv sync`

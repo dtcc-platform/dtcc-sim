@@ -2283,7 +2283,7 @@ class UrbanWindSimulator:
             info("UrbanWind: setup phase 3/5 - assembling initial matrices")
         A1 = _fem_petsc.create_matrix(a1)
         A1.zeroEntries()
-        _fem_petsc.assemble_matrix_mat(A1, a1, bcs=bcs_vel)
+        _fem_petsc.assemble_matrix(A1, a1, bcs=bcs_vel)
         A1.assemble()
         # A2, A3 are truly constant
         A2 = _fem_petsc.assemble_matrix(a2, bcs=bcs_pres)
@@ -2386,7 +2386,7 @@ class UrbanWindSimulator:
 
             # Reassemble A1 with updated convection velocity (u_n)
             A1.zeroEntries()
-            _fem_petsc.assemble_matrix_mat(A1, a1, bcs=bcs_vel)
+            _fem_petsc.assemble_matrix(A1, a1, bcs=bcs_vel)
             A1.assemble()
             ksp1.setOperators(A1)
 

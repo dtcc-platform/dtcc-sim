@@ -6,7 +6,7 @@ ARG TETGEN_VERSION=v1.6.0
 RUN mamba install -y -c conda-forge \
     python=3.12 \
     uv \
-    fenics-dolfinx \
+    fenics-dolfinx=0.11.0 \
     petsc4py \
     compilers \
     cmake \
