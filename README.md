@@ -73,8 +73,7 @@ FEniCSx/dolfinx runtime with MPI/PETSc. Conda is the documented way to provide
 that runtime; Conda itself is not a requirement of the Python package.
 
 DOLFINx 0.11.0 is the supported solver baseline, pinned in the Conda recipe
-and Docker image and exercised by the FEniCSx CI job. Other releases are not
-part of the tested support contract.
+and Docker image. Other releases are not part of the tested support contract.
 
 | Capability | uv environment without FEniCSx |
 | --- | --- |
@@ -106,9 +105,10 @@ uv run pytest tests/test_dataset_qa.py tests/test_import.py tests/test_traffic.p
 ```
 
 `uv sync` creates `.venv`, installs the versions recorded in `uv.lock`, and
-installs Sim in editable mode with test and service dependencies. It uses the
-Core development branch declared in `pyproject.toml`; `uv.lock` records its
-resolved commit. Python edits take effect immediately.
+installs Sim in editable mode with test and service dependencies.
+`pyproject.toml` declares Core's `develop` branch as a dependency; `uv.lock`
+records its resolved commit. A plain `uv sync` keeps that snapshot until you
+explicitly upgrade Core. Python edits take effect immediately.
 This environment supports traffic, dataset contracts, and service development;
 FEniCSx solver work uses the Conda environment below.
 
@@ -121,28 +121,10 @@ FEniCSx solver work uses the Conda environment below.
 | Add a dependency | `uv add <package>` |
 | Upgrade a locked dependency | `uv lock --upgrade-package <package>` |
 
-Commit `uv.lock` with dependency changes in `pyproject.toml`. CI uses
-`uv sync --locked` for the reproducible snapshot. A separate integration job
-tests the latest Core `develop`, including the numerical solvers on DOLFINx
-0.11. Core pull requests call that same workflow against their proposed commit.
-
-After successful Core pushes, the Core contract workflow refreshes only
-`uv.lock` and opens or updates a ready pull request with auto-merge. It skips
-snapshot adoption if Core has advanced beyond the tested commit. To activate
-this automation after pushing the workflows:
-
-- Push Sim's reusable workflow before Core's caller workflow.
-- Enable auto-merge in the Sim repository and retain `DTCC_CORE_BUMP_TOKEN`
-  with permission to push its automation branch and manage pull requests.
-- Require `build-and-test` and `fenics-tests / contract` on Sim's `develop`
-  branch, with branches required to be up to date before merging.
-- Require `sim-compatibility / contract` on Core's `develop` branch, alongside
-  its existing checks. Confirm the check names after their first hosted run.
-
-Auto-merge fails clearly if Sim's auto-merge setting or required checks are
-missing. Core and Sim develop together; historical Core releases are not a
-separate compatibility target. Release and deployment snapshots can retain
-their exact locked commits.
+Commit `uv.lock` when adopting a new Core commit or changing dependencies in
+`pyproject.toml`. Core and Sim develop together; the compatibility target is
+the latest Core `develop`. The lockfile provides an exact snapshot for
+reproducible installs, releases, and deployments.
 
 To test with a sibling Core checkout:
 

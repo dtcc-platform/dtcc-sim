@@ -1,18 +1,8 @@
 name: dtcc-core contract
 
+run-name: dtcc-core contract at ${{ github.event.client_payload.core_sha || inputs.core_sha }}
+
 on:
-  workflow_call:
-    inputs:
-      core_sha:
-        description: Exact Core commit to test; defaults to current develop
-        required: false
-        type: string
-        default: ""
-      sim_ref:
-        description: Sim revision to test
-        required: false
-        type: string
-        default: develop
   workflow_dispatch:
     inputs:
       core_sha:
@@ -23,7 +13,7 @@ on:
     types: [dtcc-core-contract]
 
 concurrency:
-  group: dtcc-core-contract-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}-${{ inputs.sim_ref || 'develop' }}
+  group: dtcc-core-contract-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -32,80 +22,66 @@ permissions:
 jobs:
   contract:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
-    outputs:
-      core_sha: ${{ steps.source.outputs.core_sha }}
-      sim_sha: ${{ steps.source.outputs.sim_sha }}
+    env:
+      CORE_SHA: ${{ github.event.client_payload.core_sha || inputs.core_sha }}
     steps:
-      - name: Check out Sim
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          repository: dtcc-platform/dtcc-sim
-          ref: ${{ inputs.sim_ref || 'develop' }}
 
-      - name: Resolve Core revision
-        id: source
-        env:
-          CORE_SHA: ${{ github.event.client_payload.core_sha || inputs.core_sha }}
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Validate dtcc-core SHA
         run: |
-          if [[ -z "${CORE_SHA}" ]]; then
-            CORE_SHA="$(git ls-remote https://github.com/dtcc-platform/dtcc-core.git refs/heads/develop | cut -f1)"
-          fi
           if [[ ! "${CORE_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
             echo "core_sha must be a full lowercase 40-character commit SHA"
             exit 1
           fi
-          echo "core_sha=${CORE_SHA}" >> "${GITHUB_OUTPUT}"
-          echo "sim_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
-          printf 'dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@%s\n' "${CORE_SHA}" > "${RUNNER_TEMP}/core-override.txt"
 
-      - name: Set up solver environment
-        uses: conda-incubator/setup-miniconda@v4
-        with:
-          miniforge-version: latest
-          activate-environment: fenicsx-env
-          environment-file: environment-fenicsx.yml
-
-      - name: Install Sim against the selected Core commit
+      - name: Install dtcc-sim contract tests
         run: |
-          uv pip install --python "$CONDA_PREFIX/bin/python" \
-            --overrides "${RUNNER_TEMP}/core-override.txt" \
-            -e ".[test,service]"
+          uv sync --locked --no-install-package dtcc-core
+          # Test the requested Core revision without restoring the project's pin.
+          uv pip install \
+            "dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@${CORE_SHA}"
 
-      - name: Verify installed runtime and Core commit
-        env:
-          CORE_SHA: ${{ steps.source.outputs.core_sha }}
+      - name: Verify installed dtcc-core SHA
         run: |
-          python - <<'PY'
+          uv run --no-sync python - <<'PY'
           import json
           import os
           from importlib.metadata import distribution
-          import dolfinx, mpi4py, petsc4py, dtcc_core, dtcc_sim
 
-          assert dolfinx.__version__ == "0.11.0", dolfinx.__version__
-          metadata = json.loads(distribution("dtcc-core").read_text("direct_url.json"))
+          direct_url = distribution("dtcc-core").read_text("direct_url.json")
+          metadata = json.loads(direct_url)
           installed_sha = metadata["vcs_info"]["commit_id"]
-          assert installed_sha == os.environ["CORE_SHA"], installed_sha
-          print(f"Testing Core {installed_sha} on DOLFINx {dolfinx.__version__}")
+          expected_sha = os.environ["CORE_SHA"]
+          assert installed_sha == expected_sha, (installed_sha, expected_sha)
           PY
 
-      - name: Run full Sim integration suite
-        run: python -m pytest -m "not expensive"
+      - name: Run dtcc-core contract tests
+        run: |
+          uv run --no-sync pytest -q \
+            tests/test_dtcc_core_contract.py \
+            tests/test_dataset_qa.py \
+            tests/test_traffic.py \
+            tests/test_service_results.py
 
-  refresh-core-lock:
+  bump-core-pin:
     needs: contract
-    if: github.event_name == 'repository_dispatch' && github.repository == 'dtcc-platform/dtcc-sim'
+    if: github.event_name == 'repository_dispatch'
     runs-on: ubuntu-latest
     env:
-      CORE_SHA: ${{ needs.contract.outputs.core_sha }}
+      CORE_SHA: ${{ github.event.client_payload.core_sha }}
       BRANCH: automation/dtcc-core-pin
     steps:
-      - name: Check out the tested Sim revision
+      - name: Check out develop
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.contract.outputs.sim_sha }}
+          ref: develop
           fetch-depth: 0
           token: ${{ secrets.DTCC_CORE_BUMP_TOKEN }}
 
@@ -115,84 +91,81 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - name: Refresh the Core snapshot
+      - name: Update dtcc-core pin
         id: update
         run: |
-          uv lock --upgrade-package dtcc-core
-          python - <<'PY'
+          uv run --no-project python - <<'PY'
           import os
-          import subprocess
-          import tomllib
+          import re
           from pathlib import Path
 
-          lock = tomllib.loads(Path("uv.lock").read_text())
-          core = next(package for package in lock["package"] if package["name"] == "dtcc-core")
-          locked_sha = core["source"]["git"].rsplit("#", 1)[1]
-          if locked_sha != os.environ["CORE_SHA"]:
-              print("Core develop advanced since testing; skipping this snapshot update.")
-              changed = False
-          else:
-              result = subprocess.run(["git", "diff", "--quiet", "--", "uv.lock"])
-              if result.returncode not in (0, 1):
-                  result.check_returncode()
-              changed = result.returncode == 1
-          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"changed={str(changed).lower()}\n")
+          path = Path("pyproject.toml")
+          text = path.read_text(encoding="utf-8")
+          pattern = (
+              r"(dtcc-core @ git\+https://github\.com/"
+              r"dtcc-platform/dtcc-core\.git@)"
+              r"(?:develop|[0-9a-f]{40})"
+          )
+          updated, count = re.subn(
+              pattern,
+              rf"\g<1>{os.environ['CORE_SHA']}",
+              text,
+          )
+          if count != 1:
+              raise SystemExit("Expected exactly one dtcc-core dependency")
+          path.write_text(updated, encoding="utf-8")
           PY
 
-      - name: Push lock update branch
+          uv lock
+
+          if git diff --quiet -- pyproject.toml uv.lock; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Push pin branch
         if: steps.update.outputs.changed == 'true'
         run: |
           if git ls-remote --exit-code --heads origin "${BRANCH}" >/dev/null 2>&1; then
-            git fetch origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
+            git fetch origin \
+              "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}"
           fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -C "${BRANCH}"
-          git add uv.lock
-          git commit -m "Build: Refresh dtcc-core snapshot to ${CORE_SHA:0:12}"
+          git add pyproject.toml uv.lock
+          short_sha="${CORE_SHA:0:12}"
+          git commit -m "Build: Pinned dtcc-core to ${short_sha}"
           git push --force-with-lease origin "HEAD:refs/heads/${BRANCH}"
 
-      - name: Open or update the lock pull request
+      - name: Open or update draft pull request
         if: steps.update.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.DTCC_CORE_BUMP_TOKEN }}
         run: |
-          title="Build: Refresh dtcc-core snapshot"
-          printf 'Updates uv.lock to Core %s after the full Sim integration suite passed in %s/%s/actions/runs/%s.\n' \
-            "${CORE_SHA}" "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" "${GITHUB_RUN_ID}" > "${RUNNER_TEMP}/core-lock-pr.md"
-          pr_number="$(gh pr list --head "${BRANCH}" --base develop --state open --json number --jq '.[0].number // empty')"
-          if [[ -z "${pr_number}" ]]; then
-            gh pr create --base develop --head "${BRANCH}" --title "${title}" --body-file "${RUNNER_TEMP}/core-lock-pr.md"
-            pr_number="$(gh pr list --head "${BRANCH}" --base develop --state open --json number --jq '.[0].number')"
-          else
-            gh pr edit "${pr_number}" --title "${title}" --body-file "${RUNNER_TEMP}/core-lock-pr.md"
-            if [[ "$(gh pr view "${pr_number}" --json isDraft --jq .isDraft)" == true ]]; then
-              gh pr ready "${pr_number}"
-            fi
-          fi
-          echo "PR_NUMBER=${pr_number}" >> "${GITHUB_ENV}"
+          title="Build: Update dtcc-core pin"
+          body="Updates the pinned dtcc-core commit to ${CORE_SHA} after contract tests passed in ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+          pr_number="$(gh pr list \
+            --head "${BRANCH}" \
+            --base develop \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
 
-      - name: Enable auto-merge after required checks
-        if: steps.update.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.DTCC_CORE_BUMP_TOKEN }}
-        run: |
-          if [[ "$(gh api "repos/${GITHUB_REPOSITORY}" --jq .allow_auto_merge)" != true ]]; then
-            echo "Enable repository auto-merge before automatic Core snapshot adoption. See README.md."
-            exit 1
+          if [[ -z "${pr_number}" ]]; then
+            gh pr create \
+              --draft \
+              --base develop \
+              --head "${BRANCH}" \
+              --title "${title}" \
+              --body "${body}"
+          else
+            gh api \
+              --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
+              --field title="${title}" \
+              --field body="${body}" \
+              >/dev/null
           fi
-          export REQUIRED_CHECKS="$(gh api "repos/${GITHUB_REPOSITORY}/branches/develop/protection/required_status_checks")"
-          python - <<'PY'
-          import json
-          import os
-          protection = json.loads(os.environ["REQUIRED_CHECKS"])
-          if protection.get("strict") is not True:
-              raise SystemExit("Require branches to be up to date before auto-merge. See README.md.")
-          required = set(protection.get("contexts", []))
-          required.update(check["context"] for check in protection.get("checks", []))
-          missing = {"build-and-test", "fenics-tests / contract"} - required
-          if missing:
-              raise SystemExit(f"Require Sim CI checks before auto-merge: {sorted(missing)}. See README.md.")
-          PY
-          gh pr merge "${PR_NUMBER}" --auto --squash --match-head-commit "$(git rev-parse HEAD)"

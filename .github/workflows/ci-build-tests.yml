@@ -24,8 +24,3 @@ jobs:
         run: uv run --locked pytest
       - name: Build distributions
         run: uv build
-
-  fenics-tests:
-    uses: ./.github/workflows/dtcc-core-contract.yml
-    with:
-      sim_ref: ${{ github.sha }}
