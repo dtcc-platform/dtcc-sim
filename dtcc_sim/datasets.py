@@ -380,8 +380,18 @@ class AirQualityFieldArgs(DatasetBaseArgs):
     )
 
     # Robustness options
+    station_height_above_ground: float = Field(
+        2.0,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "Assumed height above terrain in meters for stations with missing elevation"
+        ),
+    )
     z_offset: float = Field(
-        0.0, description="Vertical offset to add to sensor z-coordinates"
+        0.0,
+        allow_inf_nan=False,
+        description="Additional vertical offset in meters after resolving station elevations",
     )
 
     format: Optional[Literal["xdmf", "dtcc"]] = Field(None, description="Output format")
@@ -436,7 +446,7 @@ class AirQualityFieldDataset(DatasetDescriptor):
         >>>
         >>> # Basic usage - reconstruct NO2 concentrations
         >>> volume_mesh = datasets.air_quality_field(
-        ...     bounds=[665000, 6575000, 685000, 6595000],  # 20x20 km in Göteborg
+        ...     bounds=[319450, 6400200, 319650, 6400400],  # 200x200 m in Göteborg
         ...     phenomenon="NO2"
         ... )
         >>>
@@ -447,7 +457,7 @@ class AirQualityFieldDataset(DatasetDescriptor):
         >>>
         >>> # Adjust reconstruction parameters
         >>> volume_mesh = datasets.air_quality_field(
-        ...     bounds=[665000, 6575000, 685000, 6595000],
+        ...     bounds=[319450, 6400200, 319650, 6400400],
         ...     phenomenon="PM10",
         ...     lambda_smooth=0.5,    # Less smoothing
         ...     data_weight=200.0,    # Closer fit to sensors
@@ -542,9 +552,11 @@ class AirQualityFieldDataset(DatasetDescriptor):
         "Fetch measured station observations from dtcc_core.datasets.air_quality",
         "Validate that station coordinates, values, and a non-empty unit are available",
         "Generate a DTCC city volume mesh from requested bounds when needed",
+        "Estimate missing elevations from the mesh ground boundary plus station_height_above_ground",
+        "Apply z_offset to the resolved station elevations",
         "Load the mesh into FEniCSx and create a first-order Lagrange space",
         "Use the mean station value as background when background_value is not set",
-        "Locate station points in the mesh and skip only points outside the domain",
+        "Require every finite-valued station observation to lie inside the volume mesh",
         "Assemble data-fidelity, smoothness, and background-anchor terms",
         "Solve the linear Tikhonov reconstruction system with PETSc",
         "Attach the reconstructed scalar Field with the upstream observation unit",
@@ -617,8 +629,11 @@ class AirQualityFieldDataset(DatasetDescriptor):
             "dispersion, chemistry, emissions, or regulatory compliance model."
         ),
         (
-            "Stations outside the generated mesh are skipped; the run fails if "
-            "no usable station constraints remain."
+            "Usable stations outside the generated mesh cause a station-specific error."
+        ),
+        (
+            "Missing station elevations are estimated from the mesh ground boundary "
+            "plus station_height_above_ground; actual instrument heights are unknown."
         ),
     ]
     presentation_limitations = [
@@ -667,6 +682,28 @@ class AirQualityFieldDataset(DatasetDescriptor):
         # Get unit from sensors
         field_unit = self._single_observation_unit(sensors, args.phenomenon)
 
+        stations = sensors.stations()
+        if len(stations) != len(point_coords):
+            raise RuntimeError(
+                "air_quality_field requires one station per observation coordinate."
+            )
+        labels = []
+        missing_elevation = []
+        for station in stations:
+            attributes = station.attributes
+            label = (
+                f"{attributes.get('station_name', 'station')} "
+                f"(id={attributes.get('station_id', 'unknown')})"
+            )
+            source = attributes.get("elevation_source")
+            if source not in ("missing", "upstream"):
+                raise RuntimeError(
+                    f"air_quality_field: {label} lacks valid elevation_source metadata; "
+                    "use a Core air_quality dataset that records elevation provenance."
+                )
+            labels.append(label)
+            missing_elevation.append(source == "missing")
+
         from .smooth_reconstruction import (
             SmoothReconstructionSimulator,
             SmoothReconstructionParameters,
@@ -694,7 +731,21 @@ class AirQualityFieldDataset(DatasetDescriptor):
             field_name=args.phenomenon,
             field_unit=field_unit,
             params=params,
+            point_labels=labels,
         )
+
+        import numpy as np
+
+        estimated = np.asarray(missing_elevation) & np.isfinite(point_values)
+        if estimated.any():
+            sim._load_if_needed()
+            sim.point_coords = self._resolve_missing_elevations(
+                sim.volume_mesh_dtcc,
+                point_coords,
+                estimated,
+                labels,
+                args.station_height_above_ground,
+            )
 
         volume_mesh = sim.simulate()
 
@@ -708,6 +759,47 @@ class AirQualityFieldDataset(DatasetDescriptor):
                 )
             return self.export_to_bytes(sim.solution, args.format)
         return volume_mesh
+
+    @staticmethod
+    def _resolve_missing_elevations(volume_mesh, points, estimated, labels, height):
+        """Place missing elevations above the actual mesh ground triangles."""
+        import numpy as np
+
+        faces = getattr(volume_mesh, "boundary_faces", None)
+        markers = getattr(volume_mesh, "boundary_markers", None)
+        if faces is None or markers is None:
+            raise RuntimeError(
+                "air_quality_field requires a volume mesh with ground boundary markers."
+            )
+        ground_faces = faces[np.asarray(markers) == -1]
+        triangles = volume_mesh.vertices[ground_faces]
+        lower = triangles[:, :, :2].min(axis=1)
+        upper = triangles[:, :, :2].max(axis=1)
+        resolved = points.copy()
+        for index in np.flatnonzero(estimated):
+            xy = points[index, :2]
+            candidates = triangles[
+                np.all(xy >= lower, axis=1) & np.all(xy <= upper, axis=1)
+            ]
+            for triangle in candidates:
+                matrix = np.column_stack(
+                    (triangle[0, :2] - triangle[2, :2], triangle[1, :2] - triangle[2, :2])
+                )
+                try:
+                    weights = np.linalg.solve(matrix, xy - triangle[2, :2])
+                except np.linalg.LinAlgError:
+                    continue
+                weights = np.append(weights, 1.0 - weights.sum())
+                if np.all(weights >= -1e-9):
+                    resolved[index, 2] = float(weights @ triangle[:, 2]) + height
+                    break
+            else:
+                raise RuntimeError(
+                    f"air_quality_field: {labels[index]} cannot be placed: "
+                    f"no ground boundary beneath ({xy[0]}, {xy[1]}). "
+                    "Check building footprints and domain bounds."
+                )
+        return resolved
 
     @staticmethod
     def _validate_point_coordinates(point_coords):

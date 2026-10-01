@@ -109,7 +109,11 @@ def test_air_quality_field_context_documents_reconstruction_and_lineage():
     assert "reconstructed_concentration_field" in manifest.metadata.data_types
     assert manifest.provenance.derived_from[0]["name"] == "air_quality"
     assert "station coordinates" in manifest.provenance.processing_steps[2]
-    assert "Tikhonov" in manifest.provenance.processing_steps[8]
+    assert any("Tikhonov" in step for step in manifest.provenance.processing_steps)
+    assert any(
+        "station_height_above_ground" in step
+        for step in manifest.provenance.processing_steps
+    )
     assert manifest.presentation.headline == "Derived Air-Quality Field"
     assert manifest.presentation.legend["title"] == "Reconstructed concentration"
     assert manifest.presentation.view_hints["upstream_observation_dataset"] == (
@@ -120,6 +124,8 @@ def test_air_quality_field_context_documents_reconstruction_and_lineage():
     assert manifest.request.parameters["phenomenon"] == "PM10"
     assert manifest.request.parameters["lambda_smooth"] == 0.5
     assert manifest.request.parameters["data_weight"] == 200.0
+    assert manifest.request.parameters["station_height_above_ground"] == 2.0
+    assert manifest.request.parameters["z_offset"] == 0.0
 
 
 def test_traffic_context_documents_assignment_model_and_lineage():

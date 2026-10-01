@@ -130,3 +130,23 @@ def test_tiny_reconstruction_records_diagnostics():
     assert diagnostics["field"]["finite"] is True
     assert diagnostics["field"]["unit"] == "ug/m3"
     assert diagnostics["linear_solve"]["converged_reason"] > 0
+
+
+def test_labeled_reconstruction_rejects_outside_station_and_ignores_missing_value():
+    from dolfinx.mesh import create_box, CellType
+    from mpi4py import MPI
+
+    mesh = create_box(
+        MPI.COMM_WORLD, [[0., 0., 3.], [1., 1., 10.]], [1, 1, 1], CellType.tetrahedron
+    )
+    sim = SmoothReconstructionSimulator(
+        mesh=mesh,
+        point_coords=np.array([[.2, .2, 0.], [.2, .2, 5.], [.8, .8, 11.]]),
+        point_values=np.array([[np.nan], [10.], [20.]]),
+        point_labels=["ignored", "inside", "Station 87"],
+    )
+    with pytest.raises(
+        RuntimeError, match=r"Station 87 at \(0.8, 0.8, 11.0\).*above the domain top"
+    ) as failure:
+        sim.simulate()
+    assert "ignored" not in str(failure.value)

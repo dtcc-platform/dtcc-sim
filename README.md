@@ -6,6 +6,14 @@ carry `association="vertex"`. Legacy `.pb` model files are not supported by the
 updated Core dependency. The Core contract workflow checks native result delivery
 as well as dataset descriptions.
 
+Air-quality reconstruction uses Core station metadata `elevation_source` to
+distinguish supplied elevations from missing ones. Missing elevations are placed
+at the volume mesh's local ground elevation plus `station_height_above_ground`
+(default 2 m). This is an estimated instrument height. `z_offset` adds a further
+offset after elevation resolution. Supplied elevations, including zero, are
+preserved before that offset. A finite-valued station outside the domain causes
+an error identifying the station and its resolved coordinates.
+
 
 DTCC Sim is a simulation package for DTCC Platform. It provides simulation
 utilities and example workflows built around FEniCSx.
@@ -135,6 +143,10 @@ uv run --no-sync pytest tests/test_dtcc_core_contract.py
 
 Use `--no-sync` for commands using that override. Run `uv sync` to restore the
 locked Core snapshot.
+
+Air-quality field reconstruction requires a Core version that supplies station
+`elevation_source` metadata. Use the sibling checkout override above while those
+Core changes are unpublished; the lockfile keeps the published Core snapshot.
 
 ### FEniCSx developer environment
 

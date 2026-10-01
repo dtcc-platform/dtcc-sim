@@ -139,6 +139,7 @@ class SmoothReconstructionSimulator:
         field_unit: str = "",
         params: Optional[SmoothReconstructionParameters] = None,
         petsc_options: Optional[Mapping[str, Any]] = None,
+        point_labels: Optional[list[str]] = None,
     ):
         """Initialize the smooth reconstruction simulator.
 
@@ -152,12 +153,15 @@ class SmoothReconstructionSimulator:
             field_unit: Unit for the field (e.g., "µg/m³", "°C")
             params: Reconstruction parameters
             petsc_options: PETSc solver options (default: CG + boomeramg)
+            point_labels: Observation names. When supplied, every finite-valued
+                observation must lie inside the mesh; errors identify each name.
         """
         self.bounds = bounds
         self.mesh_path = mesh_path
         self.mesh = mesh
         self.point_coords = point_coords
         self.point_values = point_values
+        self.point_labels = point_labels
         self.field_name = field_name
         self.field_unit = field_unit
         self.params = params or SmoothReconstructionParameters()
@@ -265,6 +269,10 @@ class SmoothReconstructionSimulator:
 
         # Filter out NaNs
         valid = np.isfinite(values)
+        if self.point_labels is not None:
+            if len(self.point_labels) != len(values):
+                raise ValueError("SmoothReconstruction requires one label per observation.")
+            self._prepared_point_labels = np.asarray(self.point_labels)[valid]
         self._dropped_nonfinite_observation_count = int(np.count_nonzero(~valid))
         points = points[valid]
         values = values[valid]
@@ -444,6 +452,31 @@ class SmoothReconstructionSimulator:
         self._load_if_needed()
         point_coords, point_values = self._prepare_point_data()
 
+        info("SmoothReconstruction: Locating observation points in mesh...")
+        cells, mask = self._locate_points(self.mesh, point_coords)
+        if self.point_labels is not None and not mask.all():
+            outside = "; ".join(
+                f"{label} at ({point[0]}, {point[1]}, {point[2]})"
+                for label, point in zip(
+                    self._prepared_point_labels[~mask], point_coords[~mask]
+                )
+            )
+            raise RuntimeError(
+                f"SmoothReconstruction: observations outside the volume mesh: {outside}. "
+                "Resolved positions may be below terrain, inside a building, "
+                "or above the domain top."
+            )
+
+        valid_points = point_coords[mask]
+        valid_values = point_values[mask]
+        valid_cells = cells[mask]
+        if len(valid_values) == 0:
+            raise RuntimeError(
+                "SmoothReconstruction: no point observations were located inside "
+                "the mesh. Enlarge the bounds, adjust z_offset, or provide points "
+                "inside the reconstruction domain."
+            )
+
         info("SmoothReconstruction: Setting up finite element problem...")
 
         # Create function space (P1 only)
@@ -493,20 +526,6 @@ class SmoothReconstructionSimulator:
         b = M.createVecRight()
         M.mult(u_bg_func.x.petsc_vec, b)
         b.scale(self.params.alpha)
-
-        # Locate observation points in mesh
-        info("SmoothReconstruction: Locating observation points in mesh...")
-        cells, mask = self._locate_points(self.mesh, point_coords)
-
-        valid_points = point_coords[mask]
-        valid_values = point_values[mask]
-        valid_cells = cells[mask]
-        if len(valid_values) == 0:
-            raise RuntimeError(
-                "SmoothReconstruction: no point observations were located inside "
-                "the mesh. Enlarge the bounds, adjust z_offset, or provide points "
-                "inside the reconstruction domain."
-            )
 
         info(
             f"SmoothReconstruction: Adding {len(valid_values)} point observation penalties..."

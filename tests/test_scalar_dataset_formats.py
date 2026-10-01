@@ -28,7 +28,9 @@ def scalar_dataset(request, monkeypatch):
         field_name, unit = "NO2", "ug/m3"
         sensors = SimpleNamespace(
             to_arrays=lambda **kwargs: (np.array([[0., 0., 0.]]), np.array([20.])),
-            stations=lambda: [SimpleNamespace(attributes={"unit": unit})],
+            stations=lambda: [SimpleNamespace(attributes={
+                "unit": unit, "station_id": "s1", "elevation_source": "upstream",
+            })],
         )
         monkeypatch.setattr(datasets, "air_quality", lambda **kwargs: sensors)
 
