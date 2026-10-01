@@ -211,3 +211,7 @@ __marimo__/
 
 # Solver output
 sandbox/output
+
+# Local agent plans and working documents
+/.agent/plans/
+/.agent/work/
