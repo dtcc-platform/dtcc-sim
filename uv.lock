@@ -732,7 +732,7 @@ wheels = [
 [[package]]
 name = "dtcc-core"
 version = "0.9.8.dev0"
-source = { git = "https://github.com/dtcc-platform/dtcc-core.git?rev=develop#2289d11f85049e13d5042e5cb3e5627c6568765f" }
+source = { git = "https://github.com/dtcc-platform/dtcc-core.git?rev=develop#17c6efe44ca7622e6ef4a802627dfce3ef7f6174" }
 dependencies = [
     { name = "affine" },
     { name = "aiohttp" },

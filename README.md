@@ -144,10 +144,6 @@ uv run --no-sync pytest tests/test_dtcc_core_contract.py
 Use `--no-sync` for commands using that override. Run `uv sync` to restore the
 locked Core snapshot.
 
-Air-quality field reconstruction requires a Core version that supplies station
-`elevation_source` metadata. Use the sibling checkout override above while those
-Core changes are unpublished; the lockfile keeps the published Core snapshot.
-
 ### FEniCSx developer environment
 
 Install Miniconda or another Conda-compatible distribution first:
