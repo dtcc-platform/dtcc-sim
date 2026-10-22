@@ -53,6 +53,48 @@ remains evidence for the same backend. These software checks do not extend its
 numerical equivalence claim to other configurations. Artifacts edited before
 loading are not authenticated by the export consistency check.
 
+## Whole-change compatibility review
+
+[Bounded review evidence](validation/helmholtz-full-review.json) records **195
+selected tests passed in 21.56 seconds**, plus **23 checks passed in 5.08 seconds**
+from a clean source archive. The selection covers existing dataset contracts,
+traffic and result delivery, Helmholtz interfaces, process control, runtime
+failure diagnostics, launchers and deployment rendering. It is not the full
+project test suite and starts no full solver run.
+
+The review corrected these integration issues:
+
+- The Core pin updater now updates both the base dependency and its volume extra
+  to the same tested revision; its functional tests run in the Core contract job.
+- Source archives include the helper, examples, deployment renderer and docs
+  needed by their supplied checks. Wheel contents and an isolated no-dependency
+  installation were verified using the existing numerical environment.
+- Supplied XDMF meshes no longer inherit EPSG:3006 in completed dataset context.
+  Optional `mesh_crs` records a caller-declared CRS without transforming geometry;
+  generated city meshes retain EPSG:3006.
+- Parameter validation rejects nonfinite coefficient maps, nonboolean controls
+  and invalid or duplicate marker selections before numerical preparation.
+- Deployment environment-file paths are quoted; actual user-systemd syntax
+  verification passed with checkout, bundle and state paths containing spaces.
+- Parent-loss reporting uses the configured result backend, including its default
+  when the environment variable is absent.
+- Route tests restore their fake dataset registry so later registration tests
+  see the real datasets.
+
+The existing heat, wind, air-quality and traffic descriptors are unchanged when
+compared with pristine upstream `develop` at the recorded baseline. Default
+imports/registration also pass with DOLFINx, MPI/PETSc, pymetis and threadpoolctl
+blocked. The dependency lock passes an offline consistency check. All 11
+numerical backend files still match the controlled-comparison snapshot.
+
+Recommended merge scope is the core solver/workflow/dataset interface first,
+with service supervision and deployment considered as an optional follow-up.
+The private branch retains both for review. Ordinary Docker/Compose remains the
+general simulation deployment; it does not start the dedicated complex worker.
+Do not interpret descriptor compatibility as evidence that every existing PDE
+has been numerically rerun. Fresh Conda/native dependency installation, a full
+project suite and production activation were not performed by this review.
+
 ## Preview and run the box example
 
 Use the [complex-PETSc Helmholtz environment](installation.md#helmholtz-environment), with DOLFINx 0.11.0. Mesh data are supplied separately. Place the original mesh and its HDF5 companion in `meshes/helmholtz/box-h4/`, retaining the filenames `volume_mesh_gbg.xdmf` and `volume_mesh_gbg.h5`.
