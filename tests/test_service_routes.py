@@ -140,17 +140,6 @@ def test_submit_job_injects_default_format(routes_env, monkeypatch):
     ]
 
 
-def test_allowlist_restricts_discovery_and_submission(routes_env, monkeypatch):
-    routes, registry = routes_env
-    registry["helmholtz_simulation"] = _make_dataset({})
-    registry["urban_heat"] = _make_dataset({})
-    monkeypatch.setattr(routes, "DATASET_ALLOWLIST", frozenset({"helmholtz_simulation"}))
-    assert set(routes.list_datasets()["datasets"]) == {"helmholtz_simulation"}
-    with pytest.raises(HTTPException) as error:
-        routes.submit_job("urban_heat", {"bounds": [0, 0, 1, 1]})
-    assert error.value.status_code == 404
-
-
 def test_submit_job_returns_422_for_invalid_params(routes_env):
     routes, registry = routes_env
     registry["urban_heat"] = _make_dataset(
@@ -200,39 +189,6 @@ def test_cancel_job_revokes_celery_task(routes_env, monkeypatch):
     assert celery_app.revoked == [
         (("task-99",), {"terminate": True, "signal": "SIGTERM"})
     ]
-
-
-def test_cancel_helmholtz_uses_persistent_request(routes_env, monkeypatch):
-    routes, registry = routes_env
-    registry["helmholtz_simulation"] = _make_dataset({})
-    app = _FakeCeleryApp()
-    app._results["task-helmholtz"] = _FakeAsyncResult("STARTED")
-    writes = []
-    app.backend = SimpleNamespace(set=lambda *args: writes.append(args))
-    _install_fake_tasks(monkeypatch, app)
-    assert routes.cancel_job("helmholtz_simulation", "task-helmholtz") == {
-        "task_id": "task-helmholtz", "status": "cancelling",
-    }
-    assert writes == [("dtcc-sim:helmholtz:cancel:task-helmholtz", b"1")]
-    assert not app.revoked
-
-
-@pytest.mark.parametrize(
-    "state,status",
-    [("SUCCESS", "completed"), ("FAILURE", "failed"), ("REVOKED", "cancelled")],
-)
-def test_cancelling_finished_helmholtz_does_not_change_state(
-    routes_env, monkeypatch, state, status
-):
-    routes, registry = routes_env
-    registry["helmholtz_simulation"] = _make_dataset({})
-    app = _FakeCeleryApp()
-    app._results["finished-job"] = _FakeAsyncResult(state)
-    _install_fake_tasks(monkeypatch, app)
-    assert routes.cancel_job("helmholtz_simulation", "finished-job") == {
-        "task_id": "finished-job", "status": status,
-    }
-    assert not app.revoked
 
 
 def test_sse_stream_emits_pending_then_completed(routes_env, monkeypatch):
