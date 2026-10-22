@@ -10,8 +10,9 @@ from threading import Event, Lock, Thread
 
 def _report_parent_loss(task_id, state_lock):
     from celery import Celery
+    from service.config import CELERY_RESULT_BACKEND
 
-    app = Celery("helmholtz_watchdog", backend=os.environ["CELERY_RESULT_BACKEND"])
+    app = Celery("helmholtz_watchdog", backend=CELERY_RESULT_BACKEND)
     app.conf.update(redis_socket_timeout=1, redis_socket_connect_timeout=1)
     with state_lock:
         app.backend.mark_as_failure(
