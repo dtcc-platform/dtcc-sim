@@ -164,6 +164,11 @@ Result export reads linear tetrahedral geometry and boundary/cell tags through
 DOLFINx before attaching checked P1 fields to a DTCC volume mesh. This also supports
 older multi-grid XDMF files whose HDF5 tag datasets use `Values` capitalization,
 without modifying the original mesh or repeating the solve.
+Export checks the saved preparation identity against the result's retained
+identity, mesh name, and FE degree before loading geometry. Keep `prepared.json`
+with the solved case; editing it requires a fresh case rather than relabeling
+an existing solution. This consistency check does not authenticate artifacts
+that were already modified before loading a saved result.
 
 The archived `cube_2026_05_08_volume_family` generator explicitly marks every
 exterior box face, including the bottom, as `-2` (`all_impedance`). Its box baseline
