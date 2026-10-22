@@ -30,6 +30,11 @@ class HelmholtzSimulationArgs(DatasetBaseArgs):
     mesh_path: Path | None = Field(
         None, description="Existing XDMF mesh, instead of DTCC generation"
     )
+    mesh_crs: str | None = Field(
+        None,
+        min_length=1,
+        description="Caller-declared CRS of an existing XDMF; omit for unknown or local coordinates. Does not reproject.",
+    )
     mesh_cache_dir: Path | None = Field(
         None, description="Required mesh-cache directory when generating from bounds"
     )
@@ -64,8 +69,12 @@ class HelmholtzSimulationArgs(DatasetBaseArgs):
     def validate_workflow(self):
         if len(self.bounds) != 4 or not all(math.isfinite(x) for x in self.bounds):
             raise ValueError(
-                "Helmholtz bounds require four finite EPSG:3006 coordinates"
+                "Helmholtz bounds require four finite coordinates; generated meshes use EPSG:3006"
             )
+        if self.mesh_crs is not None:
+            self.mesh_crs = self.mesh_crs.strip()
+            if not self.mesh_crs:
+                raise ValueError("mesh_crs must be nonempty when supplied")
         if self.parameters.fe_degree != 1:
             raise ValueError(
                 "The Helmholtz dataset returns vertex fields and requires FE degree 1"
@@ -78,6 +87,8 @@ class HelmholtzSimulationArgs(DatasetBaseArgs):
                     "mesh_cache_dir and mesh_options apply only to generated meshes"
                 )
         else:
+            if self.mesh_crs is not None:
+                raise ValueError("mesh_crs applies only to supplied XDMF meshes")
             if self.mesh_cache_dir is None:
                 raise ValueError("mesh_cache_dir is required when generating a mesh")
             self.city_parameters().resolved_arguments()
@@ -134,9 +145,7 @@ class HelmholtzSimulationDataset(DatasetDescriptor):
     )
     default_crs = "EPSG:3006"
     data_types = ["volume_mesh", "complex_helmholtz_field", "finite_element_solution"]
-    geographic_coverage = (
-        "Supplied XDMF domains or city_volume_mesh source coverage in EPSG:3006."
-    )
+    geographic_coverage = "Supplied XDMF coordinates with caller-declared CRS, or city_volume_mesh source coverage in EPSG:3006."
     update_frequency = "on-demand simulation run"
     derived_from = [
         {
@@ -186,6 +195,13 @@ class HelmholtzSimulationDataset(DatasetDescriptor):
 
     def create_context(self, args):
         context = super().create_context(args)
+        context.metadata.crs = (
+            ["EPSG:3006"]
+            if args.mesh_path is None
+            else [args.mesh_crs]
+            if args.mesh_crs is not None
+            else []
+        )
         if args._run_metadata is not None:
             context.provenance.processing_steps.append(deepcopy(args._run_metadata))
             context.presentation.annotations.append(
