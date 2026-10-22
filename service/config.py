@@ -7,9 +7,3 @@ CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://localhost:6379/
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 SHARED_RESULTS_DIR = os.environ.get("SHARED_RESULTS_DIR", "/shared/results")
 JOB_TIMEOUT = int(os.environ.get("DTCC_JOB_TIMEOUT", "3600"))
-HELMHOLTZ_QUEUE = "dtcc-sim-helmholtz"
-DATASET_ALLOWLIST = frozenset(
-    name.strip()
-    for name in os.environ.get("DTCC_DATASET_ALLOWLIST", "").split(",")
-    if name.strip()
-)
