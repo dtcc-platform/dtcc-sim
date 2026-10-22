@@ -2,5 +2,4 @@ include CONTRIBUTING.md
 include environment-*.yml
 recursive-include .github/scripts *.py
 recursive-include demos *.py *.sh *.json *.md
-recursive-include deploy *.py *.md
 recursive-include docs *.md *.json
