@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field, fields
 import math
+from numbers import Real
 from typing import Literal
 
 
@@ -77,8 +78,38 @@ class HelmholtzParameters:
     def __post_init__(self):
         for item in fields(self):
             value = getattr(self, item.name)
-            if isinstance(value, float) and not math.isfinite(value):
-                raise ValueError(f"{item.name} must be finite")
+            if item.type is float and (
+                isinstance(value, bool)
+                or not isinstance(value, Real)
+                or not math.isfinite(value)
+            ):
+                raise ValueError(f"{item.name} must be a finite number")
+            if item.type is bool and not isinstance(value, bool):
+                raise ValueError(f"{item.name} must be a boolean")
+        for name in ("A_by_cell_tag", "V_by_cell_tag", "beta_by_facet_tag"):
+            mapping = getattr(self, name)
+            if not isinstance(mapping, dict):
+                raise ValueError(f"{name} must map integer tags to finite numbers")
+            for tag, value in mapping.items():
+                try:
+                    valid_tag = not isinstance(tag, bool) and str(int(tag)) == str(tag)
+                except (TypeError, ValueError, OverflowError):
+                    valid_tag = False
+                if (
+                    not valid_tag
+                    or isinstance(value, bool)
+                    or not isinstance(value, Real)
+                    or not math.isfinite(value)
+                ):
+                    raise ValueError(f"{name} must map integer tags to finite numbers")
+        for name in ("impedance_facet_tags", "dirichlet_facet_tags"):
+            tags = getattr(self, name)
+            if not isinstance(tags, (tuple, list)) or any(
+                isinstance(tag, bool) or not isinstance(tag, int) for tag in tags
+            ):
+                raise ValueError(f"{name} must contain integer tags")
+            if len(set(tags)) != len(tags):
+                raise ValueError(f"{name} must contain unique tags")
         for name in (
             "frequency_hz",
             "sound_speed",
