@@ -9,6 +9,7 @@ from typing import Literal
 SimulationQAStatus = Literal["present", "missing", "planned", "implemented"]
 
 SIMULATION_DATASET_NAMES: tuple[str, ...] = (
+    "helmholtz_simulation",
     "urban_heat_simulation",
     "urban_wind_simulation",
     "air_quality_field",
@@ -39,6 +40,12 @@ class SimulationValidationCase:
 
 
 VALIDATION_CASES: tuple[SimulationValidationCase, ...] = (
+    SimulationValidationCase(
+        family="helmholtz", dataset="helmholtz_simulation", status="implemented",
+        scope="offline descriptor, validation, parameter plumbing, serialization, and convergence handling",
+        test_reference="tests/test_helmholtz_dataset.py",
+        notes="Dataset checks mock the workflow and do not run meshing or numerical solves; separate saved city comparisons cover the underlying solver.",
+    ),
     SimulationValidationCase(
         family="urban_heat",
         dataset="urban_heat_simulation",
@@ -108,6 +115,14 @@ def simulation_validation_cases() -> tuple[SimulationValidationCase, ...]:
     return VALIDATION_CASES
 
 
+def simulation_dataset_example_arguments(name):
+    """Return minimal valid arguments for offline descriptor/context checks."""
+    arguments = {"bounds": (0.0, 0.0, 1.0, 1.0)}
+    if name == "helmholtz_simulation":
+        arguments.update(h=5.0, output_dir="results/helmholtz-qa", mesh_cache_dir="meshes/helmholtz-qa")
+    return arguments
+
+
 def simulation_dataset_descriptors():
     """Return registered dtcc-sim dataset descriptors by public dataset name."""
     import dtcc_core.datasets as datasets
@@ -150,7 +165,7 @@ def audit_simulation_dataset_contracts() -> tuple[SimulationDatasetQAFinding, ..
                 )
             )
 
-        args = descriptor.validate({"bounds": (0.0, 0.0, 1.0, 1.0)})
+        args = descriptor.validate(simulation_dataset_example_arguments(name))
         context = descriptor.create_context(args)
         if context.request.dataset_name == name and context.request.bounds:
             findings.append(

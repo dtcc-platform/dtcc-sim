@@ -7,7 +7,7 @@ from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
-from service.config import SERVICE_NAME, SERVICE_VERSION, MODULE_PREFIX
+from service.config import SERVICE_NAME, SERVICE_VERSION, MODULE_PREFIX, DATASET_ALLOWLIST
 import dtcc_core.datasets as datasets
 
 logger = logging.getLogger(__name__)
@@ -20,6 +20,7 @@ def _get_service_datasets() -> Dict[str, Any]:
         name: ds
         for name, ds in datasets.list().items()
         if ds.__class__.__module__.startswith(MODULE_PREFIX)
+        and (not DATASET_ALLOWLIST or name in DATASET_ALLOWLIST)
     }
 
 
@@ -68,6 +69,8 @@ def _task_state_payload(result) -> Dict[str, Any]:
             "result_file": meta.get("result_file"),
             "size_bytes": meta.get("size_bytes"),
         }
+    if state == "STARTED":
+        return {"status": "running", "progress": 0, "message": "Job started"}
     if state == "REVOKED":
         return {"status": "cancelled", "message": "Job cancelled by client"}
     if state == "FAILURE":
@@ -200,7 +203,20 @@ def cancel_job(name: str, task_id: str):
     from service.tasks import celery_app
 
     try:
-        celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+        if name == "helmholtz_simulation":
+            state = celery_app.AsyncResult(task_id).state
+            terminal = {
+                "SUCCESS": "completed",
+                "FAILURE": "failed",
+                "REVOKED": "cancelled",
+            }
+            if state in terminal:
+                return {"task_id": task_id, "status": terminal[state]}
+            from service.helmholtz_control import request_cancellation
+
+            request_cancellation(celery_app, task_id)
+        else:
+            celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
     except Exception as e:
         logger.error(f"Broker unreachable when cancelling {task_id}: {e}")
         raise HTTPException(

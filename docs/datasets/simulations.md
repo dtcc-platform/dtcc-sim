@@ -11,12 +11,15 @@ print(datasets.traffic_simulation.describe())
 ```
 
 Call a dataset with `bounds=[xmin, ymin, xmax, ymax]` to run it.
+Helmholtz additionally requires explicit `h`, `output_dir`, and either
+`mesh_cache_dir` for generation or `mesh_path` for an existing XDMF mesh.
 Dataset execution fetches upstream geospatial data. Heat, wind and air-quality
 reconstruction also require the
 [FEniCSx environment](../installation.md#fenicsx-environment).
 
 | Dataset | Python result | Formats | Output |
 | --- | --- | --- | --- |
+| `helmholtz_simulation` | `dtcc_core.model.VolumeMesh` | `dtccpkg`, `dtcc`, `vtu` | Complex Helmholtz field: real, imaginary, and amplitude; see [workflow](../helmholtz.md#registered-dtcc-dataset). |
 | `urban_heat_simulation` | `dtcc_core.model.VolumeMesh` | `xdmf`, `dtcc` | Temperature field from a steady-state heat equation. |
 | `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf`, `dtcc` | Scalar concentration field reconstructed from station observations. |
 | `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `dtcc` | Velocity, pressure and speed fields from CFD. |
@@ -32,6 +35,11 @@ returns serialized bytes. `describe()` exposes the argument schema,
 Use `format="dtcc"` for a single native artifact. Save the returned bytes to a
 `.dtcc` file and load it with `dtcc_core.io.load_model(path)`. Core's public
 `dtcc.proto` schema (`DTCC.ModelFile`) defines this format.
+
+For Helmholtz, use `format="dtccpkg"` to keep the completed-run provenance
+and diagnostics together with the mesh. Reopen it with
+`dtcc_core.datasets.load_model_package(path)`. Standalone `.dtcc` files retain
+fields but not dataset context.
 
 Vertex-valued fields use `association="vertex"`. Native heat and air-quality
 exports preserve mesh vertices and nodal scalar samples, rather than the full

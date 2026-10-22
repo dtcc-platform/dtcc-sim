@@ -1,0 +1,18 @@
+{
+  "__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "augmented_local_evp.py": "e3f0fdfc1bacefc24e22c7d44621e8d4ff90f4e7196f2feab23b67db7f7bb818",
+  "check_package.py": "85f6fc98747d44ba382e39c0ffafb05c3271f64f6ec4d232fa68f22df94e102f",
+  "coarse_space.py": "e3d2e3c4781867eda40f2d8d03500e7267eef95e5237924849315e08db0293cc",
+  "decomposition.py": "39ae8e9a6f152e65f1a319ed94453d19460490c35b4ef43557d6ab49b1272279",
+  "local_operators.py": "376295444320298d2c86879cc5ae417851025996df893f6f8b2bfc83b0edecfa",
+  "mesh.py": "2bffa3fb833ab113b6d6f2d73f8c5b8bd199493cebe3ec717ffa3dd78c55e70b",
+  "offline_setup.py": "8d52dfc61e0e9c810ea3b9d9987221752ed4ca276aa0cc86394efec24b71662e",
+  "params.py": "c608f8e15524479544f540e3eea4158731e3d177e568df592c5b55cf8a95ff29",
+  "pou.py": "38d1df010dce14b02023816aff1e15aa59218c7ad7d6501d437413c6c921637c",
+  "preconditioner.py": "f75ab55bc9e0ebc45a1e82f066bc33f8df261c46f2d88d705056cfbcb5e2bee0",
+  "run_offline.py": "1133cf19c033e4755c62ff579122d8bfdf7aefb39d5ce10202596efb6507b1d0",
+  "run_plain_gmres_box.py": "4678606f391e86a5b98f5cc42210cbe927191832ef495c6ac1ce0d4627f3b079",
+  "run_richardson_diagnostic.py": "8c338981e38f8ac7521202c9cfa9ebff098f49befa49c4e2649cde997192588e",
+  "run_solve.py": "7590766ad82d5486520f9fcb79633ec9a6608a75fe2e35e3bf85316a148e1c38",
+  "solve_twolevel.py": "2e8fb3dff85989c5536f3325eaf1fd48d6fd07100aaf48058a255f00745ddd13"
+}

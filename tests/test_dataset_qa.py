@@ -4,6 +4,7 @@ from pathlib import Path
 
 from dtcc_sim.qa import (
     SIMULATION_DATASET_NAMES,
+    simulation_dataset_example_arguments,
     audit_simulation_dataset_contracts,
     simulation_dataset_descriptors,
     simulation_validation_cases,
@@ -18,7 +19,7 @@ def test_simulation_descriptors_create_context_offline():
 
     assert set(descriptors) == set(SIMULATION_DATASET_NAMES)
     for name, descriptor in descriptors.items():
-        args = descriptor.validate({"bounds": (0.0, 0.0, 1.0, 1.0)})
+        args = descriptor.validate(simulation_dataset_example_arguments(name))
         context = descriptor.create_context(args)
 
         assert context.request.dataset_name == name
@@ -180,6 +181,7 @@ def test_validation_cases_cover_major_simulation_families():
     cases = simulation_validation_cases()
 
     assert {case.family for case in cases} == {
+        "helmholtz",
         "urban_heat",
         "urban_wind",
         "air_quality_field",

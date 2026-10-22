@@ -1,0 +1,486 @@
+{
+  "case": {
+    "geometry": "box, 200 x 200 x 80 m",
+    "mesh_h_m": 4,
+    "frequency_hz": 10,
+    "rho": 1.1,
+    "subdomains": 16,
+    "overlap_layers": 1,
+    "oversample_layers": 3,
+    "workers": 16,
+    "threads_per_worker": 1
+  },
+  "runtime": {
+    "python": "3.12.15 (main, Oct  6 2026, 23:50:18) [GCC 15.3.0]",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1",
+    "dolfinx": "0.11.0",
+    "petsc": [
+      3,
+      25,
+      6
+    ]
+  },
+  "controls": {
+    "same_runtime": true,
+    "same_original_mesh": true,
+    "same_effective_parameters": true,
+    "arpack_backend": "arpack",
+    "initial_nev": 120,
+    "ncv_extra": 60,
+    "maxiter": 800,
+    "tol": 1e-08,
+    "growth": 1.5,
+    "max_nev_fraction": 0.85,
+    "explicit_starting_vector": "(1+j/(n+1)) + i*(1-j/(n+1)), j=1,...,n",
+    "production_source_modified_by_test": false
+  },
+  "results": {
+    "exact_reproduction": true,
+    "global_systems_exact": true,
+    "preconditioner_arrays_exact": true,
+    "preconditioner_array_count": 61,
+    "solution": {
+      "exact": true,
+      "dtype_old": "complex128",
+      "dtype_integrated": "complex128",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0,
+      "relative_l2_difference": 0.0
+    },
+    "residual_history": {
+      "exact": true,
+      "dtype_old": "float64",
+      "dtype_integrated": "float64",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "old_iterations": 29,
+    "integrated_iterations": 29,
+    "old_printed_residual": 3.808188e-06,
+    "integrated_true_relative_residual": 3.808188393821847e-06,
+    "elapsed_seconds": 859.1722712740302
+  },
+  "global_systems": {
+    "offline": {
+      "coordinates": {
+        "exact": true,
+        "dtype_old": "float64",
+        "dtype_integrated": "float64",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "indices": {
+        "exact": true,
+        "dtype_old": "int32",
+        "dtype_integrated": "int32",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "indptr": {
+        "exact": true,
+        "dtype_old": "int32",
+        "dtype_integrated": "int32",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "rhs": {
+        "exact": true,
+        "dtype_old": "complex128",
+        "dtype_integrated": "complex128",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "values": {
+        "exact": true,
+        "dtype_old": "complex128",
+        "dtype_integrated": "complex128",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      }
+    },
+    "online": {
+      "coordinates": {
+        "exact": true,
+        "dtype_old": "float64",
+        "dtype_integrated": "float64",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "indices": {
+        "exact": true,
+        "dtype_old": "int32",
+        "dtype_integrated": "int32",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "indptr": {
+        "exact": true,
+        "dtype_old": "int32",
+        "dtype_integrated": "int32",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "rhs": {
+        "exact": true,
+        "dtype_old": "complex128",
+        "dtype_integrated": "complex128",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "values": {
+        "exact": true,
+        "dtype_old": "complex128",
+        "dtype_integrated": "complex128",
+        "bitwise_equal": true,
+        "max_absolute_difference": 0.0
+      }
+    }
+  },
+  "preconditioner_arrays": {
+    "N_global": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "coarse__E0_imag": {
+      "exact": true,
+      "dtype_old": "float64",
+      "dtype_integrated": "float64",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "coarse__E0_real": {
+      "exact": true,
+      "dtype_old": "float64",
+      "dtype_integrated": "float64",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "coarse__dofs_star": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "coarse__lambda_by_patch": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "coarse__nloc_by_patch": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "coefficient_mode": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__M": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "decomp__cell_adjacency": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__cell_partition": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "decomp__cells_core": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__cells_olap": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__cells_star": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__dofs_core": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__dofs_olap": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__dofs_star": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__overlap_layers": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "decomp__oversample_layers": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "decomp__partitioner": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__star_bdry_facets_artificial": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__star_bdry_facets_artificial_side": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "decomp__star_bdry_facets_physical": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "fe_degree": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "k_value": {
+      "exact": true,
+      "dtype_old": "float64",
+      "dtype_integrated": "float64",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "local_modes__Phi_by_patch": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_modes__dofs_star": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_modes__lambda_by_patch": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__A_star_data": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__A_star_indices": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__A_star_indptr": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__A_star_k_data": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__A_star_k_indices": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__A_star_k_indptr": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__B_star_imp_data": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__B_star_imp_indices": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__B_star_imp_indptr": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__C_data": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__C_indices": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__C_indptr": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__core_to_global": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__dofs_core": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__dofs_olap": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__dofs_star": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__n_core": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "local_ops__n_int": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "local_ops__n_olap": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "local_ops__n_star": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "local_ops__olap_to_global": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__patch_index": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "local_ops__star_bdry_facets_artificial": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__star_bdry_facets_artificial_side": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__star_bdry_facets_physical": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__star_local_boundary": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__star_local_interior": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "local_ops__star_to_global": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "mesh_source": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "partitioner": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "pou__chi_full": {
+      "exact": true,
+      "different_objects": 0,
+      "examples": []
+    },
+    "pou__multiplicity": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "pou__ndofs_in_union": {
+      "exact": true,
+      "dtype_old": "int32",
+      "dtype_integrated": "int32",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    },
+    "rho": {
+      "exact": true,
+      "dtype_old": "float64",
+      "dtype_integrated": "float64",
+      "bitwise_equal": true,
+      "max_absolute_difference": 0.0
+    }
+  },
+  "scope": "Exact equivalence for this controlled case. Not a claim for every configuration or bitwise equality with historical different-runtime outputs.",
+  "tested_integration_source_archive_sha256": "58683ca379fed40a1489836d5ebb6cadd6a11312f6becdc134b7ac8523a7d32d",
+  "upstream_base_commit": "41055d560c66939a93e23c51f4cc71210541cb26"
+}

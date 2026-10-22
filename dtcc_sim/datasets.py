@@ -12,6 +12,7 @@ from pydantic import Field
 from dtcc_core.datasets import DatasetDescriptor, DatasetBaseArgs
 
 from .traffic import TrafficAssignmentSimulator, TrafficAssignmentParameters
+from .helmholtz.dataset import HelmholtzSimulationArgs, HelmholtzSimulationDataset
 
 
 BoundaryConditionType = Literal["dirichlet", "neumann", "robin"]
