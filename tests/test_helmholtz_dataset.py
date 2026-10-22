@@ -107,6 +107,28 @@ def test_registration_and_description_do_not_execute(monkeypatch, run_args):
     )
 
 
+@pytest.mark.parametrize(
+    "mesh_crs,expected", [(None, []), ("EPSG:3006", ["EPSG:3006"])]
+)
+def test_supplied_mesh_crs_is_declared_not_assumed(run_args, mesh_crs, expected):
+    request = dict(run_args)
+    request.pop("mesh_cache_dir")
+    request.update(mesh_path="local-box.xdmf", mesh_crs=mesh_crs)
+    descriptor = datasets.helmholtz_simulation
+    context = descriptor.create_context(descriptor.validate(request))
+    assert context.metadata.crs == expected
+    assert context.request.parameters["mesh_crs"] == mesh_crs
+
+
+def test_generated_mesh_context_uses_epsg3006(run_args):
+    descriptor = datasets.helmholtz_simulation
+    assert descriptor.create_context(descriptor.validate(run_args)).metadata.crs == [
+        "EPSG:3006"
+    ]
+    with pytest.raises(ValueError, match="supplied XDMF"):
+        descriptor.validate(dict(run_args, mesh_crs="EPSG:4326"))
+
+
 def test_generated_mesh_dispatch_and_native_fields(run_args, fake_workflow):
     calls, result, mesh = fake_workflow
     returned = datasets.helmholtz_simulation(
