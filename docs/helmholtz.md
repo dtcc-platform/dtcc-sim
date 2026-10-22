@@ -53,6 +53,11 @@ Prepared data is checked against the XDMF and referenced HDF5 file contents,
 parameters, and numerical-library versions. A different input, configuration,
 or runtime requires a fresh case. The interface does not import environment
 variables named `HELMHOLTZ_*`; use the parameter object instead.
+Numeric controls and coefficient-map values must be finite numbers; boolean
+controls require actual booleans. JSON coefficient-map keys may be integer
+strings. Boundary tag selections require unique integer markers. These checks
+run before numerical preparation and do not alter accepted coefficient values
+or boundary selections.
 
 Preparation manifests use schema 2 and include the SHA-256 checksum of the
 saved preconditioner. Before and after the online solve, the interface checks
@@ -159,6 +164,11 @@ for impedance and Dirichlet conditions, and warns when a nonempty requested list
 selects none. Mixed boundary mode still requires readable boundary markers.
 Each prepared case records `mesh_provenance.json`, including `h` and the complete
 meshing request. Changes to the mesh require new preconditioner data.
+The dataset adapter labels generated city meshes as EPSG:3006. For a supplied
+XDMF, the optional dataset argument `mesh_crs` records a caller-declared CRS;
+omitting it leaves CRS metadata unspecified, as appropriate for a local box.
+It does not transform coordinates. Dataset `bounds` must describe a positive
+area in the input coordinate system.
 
 Result export reads linear tetrahedral geometry and boundary/cell tags through
 DOLFINx before attaching checked P1 fields to a DTCC volume mesh. This also supports
