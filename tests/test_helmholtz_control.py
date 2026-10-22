@@ -118,6 +118,29 @@ def test_cancellation_request_uses_backend_key():
     assert calls == [("dtcc-sim:helmholtz:cancel:one-job", b"1")]
 
 
+def test_parent_loss_uses_configured_backend_without_environment(monkeypatch):
+    import celery
+    from threading import Lock
+    from service import config, helmholtz_job
+
+    monkeypatch.delenv("CELERY_RESULT_BACKEND", raising=False)
+    monkeypatch.setattr(config, "CELERY_RESULT_BACKEND", "redis://localhost:16379/1")
+    calls = []
+    app = SimpleNamespace(
+        conf=SimpleNamespace(update=lambda **kwargs: None),
+        backend=SimpleNamespace(mark_as_failure=lambda *args: calls.append(args)),
+    )
+
+    def create_app(name, *, backend):
+        assert backend == config.CELERY_RESULT_BACKEND
+        return app
+
+    monkeypatch.setattr(celery, "Celery", create_app)
+    helmholtz_job._report_parent_loss("interrupted-job", Lock())
+    assert calls[0][0] == "interrupted-job"
+    assert "interrupted" in str(calls[0][1])
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux process-group verification")
 def test_stop_group_kills_descendant_ignoring_sigterm(tmp_path):
     ready = tmp_path / "child.pid"
