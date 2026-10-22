@@ -149,6 +149,36 @@ def test_saved_case_load_preserves_solution_and_mesh_identity(tmp_path):
     assert result.prepared_identity["inputs"][str(path)] == "hash"
 
 
+@pytest.mark.parametrize("change", ["manifest", "mesh_name", "fe_degree"])
+def test_export_rejects_changed_case_identity_before_reading_mesh(tmp_path, change):
+    from copy import deepcopy
+    from dataclasses import replace
+    import json
+    from dtcc_sim.helmholtz import HelmholtzResult
+
+    manifest = {
+        "inputs": {str(tmp_path / "mesh.xdmf"): "hash"},
+        "parameters": {"fe_degree": 1, "mesh_name": "mesh", "frequency_hz": 10},
+    }
+    result = HelmholtzResult(
+        solution=np.ones(4, dtype=complex), iterations=1, relative_residual=0,
+        converged=True, gmres_history=(0,), output_dir=tmp_path,
+        mesh_path=tmp_path / "mesh.xdmf", prepared_identity=deepcopy(manifest),
+    )
+    if change == "manifest":
+        manifest["parameters"]["frequency_hz"] = 20
+        message = "identity changed"
+    else:
+        # Also protect loaded legacy results without an in-memory identity.
+        result = replace(result, prepared_identity=None)
+        manifest["parameters"][change] = "other_mesh" if change == "mesh_name" else 2
+        message = "does not match"
+    (tmp_path / "prepared.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match=message):
+        result.save_dtcc(tmp_path / "result.vtu")
+    assert not (tmp_path / "result.vtu").exists()
+
+
 @pytest.mark.parametrize("legacy_values", [False, True])
 def test_dolfinx_mesh_exports_fields_and_tags_without_core_reader(
     tmp_path, monkeypatch, legacy_values
