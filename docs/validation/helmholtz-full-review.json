@@ -1,0 +1,82 @@
+{
+  "existing_dataset_descriptors": {
+    "status": "passed",
+    "unchanged": [
+      "air_quality_field",
+      "traffic_simulation",
+      "urban_heat_simulation",
+      "urban_wind_simulation"
+    ],
+    "added": [
+      "helmholtz_simulation"
+    ]
+  },
+  "optional_imports": {
+    "status": "passed",
+    "blocked_optional_modules": [
+      "dolfinx",
+      "mpi4py",
+      "petsc4py",
+      "pymetis",
+      "threadpoolctl"
+    ],
+    "default_import": true,
+    "helmholtz_registration": true
+  },
+  "build": {
+    "status": "passed",
+    "wheel": "dtcc_sim-0.1.0-py3-none-any.whl",
+    "sdist": "dtcc_sim-0.1.0.tar.gz",
+    "packaged_python_files": 41,
+    "extras": [
+      "helmholtz",
+      "helmholtz-mesh",
+      "test",
+      "docs",
+      "service"
+    ]
+  },
+  "systemd_quoted_paths": {
+    "status": "passed",
+    "verify_exit_code": 0,
+    "services_started": false
+  },
+  "review_date": "2026-10-23",
+  "bounded_tests": {
+    "passed": 195,
+    "seconds": 21.56,
+    "selection": "tests/test_core_pin_update.py tests/test_dtcc_core_contract.py tests/test_dataset_qa.py tests/test_import.py tests/test_traffic.py tests/test_service_results.py tests/test_service_routes.py tests/test_helmholtz_*.py"
+  },
+  "clean_source_archive_checks": {
+    "passed": 23,
+    "seconds": 5.08
+  },
+  "dependency_lock": "uv lock --check --offline passed with the existing Python 3.12 runtime",
+  "numerical_backend": "All 11 backend files match the controlled-comparison snapshot SHA-256 values",
+  "upstream_checked": "develop at 41055d560c66939a93e23c51f4cc71210541cb26 (unchanged baseline at lookup)",
+  "full_suite_run": false,
+  "full_solver_run": false,
+  "services_activated": false,
+  "fresh_conda_environment_installed": false,
+  "source_sha256": {
+    ".github/workflows/dtcc-core-contract.yml": "dc151b396f07146a664c5bf29daca2b6bd19507a16b672ed25c74104c6090444",
+    "deploy/helmholtz/prepare.py": "906204997af73337efcd584833c312cd2840ce5479789de168fb4832affbe608",
+    "docs/helmholtz.md": "042f1f580e664acd743cda3a3065195996ebdf466c6e7d067a4d747c4c6feebe",
+    "dtcc_sim/helmholtz/dataset.py": "414f195437e8037e5a93ebfb13c02e9fdeacd486c0e5c61ed74ea129afb83a24",
+    "dtcc_sim/helmholtz/parameters.py": "36b8c3ded7dbb8295a7ec07fea379e7003db478e80670be99f4a1636e0a2f7a2",
+    "service/helmholtz_job.py": "96ae8e13813619b891d486b7647988caa98e0ceca5ee8ee69ec038b5feca231d",
+    "tests/test_helmholtz_api.py": "86646485a13f232e4f4a46f6c0682ce2d9992813909f7fad8acf2aca45b451c7",
+    "tests/test_helmholtz_control.py": "e5d4648f7c5f61ab7a0b97ab636324d81e4ac5a74278a9e5f43e7be56bf5d82d",
+    "tests/test_helmholtz_dataset.py": "2c0ffbc96689d85acf1a4688655580bfa736f50c102220db89c564eda1720fab",
+    "tests/test_helmholtz_deploy.py": "05214520e9d212b3082508c20f08aed51508e9d3eb629b20e473004e648aaa56",
+    "tests/test_service_routes.py": "c551045b95643b454a949552d711ee7885ab7c07a8fcac2ac859cbba8fa1f6e3",
+    ".github/scripts/update_core_pin.py": "9bfeb28482e44e55074796042c12e97952231e839b0788b706b6496a23660bb7",
+    "tests/test_core_pin_update.py": "c00a9ded08235d648af4897a7c5bb1fa858c7e446f58d9227ba7056b29825dbf",
+    "MANIFEST.in": "b057ed22c1c4d65e8490c7233f8cf11a7c02aba21dfd91b776f5314c6ea414c3"
+  },
+  "limits": [
+    "Selected contract checks do not establish physical validity or universal numerical equivalence.",
+    "Fresh Conda/native dependency installation and full project suite were not run.",
+    "No production service, public API, authentication, or per-user filesystem isolation is supplied by the private deployment recipe."
+  ]
+}
