@@ -96,7 +96,7 @@ def render(config, output):
     common = f"""[Service]
 Type=simple
 WorkingDirectory={paths["repo"]}
-EnvironmentFile={output / "service.env"}
+EnvironmentFile={quote(output / "service.env")}
 Restart=on-failure
 RestartSec=5
 CPUAccounting=yes
