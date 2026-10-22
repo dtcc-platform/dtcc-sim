@@ -73,6 +73,15 @@ def result_to_dtcc(result, *, unit=""):
         raise ValueError("Result has no input mesh path")
     if result.fe_degree != 1:
         raise ValueError("DTCC vertex-field export currently supports FE degree 1 only")
+    manifest = json.loads((result.output_dir / "prepared.json").read_text())
+    if result.prepared_identity is not None and manifest != result.prepared_identity:
+        raise ValueError("Case preparation identity changed since this result was created")
+    parameters = manifest["parameters"]
+    if (
+        parameters["fe_degree"] != result.fe_degree
+        or parameters["mesh_name"] != result.mesh_name
+    ):
+        raise ValueError("Result mesh name or FE degree does not match its prepared case")
     from mpi4py import MPI
     import numpy as np
     from dolfinx import fem, io, mesh as dmesh
@@ -82,7 +91,6 @@ def result_to_dtcc(result, *, unit=""):
 
     if MPI.COMM_WORLD.size != 1:
         raise RuntimeError("DTCC Helmholtz export requires one MPI rank")
-    manifest = json.loads((result.output_dir / "prepared.json").read_text())
     if (
         manifest["inputs"] != _mesh_input_hashes(result.mesh_path)
         or manifest["runtime"] != _runtime_versions()
@@ -99,7 +107,6 @@ def result_to_dtcc(result, *, unit=""):
             cells=np.array(mesh.geometry.dofmaps[0], dtype=np.int64, copy=True),
         )
         mesh.topology.create_connectivity(2, 3)
-        parameters = manifest["parameters"]
         grids = ET.parse(result.mesh_path).getroot().findall(".//Grid")
         # Use the numerical reader for both mesh and tags, including legacy XDMF.
         for dim, name in (
