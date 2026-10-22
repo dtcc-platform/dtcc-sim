@@ -7,8 +7,6 @@ from service.config import (
     CELERY_RESULT_BACKEND,
     MODULE_PREFIX,
     JOB_TIMEOUT,
-    HELMHOLTZ_QUEUE,
-    DATASET_ALLOWLIST,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,18 +32,10 @@ celery_app = Celery(
 )
 celery_app.conf.task_default_queue = MODULE_PREFIX.replace("_", "-")
 celery_app.conf.task_time_limit = JOB_TIMEOUT
-if MODULE_PREFIX == "dtcc_sim":
-    celery_app.conf.task_routes = {
-        "dataset.helmholtz_simulation": {"queue": HELMHOLTZ_QUEUE},
-    }
 
 
 def create_dataset_task(dataset_name, dataset_instance):
-    @celery_app.task(
-        bind=True,
-        name=f"dataset.{dataset_name}",
-        track_started=dataset_name == "helmholtz_simulation",
-    )
+    @celery_app.task(bind=True, name=f"dataset.{dataset_name}")
     def run(self, params):
         task_params = dict(params)
         # Extract format before calling the dataset so build() always returns
@@ -53,10 +43,6 @@ def create_dataset_task(dataset_name, dataset_instance):
         # companion files (e.g., XDMF's .h5). Serialization happens in
         # handle_result() via save(), which preserves multi-file outputs.
         format_ext = task_params.pop("format", None)
-        if dataset_name == "helmholtz_simulation":
-            from service.helmholtz_control import run_managed_helmholtz
-
-            return run_managed_helmholtz(self, task_params, format_ext)
         with progress_bridge(self):
             result = dataset_instance(**task_params)
             return handle_result(result, format_ext, self.request.id)
@@ -66,8 +52,9 @@ def create_dataset_task(dataset_name, dataset_instance):
 # Register Celery tasks for datasets matching this service's module prefix
 _service_datasets = {}
 for name, ds in datasets.list().items():
-    if ds.__class__.__module__.startswith(MODULE_PREFIX) and (
-        not DATASET_ALLOWLIST or name in DATASET_ALLOWLIST
+    if (
+        ds.__class__.__module__.startswith(MODULE_PREFIX)
+        and name != "helmholtz_simulation"
     ):
         create_dataset_task(name, ds)
         _service_datasets[name] = ds
