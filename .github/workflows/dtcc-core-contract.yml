@@ -65,6 +65,7 @@ jobs:
       - name: Run dtcc-core contract tests
         run: |
           uv run --no-sync pytest -q \
+            tests/test_core_pin_update.py \
             tests/test_dtcc_core_contract.py \
             tests/test_dataset_qa.py \
             tests/test_traffic.py \
@@ -94,27 +95,7 @@ jobs:
       - name: Update dtcc-core pin
         id: update
         run: |
-          uv run --no-project python - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          path = Path("pyproject.toml")
-          text = path.read_text(encoding="utf-8")
-          pattern = (
-              r"(dtcc-core @ git\+https://github\.com/"
-              r"dtcc-platform/dtcc-core\.git@)"
-              r"(?:develop|[0-9a-f]{40})"
-          )
-          updated, count = re.subn(
-              pattern,
-              rf"\g<1>{os.environ['CORE_SHA']}",
-              text,
-          )
-          if count != 1:
-              raise SystemExit("Expected exactly one dtcc-core dependency")
-          path.write_text(updated, encoding="utf-8")
-          PY
+          uv run --no-project python .github/scripts/update_core_pin.py --sha "${CORE_SHA}"
 
           uv lock
 
