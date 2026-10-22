@@ -62,7 +62,24 @@ def test_units_use_localhost_and_cover_child_resources(deploy, config, tmp_path)
     assert "KillMode=mixed" in worker and "TimeoutStopSec=3615" in worker
     assert "Restart=on-failure" in worker
     assert f"WorkingDirectory={config['repo']}\n" in worker
-    assert f"EnvironmentFile={tmp_path / 'bundle/service.env'}\n" in worker
+    assert (
+        f"EnvironmentFile={json.dumps(str(tmp_path / 'bundle/service.env'))}\n"
+        in worker
+    )
+
+
+def test_bundle_paths_with_spaces_are_quoted(deploy, config, tmp_path):
+    repo = tmp_path / "checkout with spaces"
+    (repo / "service").mkdir(parents=True)
+    (repo / "service/helmholtz_worker.py").touch()
+    files = deploy.render(dict(config, repo=str(repo)), tmp_path / "bundle with spaces")
+    for name, contents in files.items():
+        if name.endswith(".service"):
+            assert f"WorkingDirectory={repo}\n" in contents
+            assert (
+                f'EnvironmentFile="{tmp_path / "bundle with spaces/service.env"}"\n'
+                in contents
+            )
 
 
 @pytest.mark.parametrize(
