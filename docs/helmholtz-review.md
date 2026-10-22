@@ -37,6 +37,22 @@ This establishes equivalence for that controlled case, not universal equivalence
 
 Supporting checks include numerical reproduction of both selected thesis box cases, two archived city cases, a newly generated small h=25 m mesh-to-package run, and 29 focused result/workflow regression tests after the boundary/export fixes. Full logs and large artifacts are retained privately on the compute server and in the handover, rather than committed here. The complete project test suite was not rerun for this private upload. Repository Actions are disabled for this initial review so the upload does not trigger a full suite; the saved bounded checks are reported here.
 
+## Core integration checks
+
+The solver/mesh/result interface review added an export consistency check:
+`prepared.json` must match the identity retained by the result, and mesh name
+and FE degree must agree before geometry is read. Three regression cases reject
+changed preparation metadata and inconsistent mesh metadata.
+
+[Focused validation report](validation/helmholtz-core-review.json): **87 passed
+in 15.31 seconds** across the API, mesh workflow/cache, dataset adapter and result
+export checks, including real tiny tetrahedral exports with legacy/current tag
+names. No full project suite, full solver run or live mesh generation was used.
+The numerical backend is unchanged, so the controlled numerical comparison above
+remains evidence for the same backend. These software checks do not extend its
+numerical equivalence claim to other configurations. Artifacts edited before
+loading are not authenticated by the export consistency check.
+
 ## Preview and run the box example
 
 Use the [complex-PETSc Helmholtz environment](installation.md#helmholtz-environment), with DOLFINx 0.11.0. Mesh data are supplied separately. Place the original mesh and its HDF5 companion in `meshes/helmholtz/box-h4/`, retaining the filenames `volume_mesh_gbg.xdmf` and `volume_mesh_gbg.h5`.
