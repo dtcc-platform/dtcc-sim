@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "tests_passed": 87,
+  "duration_seconds": 15.31,
+  "test_command": "OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 python -m pytest -q tests/test_helmholtz_results.py tests/test_helmholtz_mesh_workflow.py tests/test_helmholtz_api.py tests/test_helmholtz_dataset.py -k 'not spawned'",
+  "scope": "API contracts, mesh cache/workflow, dataset adapter, P1 field mapping, tiny real tetrahedral exports and changed-case rejection",
+  "full_suite_run": false,
+  "full_solver_run": false,
+  "live_mesh_generation": false,
+  "numerical_backend_changed": false,
+  "source_sha256": {
+    "dtcc_sim/helmholtz/results.py": "b7d2d8287ebf46ba8743b26a65f6779c7087eeefbfaaacd7199ffd9f400ed19c",
+    "tests/test_helmholtz_results.py": "d784b33366cef090539bcbee025a781374a06699ec86a329d466999aba5aab74",
+    "docs/helmholtz.md": "a659406e856a7ea210cf0f4be8e453889dbfa9a139488c26635b454f4d5ce2b7"
+  },
+  "limitations": [
+    "Selected software checks do not establish universal numerical equivalence or physical validation.",
+    "Export consistency checks cannot authenticate artifacts modified before loading."
+  ]
+}
