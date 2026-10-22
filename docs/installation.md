@@ -75,62 +75,10 @@ contact a service. Passing it does not validate a particular mesh, available
 memory, or a future Celery worker process. Launch Python once; do not launch
 one MPI process per core. Select parallelism through `parameters.workers`.
 
-The general Docker image and Compose worker do not select this Helmholtz
-environment. Helmholtz service tasks route to `dtcc-sim-helmholtz`; other tasks
-retain the `dtcc-sim` queue. A dedicated launcher uses a non-daemonic solo
-pool, consumes only the Helmholtz queue, and allows one simulation job at a
-time. Each job chooses its own patch worker count through `parameters.workers`.
-
-To prepare its Python dependencies and print the launch plan:
-
-```bash
-conda activate dtcc-helmholtz
-uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[helmholtz,helmholtz-mesh,service]"
-python -m service.helmholtz_worker
-```
-
-Printing the plan does not connect to Redis or start a worker. Deployment is a
-separate action: configure `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, and
-`SHARED_RESULTS_DIR` consistently with the API, then explicitly use
-`python -m service.helmholtz_worker --start`. That command checks the numerical
-runtime before starting Celery. The API and both workers must run code with
-the same routing configuration; restart them together when adopting it.
-An API using the old routing would still send Helmholtz jobs to the general
-worker. With the new routing, Helmholtz jobs wait in their dedicated queue
-until its worker is running. The supplied Compose file starts only the general
-worker; it does not deploy the complex environment or dedicated worker.
-
-Both workers and the API need access to the same result files. Helmholtz case
-and mesh-cache paths must be accessible to its worker; each job needs a new
-case directory. Use a process supervisor when deploying for restart and log
-management. A small isolated localhost acceptance check verified API submission,
-dedicated-queue delivery, job completion, the shared result package and cleanup.
-Bounded checks also covered queued/started cancellation, worker loss during child
-initialization, timeout enforcement and a successful fresh job after worker
-restart. Each Helmholtz job now runs in a supervised process session; the worker
-can stop it and its patch descendants. `DTCC_JOB_TIMEOUT` includes child startup.
-See the [job-control details](helmholtz.md#service-cancellation-timeouts-and-interruption)
-for status semantics, retained logs, and fresh-case recovery. Broker-outage
-recovery and production deployment policy remain unverified. The API reports
-the shared result filename; public HTTP file delivery was not tested. See the
-[Helmholtz workflow](helmholtz.md) for local and detached solver launch commands.
-
-## User-service deployment preview
-
-The [Helmholtz deployment recipe](../deploy/helmholtz/README.md) renders a
-reviewable Linux user-systemd bundle with private Redis, a localhost API and the
-dedicated worker. It includes restart policy, proposed resource limits and
-persistent broker storage. Rendering and offline unit validation do not install
-or activate services. Use `DTCC_DATASET_ALLOWLIST=helmholtz_simulation` for a
-dedicated Helmholtz API/worker; leaving it unset preserves general discovery.
-
-Before activation, arrange user-manager persistence after logout where needed,
-review the proposed budgets and state directory, and validate broker restart
-and resource-controller behavior. The renderer sets inherited CPU affinity as
-well as a cgroup quota; verify actual kernel delegation before relying on the
-quota. No permanent service is enabled by this
-recipe. Public access, filesystem policy and retention remain separate
-deployment decisions.
+Helmholtz execution in this contribution uses Python or the local command-line
+launchers. It is excluded from the queued service registry; the general worker
+and Docker/Compose deployment do not supply its dedicated complex runtime.
+See the [Helmholtz quick start](helmholtz-quickstart.md) for a complete run.
 
 ## Core dependency and local development
 
