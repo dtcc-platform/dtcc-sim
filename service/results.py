@@ -41,12 +41,7 @@ def _serialize_with_save(result, format_ext, tmpdir):
     # Pass str, not Path -- dolfinx monkeypatched save() methods
     # call filename.endswith() which is a str method.
     tmpfile = str(Path(tmpdir) / f"data.{format_ext}")
-    if format_ext.lower() == "dtccpkg":
-        from dtcc_core.datasets.package import export_model_package
-
-        export_model_package(result, tmpfile, canonical=True)
-    else:
-        result.save(tmpfile)
+    result.save(tmpfile)
 
     files = sorted(Path(tmpdir).iterdir())
     if not files:
