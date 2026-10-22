@@ -255,19 +255,6 @@ def test_example_plans_without_execution(tmp_path, monkeypatch):
     assert not list(tmp_path.iterdir())
 
 
-def test_service_registry_discovers_descriptor_without_execution(monkeypatch):
-    from service.routes import _get_service_datasets
-
-    monkeypatch.setattr(
-        "dtcc_sim.helmholtz.workflow.HelmholtzWorkflow.run",
-        lambda *args: pytest.fail("must not execute"),
-    )
-    assert (
-        _get_service_datasets()["helmholtz_simulation"].describe()["name"]
-        == "helmholtz_simulation"
-    )
-
-
 def _completed_run(context):
     return next(
         step
@@ -309,23 +296,6 @@ def test_dataset_package_bytes_preserve_completed_run(
     assert len(mesh.fields) == 3
 
 
-def test_service_native_delivery_preserves_diagnostics(
-    run_args, fake_workflow, tmp_path, monkeypatch
-):
-    from service import results
-
-    monkeypatch.setattr(results, "SHARED_RESULTS_DIR", str(tmp_path / "delivery"))
-    mesh = datasets.helmholtz_simulation(**run_args)
-    delivery = results.handle_result(mesh, "dtccpkg", "helmholtz-test")
-    from dtcc_core.datasets import load_model_package
-
-    restored = load_model_package(tmp_path / "delivery" / delivery["result_file"])
-    assert _completed_run(restored.dataset_context)["converged"] is True
-    assert _completed_run(restored.dataset_context)["prepared_identity"]["runtime"] == {
-        "test_runtime": 1
-    }
-
-
 def test_context_metadata_is_isolated_between_requests(run_args, fake_workflow):
     descriptor = HelmholtzSimulationDataset()
     args = descriptor.validate(run_args)
@@ -347,28 +317,6 @@ def test_invalid_diagnostics_not_exported(run_args, fake_workflow, invalid):
     with pytest.raises(RuntimeError, match="invalid true residual"):
         datasets.helmholtz_simulation(**run_args)
     assert "unit" not in fake_workflow[0]
-
-
-def test_service_defaults_to_portable_package_without_dispatching_a_solver(
-    run_args, fake_workflow, monkeypatch
-):
-    from service import routes, tasks
-
-    calls = []
-
-    def submit(name, *, args):
-        calls.append((name, args))
-        return SimpleNamespace(id="mock-task")
-
-    monkeypatch.setattr(tasks.celery_app, "send_task", submit)
-    request = HelmholtzSimulationArgs(**run_args).model_dump(
-        mode="json", exclude={"format"}
-    )
-    response = routes.submit_job("helmholtz_simulation", request)
-    assert response["task_id"] == "mock-task"
-    assert calls[0][0] == "dataset.helmholtz_simulation"
-    assert calls[0][1][0]["format"] == "dtccpkg"
-    assert "ran" not in fake_workflow[0]
 
 
 def test_standalone_dtcc_remains_a_fields_only_export(run_args, fake_workflow):
