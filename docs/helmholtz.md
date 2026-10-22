@@ -1,5 +1,7 @@
 # Helmholtz Python entry point
 
+Start with the [installation and run quick start](helmholtz-quickstart.md).
+
 `dtcc_sim.helmholtz` solves a complex scalar Helmholtz system on an existing
 XDMF volume mesh using a hybrid overlapping preconditioner and spectral coarse
 space. It requires a complex PETSc/DOLFINx environment and one MPI rank.
@@ -326,41 +328,6 @@ numerical-case reload reproduced the mapped fields. Schema-2 preconditioner
 integrity was checked. This check took approximately 28 seconds including mesh
 generation.
 
-A separate isolated localhost API/Redis/solo-worker check reused that small
-mesh. It verified HTTP submission, routing to `dtcc-sim-helmholtz`, completion
-status, and the default `.dtccpkg` artifact in the shared-results directory.
-The job converged in 8 iterations with true residual 3.10e-6, and package fields
-matched the saved case exactly. The complete check took approximately 37 seconds
-including service startup, verification and shutdown. All temporary processes
-stopped and their ports closed. A separate bounded live check verified queued
-and started-job cancellation, worker loss during child initialization, an
-enforced one-second timeout, and a fresh successful job after worker restart.
-Focused process checks also terminated a descendant that ignored SIGTERM and
-verified that a hard-stopped partial case could not be reused. These checks
-do not establish recovery from every numerical/native-library failure or a
-broker outage. Production resource/path policy and public HTTP file delivery
-remain unverified.
-
-Temporary user-systemd units were also exercised with fresh localhost ports and
-state directories. Worker and API processes restarted automatically after a
-forced main-process exit. After waiting beyond Redis's every-second AOF fsync
-interval, a forced broker exit preserved two queued messages, a cancellation
-request and sentinel values in both databases. The uncancelled tiny job then
-completed in 8 iterations with true residual 3.10e-6; the cancelled job created
-no case. Completed result metadata and cancellation state also survived a later
-graceful broker restart. These checks do not establish lossless writes inside
-the fsync window or recovery of every in-flight numerical job.
-
-Kernel readback confirmed the proposed memory and pids limits. This host did
-not delegate the cpu cgroup controller to its user manager, so its `CPUQuota`
-setting was not enforced. The renderer now also sets inherited CPU affinity.
-The repeated bounded check verified a two-CPU worker mask and the same mask in
-its job child, with memory and pids limits intact. The full scenario passed in
-approximately 69 seconds. All temporary services stopped, their runtime links
-were removed, and their ports closed; no units were enabled at login. The
-normal 16-CPU proposal was rendered and checked separately, not load-tested
-as a large simulation in this acceptance step.
-
 The bounding-box source rule is inherited from the solver. In the tested city
 case, it places the Gaussian center at approximately (319995.97, 6399009.71,
 13.53), outside the tetrahedral domain and below local terrain. The finite-width
@@ -422,69 +389,13 @@ folder. The true residual still needs interpretation separately from GMRES's
 transformed-system convergence. `HelmholtzResult.load(output_dir)` reopens the
 completed numerical result and diagnostics without rerunning the solver.
 
-The dataset descriptor is discovered by the existing service registry. Its
-default delivery format is `dtccpkg`, preserving completed-run provenance.
-A temporary localhost service acceptance check verified one small job and its
-shared result package, then stopped all test services. No permanent service is
-deployed. The
-[installation guide](installation.md#helmholtz-environment) provides a separate
-complex-PETSc recipe and a readiness command that does not run a simulation.
-Parallel patch workers
-require a non-daemonic process; for Celery use a solo worker pool or set
-`parameters.workers=1`. The dataset refuses incompatible daemonic execution
-before starting the workflow. Helmholtz tasks route to the dedicated
-`dtcc-sim-helmholtz` queue. `python -m service.helmholtz_worker` prints its solo
-worker launch plan without starting it; `--start` checks the runtime and starts
-the worker explicitly. The default Docker/Compose setup starts only the
-general worker. Until the complex-environment worker is deployed, Helmholtz
-service requests remain queued. Direct Python and detached solver runs do not
-use Celery and remain available independently.
-
-### Service cancellation, timeouts and interruption
-
-The solo worker supervises each Helmholtz job in a separate process session.
-That process runs the dataset and can spawn its patch workers. This keeps job
-termination independent of Celery solo's blocking control-message loop.
-Other simulation families retain their existing task execution path.
-
-`POST /api/v1/datasets/helmholtz_simulation/cancel/{task_id}` stores a request
-in the result backend. The response is `cancelling` until the worker confirms
-termination; poll the status endpoint for `cancelled`. A queued cancellation is
-checked before starting the dataset. A started cancellation stops the job's
-process group, including patch descendants. If completion races with cancellation,
-the final status can be `completed`; the cancellation endpoint preserves existing
-terminal states. Requests expire with the result backend's normal expiry, so a
-queued request needs a worker to process it before that expiry.
-
-`DTCC_JOB_TIMEOUT` sets the supervising wall-time limit in seconds, including
-child startup (default 3600). Exceeding it stops the group and reports failure.
-The test used a one-second limit during child initialization; large numerical
-timeout behavior has not been exhaustively exercised.
-
-If the worker exits while the child is running, a watchdog records interruption,
-attempts to mark the task failed, and stops its process group. Reporting to Redis
-is best effort during backend outages; the local interruption record is retained.
-Progress updates cannot overwrite the watchdog's failure state, and complete
-result metadata is saved before a successful child exits. This is failure
-detection and fresh-case recovery, not numerical checkpoint/resume or an
-exactly-once delivery guarantee. A new worker can accept a new job with a fresh
-output folder; do not reuse partial preparation/solve artifacts.
-
-Job requests, process metadata and logs are retained under
-`SHARED_RESULTS_DIR/.helmholtz-jobs/job-*`. Inspect `run.log`, `process.json`, and
-any `interrupted.json` when diagnosing a failed job. Case locks left after a hard
-stop require manual inspection as described above. Deployments need a retention
-policy for these records and a supervisor for worker restarts. The process-group
-implementation and live checks target the Linux server.
-
-The [user-service deployment recipe](../deploy/helmholtz/README.md) can render
-unit files for review with restarts, localhost listeners, Redis persistence,
-and proposed cgroup budgets. It never installs or activates units. Its
-`DTCC_DATASET_ALLOWLIST=helmholtz_simulation` setting limits API discovery and
-task registration to this dataset; an unset setting preserves the general
-registry. Allowlisting does not authenticate requests or restrict filesystem
-paths. Verify logout persistence, resource enforcement and durable broker
-restart behavior before activation.
+The [installation guide](installation.md#helmholtz-environment) provides the
+separate complex-PETSc runtime. Local Python, foreground CLI and detached Linux
+execution are supported. The general queued service excludes Helmholtz from
+both discovery and task registration; dedicated supervision and deployment are
+outside this contribution. Other simulation datasets keep their existing routes.
+The dataset rejects daemonic execution with multiple patch workers before
+starting a workflow.
 
 A planning-only demo is available:
 
@@ -557,8 +468,7 @@ print(run["iterations"], run["true_relative_residual"])
 ```
 
 For dataset calls, `format="dtccpkg"` returns those package bytes directly.
-Service delivery selects this as the default Helmholtz format when none is
-specified. The package uses Core's v3 manifest and native model artifact; Core
+The package uses Core's v3 manifest and native model artifact; Core
 verifies declared file sizes and checksums when loading it.
 
 Standalone `.dtcc` preserves geometry and fields but the installed Core writer
