@@ -220,11 +220,36 @@ def test_inputs_changed_during_solve_cannot_complete_case(
         {"overlap_layers": -1},
         {"n_modes_per_patch": 0},
         {"local_solver": "unknown"},
+        {"frequency_hz": True},
+        {"write_solution": "false"},
+        {"one_level_only": 1},
+        {"A_by_cell_tag": {1: float("nan")}},
+        {"V_by_cell_tag": {1: float("inf")}},
+        {"beta_by_facet_tag": {-2: "1.0"}},
+        {"A_by_cell_tag": {1.5: 1.0}},
+        {"A_by_cell_tag": {True: 1.0}},
+        {"impedance_facet_tags": (-2, -2)},
+        {"dirichlet_facet_tags": (True,)},
+        {"impedance_facet_tags": (-2.5,)},
     ],
 )
 def test_invalid_configuration_is_rejected(kwargs):
     with pytest.raises(ValueError):
         HelmholtzParameters(**kwargs)
+
+
+def test_json_coefficient_tags_and_boolean_controls_keep_their_meaning():
+    import json
+
+    params = HelmholtzParameters(
+        **json.loads(
+            '{"A_by_cell_tag": {"1": 2.5}, "beta_by_facet_tag": {"-2": 0.5}, '
+            '"impedance_facet_tags": [-2, -3], "write_solution": false}'
+        )
+    )
+    assert params.A_by_cell_tag == {"1": 2.5}
+    assert params.beta_by_facet_tag == {"-2": 0.5}
+    assert params.write_solution is False
 
 
 def test_cli_is_plan_only_without_run(mesh, tmp_path, fake_backend, capsys):
