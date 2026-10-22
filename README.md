@@ -1,6 +1,6 @@
 # DTCC Sim
 
-Private Helmholtz integration review: [start here](docs/helmholtz-review.md).
+For Helmholtz simulations, see the [quick start](docs/helmholtz-quickstart.md).
 
 DTCC Sim is a Python library for urban simulation. It provides heat and wind
 solvers, air-quality field reconstruction, and static traffic assignment,
