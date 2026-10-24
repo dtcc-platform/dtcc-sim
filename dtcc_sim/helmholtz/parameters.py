@@ -20,6 +20,7 @@ class HelmholtzParameters:
     one_level_only: bool = False
     fe_degree: int = 1
     partitioner: Literal["metis", "structured"] = "metis"
+    pou_mode: Literal["core_overlap_ramp", "geometric_hats"] = "core_overlap_ramp"
     nx_sub: int = 2
     ny_sub: int = 2
     nz_sub: int = 2
@@ -165,6 +166,7 @@ class HelmholtzParameters:
             )
         choices = {
             "partitioner": ("metis", "structured"),
+            "pou_mode": ("core_overlap_ramp", "geometric_hats"),
             "local_solver": ("lu", "gmres_ilu"),
             "coarse_solver": ("lu", "gmres_ilu"),
             "coefficient_mode": ("constant", "cell_tags"),

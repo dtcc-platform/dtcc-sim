@@ -6,6 +6,7 @@ from .parameters import HelmholtzParameters
 _OPTIONS = (
     ("--frequency", "frequency_hz", float),
     ("--rho", "rho", float),
+    ("--pou-mode", "pou_mode", str),
     ("--subdomains", "n_subdomains", int),
     ("--overlap", "overlap_layers", int),
     ("--oversampling", "oversample_layers", int),

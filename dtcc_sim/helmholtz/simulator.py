@@ -79,6 +79,55 @@ def _runtime_versions():
         "scalar_type": str(np.dtype(PETSc.ScalarType)),
         "numpy": np.__version__,
         "scipy": scipy.__version__,
+        "partitioner": _partitioner_identity(),
+    }
+
+
+def _partitioner_identity():
+    """Identify the extension and the METIS code that it actually loads."""
+    import ctypes
+    from importlib.metadata import version
+
+    try:
+        from pymetis import _internal
+    except ModuleNotFoundError as error:
+        if error.name == "pymetis":
+            return None
+        raise
+
+    extension = Path(_internal.__file__).resolve()
+    provider = extension
+    library = ctypes.CDLL(str(extension))
+    try:
+        partition = library.METIS_PartGraphKway
+    except AttributeError:
+        # A statically bundled implementation may hide its METIS symbols.
+        pass
+    else:
+        class DlInfo(ctypes.Structure):
+            _fields_ = [
+                ("filename", ctypes.c_char_p),
+                ("base", ctypes.c_void_p),
+                ("symbol", ctypes.c_char_p),
+                ("address", ctypes.c_void_p),
+            ]
+
+        try:
+            dladdr = ctypes.CDLL(None).dladdr
+        except AttributeError as error:
+            raise RuntimeError("Cannot identify the loaded METIS library") from error
+        dladdr.argtypes = [ctypes.c_void_p, ctypes.POINTER(DlInfo)]
+        dladdr.restype = ctypes.c_int
+        info = DlInfo()
+        found = dladdr(ctypes.cast(partition, ctypes.c_void_p), ctypes.byref(info))
+        if not found or not info.filename:
+            raise RuntimeError("Cannot identify the loaded METIS library")
+        provider = Path(os.fsdecode(info.filename)).resolve()
+
+    return {
+        "pymetis": version("pymetis"),
+        "extension_sha256": _sha256(extension),
+        "metis_provider_sha256": _sha256(provider),
     }
 
 

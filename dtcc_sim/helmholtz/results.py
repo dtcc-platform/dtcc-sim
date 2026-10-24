@@ -91,9 +91,14 @@ def result_to_dtcc(result, *, unit=""):
 
     if MPI.COMM_WORLD.size != 1:
         raise RuntimeError("DTCC Helmholtz export requires one MPI rank")
+    saved_runtime = dict(manifest["runtime"])
+    current_runtime = _runtime_versions()
+    # Field export reads geometry and values without constructing a partition.
+    saved_runtime.pop("partitioner", None)
+    current_runtime.pop("partitioner", None)
     if (
         manifest["inputs"] != _mesh_input_hashes(result.mesh_path)
-        or manifest["runtime"] != _runtime_versions()
+        or saved_runtime != current_runtime
     ):
         raise ValueError(
             "Input mesh or runtime changed since this solution was prepared"
