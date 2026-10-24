@@ -61,8 +61,10 @@ uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[helmholtz,helmholtz-mes
 python -m dtcc_sim.helmholtz.check_runtime --workers 16 --mesh-generation
 ```
 
-The recipe supplies the complex numerical stack and a Conda C++ compiler for
-native dependencies. Install the Python extras after activating it. The
+The recipe supplies the complex numerical stack, a Conda C++ compiler,
+CMake 3.24 or later, and Ninja for native dependencies. The TetGen wrapper
+requires CMake 3.24 or later; an older system CMake is insufficient. Install
+the Python extras after activating the environment. The
 `helmholtz-mesh` extra obtains the volume-meshing dependencies through Core,
 including its Git-pinned TetGen wrapper. This installation requires network
 access and may compile native code. When only using existing XDMF meshes,

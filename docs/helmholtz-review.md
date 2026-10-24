@@ -36,14 +36,51 @@ Chalmers launcher is separate from generic library code.
 
 ## Evidence and its limits
 
-These are three different claims; they should not be combined into a claim of
-bitwise historical thesis reproduction by the final integrated city workflow.
+The controlled comparisons, historical reconstruction, production city run and
+isolated installation checks establish distinct claims. Numerical agreement
+with the historical field is separate from bitwise equality.
 
 | Question | Verified outcome | Scope |
 | --- | --- | --- |
 | Does the integration preserve the later ramp solver? | Original/integrated city: 39 iterations, 160 coarse modes, bitwise equal assembled systems, all 61 preconditioner entries, residual histories and final fields. | Same current runtime, restored historical partition and identical test-only ARPACK starting vectors. |
 | Was the thesis city result recovered? | Recovered geometric source: 32 iterations, 281 modes, true residual 8.002162926752011e-6; field relative L2 difference 4.038710368992294e-14. | Table 4.17 h=5 city row, preserved original environment. Field is numerically equal to the archive, not bitwise identical. |
-| Are both weight choices integrated correctly? | All full-city weights match their reference weights bitwise. Small real solves match each weight-source oracle in all 61 entries, histories and fields; both DTCC export workflows pass. | No new full-city eigensolve/solve with the final selectable implementation was run. |
+| Are both weight choices integrated correctly? | All full-city weights match their reference weights bitwise. Small real solves match each weight-source oracle in all 61 entries, histories and fields; both DTCC export workflows pass. | Full-city reference replay plus small source-oracle solves and export workflows. |
+
+### Final production city workflow
+
+The [production city report](validation/helmholtz-final-integrated-city.json)
+checks the final selectable `geometric_hats` implementation on the exact original
+h=5 city mesh, 5 Hz, rho 1.10, 16 workers/subdomains, overlap 1 and oversampling 3.
+The historical partitioner build is pinned; the current integration runtime is
+used and ARPACK initialization is unforced. It passed every criterion fixed
+before launch: 32 iterations, 281 coarse modes and all 16 local retained-mode
+counts match the archive. The partition and geometric weights match bitwise.
+
+The independently reassembled true residual is 8.002162925941243e-6. The relative
+complex field L2 difference is 3.650061829763775e-14 (maximum absolute difference
+3.4961647556298987e-13); the field is not bitwise identical. All four exports
+passed, with exact boundary and package-context round trips and 138,444 boundary
+facets. The original inputs and source remained unchanged. This validates this
+case, not every historical experiment or runtime.
+
+### Isolated installation validation
+
+The [installation report](validation/helmholtz-clean-install.json) records a new
+separate Conda prefix on the same Linux host, pinned Python dependencies, fresh
+native builds of Mesher, TetGen and patched Core, and installation of the reviewed
+Sim wheel. All project imports came from this prefix, without the production
+overlay. Dependency consistency and all 120 focused tests passed. Real small
+runs generated a mesh, reused it for the other weight option, and passed both
+solves and all four export checks. Each took 8 iterations; independent residuals
+were 3.022592052942598e-6 (geometric) and 3.245275017206979e-6 (ramp).
+
+This needed explicit CMake 3.31.10 and a reversible VTK metadata workaround.
+The Conda VTK build supplied both valid legacy egg-info and incomplete dist-info;
+the latter was preserved outside site-packages. No package binaries were
+changed. The failed attempts remain in the validation records. See the
+[installation notes](helmholtz-installation-validation.md) for the prerequisite,
+workaround and scope. This is a same-host installation with cached upstream
+geodata, not a pristine-machine or other-OS test.
 
 ### Controlled integration equivalence
 
@@ -123,7 +160,7 @@ vertex-field export is P1. Equal nominal h does not imply equal mesh files.
 The retained source placement can warn when its center lies outside the mesh.
 Neither weight variant is claimed universally faster. Existing cases cannot be
 overwritten or numerically resumed; portable packages are result artifacts,
-not solver restart checkpoints. The recorded environment inventory is not a
-tested clean reinstall. No full project test suite or validation of every
+not solver restart checkpoints. The isolated installation validation above has
+the stated host and packaging limits. No full project test suite or validation of every
 physical configuration is claimed. Large meshes, fields, caches and personal
 server paths do not belong in the generic contribution.
