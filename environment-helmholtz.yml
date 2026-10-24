@@ -7,7 +7,7 @@ dependencies:
   - petsc=*=complex_*
   - mpich
   - cxx-compiler
-  - cmake
+  - cmake>=3.24
   - ninja
   - pyvista
   - h5py
