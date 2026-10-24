@@ -5,6 +5,35 @@ DOLFINx 0.11.0. Keep this environment separate from the one used for heat/wind.
 
 ## 1. Install and check the runtime
 
+For the tested Linux x86-64 setup, use the [pinned installer](helmholtz-reproducible-install.md).
+It includes the reviewed Core boundary patch needed for tagged DTCC exports.
+Replace the two example paths below with your Conda executable and a new
+installation directory outside this checkout:
+
+```bash
+python3 tools/install_helmholtz.py --conda /path/to/conda --work-dir /path/to/new-installation --verify --detach
+```
+
+Wait for `exit-code.txt` in that installation directory to contain `0`; inspect
+`status.json` and the phase logs if it fails. Then activate the installed prefix:
+
+```bash
+conda activate /path/to/new-installation/env
+python -m dtcc_sim.helmholtz.check_runtime --workers 2 --mesh-generation
+```
+
+Start with the [small generated-mesh example](../demos/HELMHOLTZ_SMALL.md).
+It needs no separately supplied thesis mesh and uses two workers. The reference
+configurations below use sixteen workers and require the specified inputs.
+
+### Alternative environment setup
+
+The general setup below resolves dependencies rather than reconstructing the
+tested pins, and does not apply the reviewed Core patch automatically. See the
+[installation notes](helmholtz-installation-validation.md) for its Core and VTK
+requirements before using tagged exports. The pinned recipe is Linux-specific;
+other platforms have not been validated by that recipe.
+
 ```bash
 conda env create -f environment-helmholtz.yml
 conda activate dtcc-helmholtz
