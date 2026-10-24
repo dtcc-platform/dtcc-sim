@@ -34,6 +34,6 @@
     "results.py": "d67e67f5d0cd46834088e3968db255b5b6be7417be0275510833f087bafc8eb4"
   },
   "shared_runtime_changed": false,
-  "full_city_comparison_separate": "/scratch/sahakyan/dtcc-integration/controlled-city-20261023-euxmcrbb",
+  "full_city_comparison_separate": "helmholtz-controlled-city.json",
   "scope": "Cache identity and completed-result export guard only; numerical backend unchanged."
 }

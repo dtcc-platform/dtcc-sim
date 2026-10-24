@@ -1,0 +1,90 @@
+{
+  "passed": true,
+  "installer": {
+    "passed": true,
+    "prefix": "<installation>/env",
+    "verification_requested": true,
+    "metadata_workaround": {
+      "applied": true,
+      "preserved_at": "<installation>/metadata-backup/vtk-9.7.0.dist-info",
+      "sha256": {
+        "INSTALLER": "bc33022edcb7639ff53355b4e91dade50a0bbf0299efeb6171d1ec0ba5029cfc",
+        "METADATA": "7a9b360382de8da9d9cf4639398825a93daa31d33aea61e45b19c60cde8608af"
+      },
+      "legacy_record_retained": "<installation>/env/lib/python3.12/site-packages/vtk-9.7.0.egg-info",
+      "package_binaries_modified": false,
+      "conda_ownership_database_modified": false,
+      "reversal": "Move the preserved dist-info back to its original site-packages path; this restores the original duplicate-metadata condition."
+    },
+    "wheel_sha256": {
+      "dtcc_tetgen_wrapper-0.1.0-cp312-cp312-linux_x86_64.whl": "4c2a98152c6e9c061697cbd4d712e9da123ecdf45663689f3949bf56d32e0433",
+      "dtcc_sim-0.1.0-py3-none-any.whl": "0c57c5afb7a40812c80ff753a8b46bb0d1fd1c763064ed6c89231fc4eed34eea",
+      "dtcc_core-0.9.8.dev0-cp312-cp312-linux_x86_64.whl": "79eb6ceebe2bdfaca273fffd8b2c14f0dd190d7b1d106c1bb85d9af9828af7b2",
+      "dtcc_mesher-0.1.0-cp312-cp312-linux_x86_64.whl": "8922a9e256e0c7e220613064701403b587b75f7b8c3015fca3288e57dd7094f8"
+    },
+    "focused_tests": 129,
+    "seconds": 276.6666328459978,
+    "scope": "Pinned new Linux x86-64 prefix, native builds and reviewed Core patch. Downloads/geodata may use caches. No historical partition or performance claim."
+  },
+  "smoke": {
+    "passed": true,
+    "clean_prefix": "<installation>/env",
+    "loaded_modules": {
+      "dtcc_core": "<installation>/env/lib/python3.12/site-packages/dtcc_core/__init__.py",
+      "dtcc_sim": "<installation>/env/lib/python3.12/site-packages/dtcc_sim/__init__.py",
+      "numpy": "<installation>/env/lib/python3.12/site-packages/numpy/__init__.py",
+      "scipy": "<installation>/env/lib/python3.12/site-packages/scipy/__init__.py",
+      "dolfinx": "<installation>/env/lib/python3.12/site-packages/dolfinx/__init__.py",
+      "h5py": "<installation>/env/lib/python3.12/site-packages/h5py/__init__.py",
+      "pymetis": "<installation>/env/lib/python3.12/site-packages/pymetis/__init__.py",
+      "dtcc_mesher": "<installation>/env/lib/python3.12/site-packages/dtcc_mesher/__init__.py",
+      "dtcc_tetgen_wrapper": "<installation>/env/lib/python3.12/site-packages/dtcc_tetgen_wrapper/__init__.py",
+      "dtcc_core.builder._dtcc_builder": "<installation>/env/lib/python3.12/site-packages/dtcc_core/builder/_dtcc_builder.cpython-312-x86_64-linux-gnu.so"
+    },
+    "cases": {
+      "geometric_hats": {
+        "passed": true,
+        "iterations": 8,
+        "independent_true_residual": 3.0225920532464196e-06,
+        "vertices": 242,
+        "tetrahedra": 762,
+        "boundary_facets": 400,
+        "mesh_generated": true,
+        "exports_verified": [
+          "dtcc",
+          "xdmf",
+          "vtu",
+          "dtccpkg"
+        ],
+        "geometry_fields_boundaries_and_package_context_exact": true,
+        "seconds": 31.41120123118162
+      },
+      "core_overlap_ramp": {
+        "passed": true,
+        "iterations": 8,
+        "independent_true_residual": 3.2452750170873977e-06,
+        "vertices": 242,
+        "tetrahedra": 762,
+        "boundary_facets": 400,
+        "mesh_generated": false,
+        "exports_verified": [
+          "dtcc",
+          "xdmf",
+          "vtu",
+          "dtccpkg"
+        ],
+        "geometry_fields_boundaries_and_package_context_exact": true,
+        "seconds": 6.784918494522572
+      }
+    },
+    "no_previous_overlay_or_site_packages_used": true,
+    "seconds": 42.670045770704746,
+    "scope": "Fresh copied Conda package installation plus pinned Python dependencies; rebuilt project native packages and reviewed Sim wheel. Same Linux host and cached upstream geodata, not a new machine or historical performance benchmark."
+  },
+  "unattended_after_launch": true,
+  "initial_trial_helper_failure_preserved": true,
+  "spawn_import_regression_test_added": true,
+  "ci_workflow_yaml_and_server_commands_checked": true,
+  "hosted_ci_run": false,
+  "hosted_ci_blocker": "Repository explicitly disables GitHub Actions; enabling requires separate approval."
+}
