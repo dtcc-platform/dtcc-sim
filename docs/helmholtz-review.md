@@ -144,8 +144,9 @@ preserved separately and a regression test now covers that failure.
 
 The GitHub Actions workflow uses that installer and the focused test selection,
 with the geodata-dependent check available separately. Workflow syntax and the
-server commands have been checked; no hosted CI pass is claimed while the
-private review repository explicitly disables Actions. The small
+server commands have been checked. Hosted GitHub Actions results are separate
+evidence and must be read from the corresponding commit checks; server
+validation alone does not establish a hosted CI pass. The small
 [runnable example](../demos/HELMHOLTZ_SMALL.md) provides commands and observed
 expectations without thesis inputs. No full city run is required by CI.
 
