@@ -180,8 +180,11 @@ def test_export_rejects_changed_case_identity_before_reading_mesh(tmp_path, chan
 
 
 @pytest.mark.parametrize("legacy_values", [False, True])
+@pytest.mark.parametrize(
+    "runtime_change", [None, "missing_partitioner", "partitioner", "reader"]
+)
 def test_dolfinx_mesh_exports_fields_and_tags_without_core_reader(
-    tmp_path, monkeypatch, legacy_values
+    tmp_path, monkeypatch, legacy_values, runtime_change
 ):
     """Read tagged multi-grid XDMF with either boundary dataset capitalization."""
     pytest.importorskip("dolfinx")
@@ -226,14 +229,25 @@ def test_dolfinx_mesh_exports_fields_and_tags_without_core_reader(
     coords = fem.functionspace(loaded, ("Lagrange", 1)).tabulate_dof_coordinates()
     solution = coords[:, 0] + 2 * coords[:, 1] + 1j * coords[:, 2]
     parameters = HelmholtzParameters()
+    runtime = _runtime_versions()
+    if runtime_change == "missing_partitioner":
+        runtime.pop("partitioner", None)
+    elif runtime_change == "partitioner":
+        runtime["partitioner"] = {"pymetis": "different-build"}
+    elif runtime_change == "reader":
+        runtime["dolfinx"] = "different-reader-version"
     (tmp_path / "prepared.json").write_text(json.dumps({
-        "inputs": _mesh_input_hashes(path), "runtime": _runtime_versions(),
+        "inputs": _mesh_input_hashes(path), "runtime": runtime,
         "parameters": asdict(parameters),
     }))
     result = HelmholtzResult(
         solution=solution, iterations=0, relative_residual=0, converged=True,
         gmres_history=(), output_dir=tmp_path, mesh_path=path,
     )
+    if runtime_change == "reader":
+        with pytest.raises(ValueError, match="runtime changed"):
+            result.to_dtcc()
+        return
     monkeypatch.setattr(
         dtcc_core.io, "load_volume_mesh",
         lambda *a, **k: pytest.fail("Export must use its checked numerical mesh"),

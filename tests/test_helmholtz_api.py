@@ -148,6 +148,23 @@ def test_no_overwrite_of_existing_case(mesh, tmp_path, fake_backend):
     assert not fake_backend
 
 
+def test_same_version_partitioner_build_change_rejects_offline_data(
+    mesh, tmp_path, fake_backend, monkeypatch
+):
+    identity = {
+        "pymetis": "2025.2.2",
+        "extension_sha256": "unchanged-extension",
+        "metis_provider_sha256": "original-library",
+    }
+    monkeypatch.setattr(api, "_runtime_versions", lambda: {"partitioner": dict(identity)})
+    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+    sim.prepare()
+    identity["metis_provider_sha256"] = "different-build-with-the-same-version"
+    with pytest.raises(ValueError, match="does not match"):
+        sim.solve()
+    assert not any(call[0] == "solve" for call in fake_backend)
+
+
 def test_solving_completed_case_is_rejected(mesh, tmp_path, fake_backend):
     sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.run()
@@ -315,3 +332,42 @@ def test_case_lock_rejects_concurrent_writer_and_releases_after_failure(tmp_path
                     pytest.fail("second writer acquired the case")
             raise RuntimeError("stage failed")
     assert not (tmp_path / ".helmholtz.lock").exists()
+
+
+@pytest.mark.parametrize("mode", ["geometric_hats", "core_overlap_ramp"])
+def test_weight_choice_recorded_and_cross_mode_cache_rejected(
+    mode, mesh, tmp_path, fake_backend
+):
+    import json
+
+    params = HelmholtzParameters(pou_mode=mode)
+    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / mode, parameters=params)
+    assert sim._params().pou_mode == mode
+    assert sim.describe()["parameters"]["pou_mode"] == mode
+    sim.prepare()
+    assert json.loads(sim.manifest_path.read_text())["parameters"]["pou_mode"] == mode
+    other = "core_overlap_ramp" if mode == "geometric_hats" else "geometric_hats"
+    sim.parameters = replace(params, pou_mode=other)
+    with pytest.raises(ValueError, match="does not match"):
+        sim.solve()
+    assert not (sim.output_dir / "diagnostics.json").exists()
+    sim.parameters = params
+    result = sim.solve()
+    assert result.prepared_identity["parameters"]["pou_mode"] == mode
+
+
+def test_weight_default_and_ambiguous_names_rejected():
+    assert HelmholtzParameters().pou_mode == "core_overlap_ramp"
+    for mode in ("structured_hats", "from_partition_data", "unknown", None):
+        with pytest.raises(ValueError, match="pou_mode"):
+            HelmholtzParameters(pou_mode=mode)
+
+
+def test_weight_cli_option():
+    import argparse
+    from dtcc_sim.helmholtz.cli import add_solver_arguments, parameters_from_args
+
+    parser = argparse.ArgumentParser()
+    add_solver_arguments(parser)
+    args = parser.parse_args(["--pou-mode", "geometric_hats"])
+    assert parameters_from_args(args).pou_mode == "geometric_hats"
