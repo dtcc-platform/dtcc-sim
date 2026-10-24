@@ -1,0 +1,73 @@
+{
+  "passed": true,
+  "requires_separate_core_patch": true,
+  "core_base_revision": "a78df16e9c86b349ba3a67551d518223b7897443",
+  "sim_source_revision": "f427c6e8e0973b179c0ee67bea0ea1ad29efe458",
+  "core_tests_passed": 61,
+  "sim_tests_passed": 159,
+  "regression_before_fix": "two native roundtrip cases fail with missing boundary attributes",
+  "thesis": {
+    "thesis_table": "4.4",
+    "frequency_hz": 5,
+    "mesh_h": 5,
+    "workers": 16,
+    "dofs": 28577,
+    "tetrahedra": 153600,
+    "reference_iterations": 27,
+    "integrated_iterations": 26,
+    "reference_coarse_modes": 32,
+    "integrated_coarse_modes": 32,
+    "integrated_true_relative_residual": 2.74926853610113e-06,
+    "relative_complex_solution_l2_difference": 1.848038413066558e-06,
+    "bitwise_historical_solution_match": false,
+    "exports": {
+      "dtcc": {
+        "fields_exact": true,
+        "vertices_exact": true,
+        "cells_exact": true,
+        "boundary_markers_exact": true,
+        "boundary_facets_restored": 11520
+      },
+      "xdmf": {
+        "fields_exact": true,
+        "vertices_exact": true,
+        "cells_exact": true,
+        "boundary_markers_exact": true,
+        "boundary_facets_restored": 11520
+      },
+      "vtu": {
+        "fields_exact": true
+      },
+      "dtccpkg": {
+        "fields_exact": true,
+        "vertices_exact": true,
+        "cells_exact": true,
+        "boundary_markers_exact": true,
+        "boundary_facets_restored": 11520,
+        "context_exact": true
+      }
+    }
+  },
+  "thesis_solver_rerun": false,
+  "original_inputs_unchanged": true,
+  "package": {
+    "passed": true,
+    "original_numerical_inputs_blocked_during_load": true,
+    "geometry": {
+      "vertices": 28577,
+      "tetrahedra": 153600,
+      "boundary_facets": 11520
+    },
+    "fields_finite": true,
+    "settings_retained": true,
+    "diagnostics_retained": true,
+    "prepared_mesh_hashes_retained": true,
+    "mesh_provenance_retained": true,
+    "tampered_artifact_rejected": true,
+    "rejection": "Artifact size/sha256 does not match manifest",
+    "solver_rerun": false,
+    "package_is_solver_checkpoint": false
+  },
+  "shared_environment_modified": false,
+  "published": false
+}
