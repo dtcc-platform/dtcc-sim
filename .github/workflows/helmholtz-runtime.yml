@@ -2,6 +2,7 @@ name: Helmholtz runtime
 
 on:
   push:
+    branches: [develop, main]
     paths:
       - '.github/workflows/helmholtz-runtime.yml'
       - 'dtcc_sim/helmholtz/**'
