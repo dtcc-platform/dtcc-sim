@@ -1,0 +1,7 @@
+cmake==3.31.10
+ninja==1.13.2
+pathspec==1.1.1
+pybind11==3.0.4
+scikit-build-core==1.1.1
+setuptools==84.0.0
+wheel==0.48.0
