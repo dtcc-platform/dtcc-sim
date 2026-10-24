@@ -5,8 +5,10 @@ Start with the [installation and run quick start](helmholtz-quickstart.md).
 `dtcc_sim.helmholtz` solves a complex scalar Helmholtz system on an existing
 XDMF volume mesh using a hybrid overlapping preconditioner and spectral coarse
 space. It requires a complex PETSc/DOLFINx environment and one MPI rank.
-`workers` controls local eigenproblem processes, not MPI ranks. Numerical comparison passed for the saved 5 Hz, h=5 city cases with fixed
-40 modes and rho-threshold selection; other cases require validation.
+`workers` controls local eigenproblem processes, not MPI ranks. The
+[review guide](helmholtz-review.md) distinguishes controlled solver equivalence,
+historical thesis reconstruction and validation of the selectable weights;
+these checks do not establish every configuration.
 
 Install the optional Python dependencies in the activated FEniCSx environment:
 
@@ -70,6 +72,16 @@ file but does not rebuild it. Older preparation manifests without a checksum
 cannot be reused for a new solve; prepare a new case. Existing completed cases
 can still be loaded and exported without rerunning their numerical stages.
 
+Runtime identity includes the PyMetis version and SHA-256 fingerprints of its
+native extension and the METIS implementation it loads. Different builds of
+the same release can partition an identical mesh differently. A changed build
+therefore requires a fresh prepared case, even when version strings match.
+Manifests without this partitioner identity also require fresh preparation
+before another solve; completed results remain available for loading/export.
+The [partitioner identity validation](validation/helmholtz-partitioner-identity.json)
+checks refusal across two real builds with the same version, a small numerical
+solve, result reload, and compatibility of completed-result exports.
+
 BLAS/OpenMP thread limits apply during numerical calls and are restored afterward.
 Fresh patch workers receive the limits and configuration explicitly. Python
 scripts must guard their entry point with `if __name__ == "__main__":`, as above,
@@ -77,6 +89,44 @@ to prevent spawned workers from executing the launcher again. The parameter
 context is isolated per call;
 in-process numerical calls are serialized because MPI/PETSc and thread limits
 are process resources.
+
+## Partition-of-unity weights
+
+Choose `pou_mode="core_overlap_ramp"` or `pou_mode="geometric_hats"` in
+`HelmholtzParameters` or the JSON `parameters` object. The CLI equivalent is
+`--pou-mode geometric_hats`. Configurations omitting the setting retain the
+core-overlap ramp behavior. The public interface rejects the ambiguous names
+`structured_hats` and `from_partition_data`; internal compatibility aliases
+retain their ramp behavior.
+
+Ramp raw weights are one on core DOFs and decrease with cell-graph distance
+through the overlap, taking the maximum incident-cell weight at each node.
+Geometric raw weights are products of coordinate-wise tent functions defined
+by the bounding box of the overlapping cells' barycentres, restricted to the
+patch DOFs. They do not force core weights to one. Both constructions normalize
+pointwise to sum to one on covered DOFs and use equal multiplicity weights
+where every raw weight vanishes. These weights enter local corrections and
+spectral/coarse-space construction.
+
+The choice is stored in `prepared.json` and the returned result's
+`prepared_identity`. It is part of cache identity: switching construction
+requires a fresh prepared case. Older prepared manifests without the setting
+also require fresh preparation; completed results can still be loaded/exported.
+
+Use [the thesis city profile](../demos/configs/helmholtz_thesis_city_h5.json)
+for geometric hats with rho-threshold mode selection and the recovered
+40/60 initial ARPACK controls. Supply the exact original h=5 m mesh at the
+configured path; generating a new mesh at the same h does not reproduce the
+original input. The recovered source reproduced Table 4.17's h=5 city row;
+this does not establish the construction used by every thesis experiment.
+Other existing example configurations explicitly retain ramps. Neither weight
+construction is claimed universally faster.
+
+The [weight-option validation](validation/helmholtz-weight-options.json) records
+bitwise full-city weight replay for both constructions, small real
+prepare/solve comparisons against their source implementations, cache
+separation, and DTCC export round trips. It does not claim a new full-city
+end-to-end run.
 
 ## Command line
 
@@ -272,7 +322,12 @@ FE degree 1; higher-order vertex evaluation is not currently implemented.
 
 VTU stores the fields for visualization. The installed DTCC VTU loader currently
 loads geometry only; use `.dtcc` to preserve fields when reopening in DTCC.
-XDMF/HDF5 export is also supported. Existing exports are never overwritten.
+XDMF/HDF5 export preserves fields and boundary markers. The pinned Core native
+writer omits boundary markers from `.dtcc` and `.dtccpkg`; an isolated Core
+schema/serialization fix restores them and has passed a full thesis re-export
+check. See the [review evidence](helmholtz-review.md#full-thesis-case-and-boundary-preservation).
+Until that dependency fix is installed, use XDMF/HDF5 when tags are needed.
+Existing exports are never overwritten.
 
 The launcher can save fields after solving:
 
@@ -295,7 +350,11 @@ result.save_dtcc()
 Open the VTU in a mesh viewer and select `helmholtz_amplitude`, `helmholtz_real`,
 or `helmholtz_imaginary`. A slice through the volume shows the interior field.
 
-## Validation scope
+## Earlier cross-runtime comparisons
+
+These earlier checks used the later ramp implementation and different METIS
+builds. For the stronger controlled city comparison, recovered thesis revision
+and current weight-option checks, see the [review guide](helmholtz-review.md).
 
 The saved city comparisons used the same h=5 input mesh, 5 Hz, 16 METIS
 subdomains, overlap 1, oversampling 3, and 16 patch workers. Fields were compared

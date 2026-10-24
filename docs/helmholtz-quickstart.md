@@ -54,6 +54,15 @@ records its declared resolution; changing this label does not remesh the file.
 For generation, h is a target maximum mesh size, not an exact edge-length
 promise. Keep mesh-cache and result folders separate.
 
+For the verified thesis-city configuration, use
+[`helmholtz_thesis_city_h5.json`](../demos/configs/helmholtz_thesis_city_h5.json).
+It explicitly selects `pou_mode: "geometric_hats"` and rho-threshold modes.
+Supply the exact original mesh at its configured path. Reproducing an archived
+case also requires compatible partitioner builds, eigensolver settings and
+runtime; this JSON alone does not pin those libraries. The other examples keep
+`pou_mode: "core_overlap_ramp"`. Both choices and cache rules are described in
+[the weight reference](helmholtz.md#partition-of-unity-weights).
+
 ## 3. Run and inspect the result
 
 Choose a new `output_dir` for every run. Existing cases are never overwritten.

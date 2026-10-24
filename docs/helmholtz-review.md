@@ -1,73 +1,129 @@
-# Helmholtz core contribution
+# Helmholtz integration review
 
-This contribution adds local Helmholtz preparation/solving, DTCC mesh generation
-and caching, a dataset adapter and checked result export. Start with the
-[quick start](helmholtz-quickstart.md); parameter/API details are in
-[the workflow reference](helmholtz.md).
+This contribution connects the research Helmholtz preconditioner to DTCC's local
+mesh-to-solve-to-result workflow. It supports supplied meshes or city mesh
+generation/cache, explicit solver controls, two partition-of-unity constructions,
+a registered dataset and checked P1 result exports. Start with the
+[quick start](helmholtz-quickstart.md) and [API reference](helmholtz.md).
 
-## Review scope
+## Read the implementation in this order
 
-1. [Simulator](../dtcc_sim/helmholtz/simulator.py): explicit parameters, separate
-   preparation/solve stages, case locks and input/preconditioner identity.
+1. [Parameters](../dtcc_sim/helmholtz/parameters.py) and
+   [simulator](../dtcc_sim/helmholtz/simulator.py): explicit controls, separate
+   preparation/solve, case locks and input/preconditioner/runtime identities.
 2. [Mesh workflow](../dtcc_sim/helmholtz/workflow.py) and
-   [cache](../dtcc_sim/helmholtz/meshing.py): explicit h, full meshing request,
+   [cache](../dtcc_sim/helmholtz/meshing.py): explicit h, full generation request,
    checksummed reuse and boundary-marker reports.
-3. [Result adapter](../dtcc_sim/helmholtz/results.py) and
-   [dataset](../dtcc_sim/helmholtz/dataset.py): bijective P1 mapping, geometry/tags,
-   real/imaginary/amplitude fields, caller-declared external CRS and provenance.
-4. [Numerical backend](../dtcc_sim/helmholtz/_backend/): preserved research
-   implementation with explicit binding and spawned patch workers.
+3. [Weights](../dtcc_sim/helmholtz/_backend/pou.py): `geometric_hats` and
+   `core_overlap_ramp`; the recovered geometric function is added while the
+   existing ramp construction is retained.
+4. [Results](../dtcc_sim/helmholtz/results.py) and
+   [dataset](../dtcc_sim/helmholtz/dataset.py): bijective coordinate mapping,
+   real/imaginary/amplitude fields, boundaries, declared CRS and provenance.
 
-No dedicated Celery worker, process supervisor or systemd renderer is included.
-The existing service discovery/task-registration loops exclude Helmholtz so
-that the general worker cannot accidentally accept it. Other datasets retain
-their existing service behavior. Service support is a separate follow-up.
+Existing configurations that omit `pou_mode` retain ramps. The dedicated
+[thesis city profile](../demos/configs/helmholtz_thesis_city_h5.json) selects
+geometric hats and rho-threshold modes. The choice is recorded and separates
+prepared caches. PyMetis/METIS native-build fingerprints also separate caches,
+because the same version string can produce a different partition. Completed
+older results remain loadable/exportable; older prepared cases need fresh
+preparation for another solve.
 
-## Numerical evidence
+The contribution excludes specialized Celery/supervisor/systemd support.
+General service discovery excludes Helmholtz so that unsuitable workers cannot
+accept it. Other datasets retain their existing service behavior. The personal
+Chalmers launcher is separate from generic library code.
 
-The [controlled comparison](validation/helmholtz-controlled-comparison.json)
-used the original h=4 m box, 10 Hz, rho=1.10, 16 workers, one thread per worker,
-identical runtime and complete ARPACK settings. Test-only wrappers supplied the
-same explicit eigensolver starting vector; production runs do not force it.
-The [reference hashes](validation/helmholtz-original-source-sha256.json)
-identify the preserved original scripts.
+## Evidence and its limits
 
-Global matrices/RHS/DOF coordinates, all 61 saved preconditioner arrays, final
-solutions and residual histories matched bit for bit. Both runs took 29
-iterations; the integrated true relative residual was 3.808188393821847e-6.
-All 11 numerical backend files are unchanged from that tested snapshot.
-This is evidence for the recorded case, not universal numerical equivalence,
-physical calibration or bitwise reproduction under historical libraries.
+These are three different claims; they should not be combined into a claim of
+bitwise historical thesis reproduction by the final integrated city workflow.
 
-## Bounded software checks
+| Question | Verified outcome | Scope |
+| --- | --- | --- |
+| Does the integration preserve the later ramp solver? | Original/integrated city: 39 iterations, 160 coarse modes, bitwise equal assembled systems, all 61 preconditioner entries, residual histories and final fields. | Same current runtime, restored historical partition and identical test-only ARPACK starting vectors. |
+| Was the thesis city result recovered? | Recovered geometric source: 32 iterations, 281 modes, true residual 8.002162926752011e-6; field relative L2 difference 4.038710368992294e-14. | Table 4.17 h=5 city row, preserved original environment. Field is numerically equal to the archive, not bitwise identical. |
+| Are both weight choices integrated correctly? | All full-city weights match their reference weights bitwise. Small real solves match each weight-source oracle in all 61 entries, histories and fields; both DTCC export workflows pass. | No new full-city eigensolve/solve with the final selectable implementation was run. |
 
-The core-only checkout is validated separately from the larger private branch.
-Its [validation report](validation/helmholtz-core-contribution.json) records the
-selected tests and package checks. No full project suite or full numerical
-simulation is required by this scope split. Existing saved box/city numerical
-comparisons and the generated small-mesh workflow remain supporting evidence;
-service acceptance results belong to the separate follow-up.
+### Controlled integration equivalence
 
-## Real small end-to-end run
+The [city comparison](validation/helmholtz-controlled-city.json) uses the exact
+original h=5 m city mesh (330,073 DOFs, 1,841,296 tetrahedra), 5 Hz, rho 1.10,
+16 subdomains/workers, overlap 1, oversampling 3 and one numerical thread.
+Both independent true residuals are 7.604134416308496e-6. Test-only wrappers
+control ARPACK initialization; production defaults do not force it. Object
+arrays are compared through typed numerical leaves, not object-pointer bytes.
+Independent postprocessing confirmed the equality. Original inputs were unchanged.
 
-A [real core-package check](validation/helmholtz-core-smoke.json) installed the
-core wheel into an isolated target and verified all 38 Python source files.
-DTCC generated a fresh h=25 m mesh (242 vertices, 762 tetrahedra) from cached
-source data. The 5 Hz solve used two workers and one thread per worker,
-converging in 8 iterations with true relative residual 3.245275017045522e-6.
-VTU, native DTCC and portable package fields round-tripped exactly. The full
-mesh-to-solve-to-export check took 29.46 seconds and returned exit code zero.
-This exercised actual numerical and meshing code, with no mocks; it is a tiny
-workflow check, not full-scale performance or physical validation. The recorded
-core commit identifies its source snapshot; subsequent evidence-only changes
-do not modify numerical or workflow code.
+The earlier [controlled h=4 box comparison](validation/helmholtz-controlled-comparison.json)
+also matched bitwise under controlled initialization: 29 iterations and true
+residual 3.808188393821847e-6. These results apply to their recorded source
+snapshots and cases, rather than every mesh or runtime.
+
+### Historical thesis reconstruction
+
+The [reconstruction report](validation/helmholtz-thesis-geometric-reconstruction.json)
+is grounded in server launchers, archived logs, exact input mesh and saved
+fields. An older surviving source copy supplied the geometric PoU revision;
+the thesis jobs themselves ran on the server. All 16 patch dimension/facet
+records, retained-mode counts and printed spectral signatures match. Numerical
+stages exited successfully; an initial missing-h5py comparison-helper failure
+is retained in the raw receipts, and separate final verification succeeded.
+
+This establishes the recovered numerical behavior for this thesis row. There
+are no historical per-run source hashes or preconditioner arrays proving every
+past source byte. It does not identify the revision used for every thesis table.
+The final integration exposes the geometric construction explicitly; the
+recovered full source and the final integration are separate tested artifacts.
+
+### Weight choice, cache and result integration
+
+The [weight validation](validation/helmholtz-weight-options.json) records 120
+focused checks on the final staged installation. On the full thesis mesh and
+saved partition, all 16 x 330,073 weights match each construction's reference
+bitwise. For small real solves, each original weight function was substituted
+into the same backend as the oracle; all 61 cache entries, histories and fields
+matched the selectable implementation bitwise. Both took 8 iterations; the
+independent true residuals were 3.0225920529420222e-6 (geometric) and
+3.245275017260653e-6 (ramp). These are correctness checks, not comparative
+performance benchmarks.
+
+Actual detached dataset runs with each choice passed native DTCC, XDMF, VTU
+and portable package exports. Geometry, boundaries, fields and package context
+round-tripped exactly. Cross-method cache reuse was refused before solving;
+result reload was exact. The separate [partitioner identity check](validation/helmholtz-partitioner-identity.json)
+verifies refusal across two real METIS builds with the same PyMetis version.
+
+## Core boundary persistence dependency
+
+A separate Core patch preserves optional facet-vertex and marker arrays in
+native VolumeMesh serialization. It passed 61 focused Core checks; an earlier
+159-check Sim selection passed against its overlay. Re-exporting completed
+box and city solutions retained all 11,520 and 138,444 boundary facets,
+respectively. Cell tags and facet boundary tags remain distinct.
+
+The pinned public Core dependency does not include this patch. Native tagged
+result persistence requires it. Older strict Core readers reject tagged files
+with the extended schema; new readers accept older untagged files. XDMF/HDF5
+remains the interchange option with the unpatched reader. The patch preserves
+labels; it does not choose physical boundary conditions.
+
+Earlier full-case field/export evidence is retained in
+[the box report](validation/helmholtz-thesis-boundary-check.json) and
+[the first city report](validation/helmholtz-thesis-city-check.json). The latter
+used a different METIS build and produced 39 iterations/164 modes. Its report
+remains an accurate record of that run; the controlled and recovered-source
+checks above provide the stronger, distinct evidence now available.
 
 ## Supported limits
 
-Complex PETSc, DOLFINx 0.11.0, one MPI rank, linear tetrahedral mesh geometry and
-P1 vertex-field export. Nominal h does not identify an exact historical mesh;
-explicit mesh files and their hashes do. Cache identity does not detect upstream
-data revisions. Cases cannot be overwritten or numerically resumed. The
-unchanged source rule can warn for an exterior centre. The reference box has
-impedance on all six faces, distinct from sound-hard urban boundaries.
-Meshes, solutions, logs and environment installations stay outside Git.
+The checked runtime uses complex PETSc, DOLFINx 0.11.0 and one MPI rank. Patch
+workers are processes, not MPI ranks. Geometry is linear tetrahedral and DTCC
+vertex-field export is P1. Equal nominal h does not imply equal mesh files.
+The retained source placement can warn when its center lies outside the mesh.
+Neither weight variant is claimed universally faster. Existing cases cannot be
+overwritten or numerically resumed; portable packages are result artifacts,
+not solver restart checkpoints. The recorded environment inventory is not a
+tested clean reinstall. No full project test suite or validation of every
+physical configuration is claimed. Large meshes, fields, caches and personal
+server paths do not belong in the generic contribution.
