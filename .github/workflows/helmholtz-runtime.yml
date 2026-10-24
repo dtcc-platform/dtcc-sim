@@ -40,6 +40,9 @@ jobs:
   focused-checks:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    env:
+      # These single-host checks do not use the runner's RDMA adapters.
+      UCX_TLS: self,sm,tcp
     steps:
       - uses: actions/checkout@v4
         with:
