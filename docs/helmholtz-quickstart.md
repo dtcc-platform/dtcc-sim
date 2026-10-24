@@ -119,3 +119,6 @@ Gaussian centre warns without moving the source. The reference box uses marker
 vary with initialization; [controlled comparison evidence](helmholtz-review.md)
 is scoped to its recorded case and runtime. Queued HTTP/Celery execution and
 service deployment are outside this contribution.
+
+For a small generated-mesh example with commands and recorded expected results,
+see [the small example](../demos/HELMHOLTZ_SMALL.md).

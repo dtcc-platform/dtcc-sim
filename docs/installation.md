@@ -111,3 +111,8 @@ uv pip install --python "$CONDA_PREFIX/bin/python" -e ../dtcc-core
 
 For test commands and development conventions, see
 [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+For the optional recorded Linux x86-64 environment, see the
+[pinned installation procedure](helmholtz-reproducible-install.md). It includes
+the reviewed Core patch and guarded packaging workaround, with an option to
+run focused checks and small real solves.

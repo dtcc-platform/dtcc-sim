@@ -131,6 +131,24 @@ round-tripped exactly. Cross-method cache reuse was refused before solving;
 result reload was exact. The separate [partitioner identity check](validation/helmholtz-partitioner-identity.json)
 verifies refusal across two real METIS builds with the same PyMetis version.
 
+## Reproducible setup and automated checks
+
+The [pinned Linux installer](helmholtz-reproducible-install.md) recreates the
+recorded packages, native source pins and separate reviewed Core patch in a new
+prefix. The [scripted trial](validation/helmholtz-scripted-install.json) passed
+without manual repairs after launch: native builds, dependency consistency,
+129 tests and two real mesh/solver/export cases. Both small solves took
+8 iterations with independent residuals about 3.02e-6 and 3.25e-6. A failed first
+trial exposed a spawn-import side effect in the verification helper; it is
+preserved separately and a regression test now covers that failure.
+
+The GitHub Actions workflow uses that installer and the focused test selection,
+with the geodata-dependent check available separately. Workflow syntax and the
+server commands have been checked; no hosted CI pass is claimed while the
+private review repository explicitly disables Actions. The small
+[runnable example](../demos/HELMHOLTZ_SMALL.md) provides commands and observed
+expectations without thesis inputs. No full city run is required by CI.
+
 ## Core boundary persistence dependency
 
 A separate Core patch preserves optional facet-vertex and marker arrays in
