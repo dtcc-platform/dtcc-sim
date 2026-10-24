@@ -70,6 +70,7 @@
     "dense_fallback_max_dim": 2500,
     "write_solution": true,
     "write_gmres_history": true,
-    "verbose": true
+    "verbose": true,
+    "pou_mode": "core_overlap_ramp"
   }
 }

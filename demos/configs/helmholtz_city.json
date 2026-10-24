@@ -1,6 +1,11 @@
 {
   "mesh_parameters": {
-    "bounds": [319745.962899, 6398759.716755, 320245.962899, 6399259.716755],
+    "bounds": [
+      319745.962899,
+      6398759.716755,
+      320245.962899,
+      6399259.716755
+    ],
     "h": 5.0,
     "domain_height": 80.0,
     "min_building_detail": 1.0,
@@ -17,9 +22,10 @@
     "n_subdomains": 16,
     "overlap_layers": 1,
     "oversample_layers": 3,
-    "rho": 1.10,
+    "rho": 1.1,
     "n_modes_per_patch": 40,
     "workers": 16,
-    "threads_per_worker": 1
+    "threads_per_worker": 1,
+    "pou_mode": "core_overlap_ramp"
   }
 }
