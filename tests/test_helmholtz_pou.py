@@ -4,6 +4,10 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+
+pytest.importorskip("mpi4py", reason="Partition weights require the Helmholtz runtime")
+pytest.importorskip("dolfinx", reason="Partition weights require the Helmholtz runtime")
+
 from dtcc_sim.helmholtz._backend.params import Params, bind_parameters
 from dtcc_sim.helmholtz._backend.pou import build_partition_of_unity
 
