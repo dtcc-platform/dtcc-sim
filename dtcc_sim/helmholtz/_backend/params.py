@@ -19,7 +19,9 @@ class Params:
     beta_by_facet_tag: dict[int, float] = field(default_factory=dict)
 
     mesh_source: Literal["python_builder", "external_file"] = "external_file"
-    python_mesh_kind: Literal["unit_cube_uniform", "unit_square_uniform"] = "unit_cube_uniform"
+    python_mesh_kind: Literal["unit_cube_uniform", "unit_square_uniform"] = (
+        "unit_cube_uniform"
+    )
     unit_cube_nx: int = 12
     unit_cube_ny: int = 12
     unit_cube_nz: int = 12
@@ -52,7 +54,9 @@ class Params:
     overlap_layers: int = 1
     oversample_layers: int = 1
 
-    pou_mode: Literal["structured_hats", "from_partition_data"] = "from_partition_data"
+    pou_mode: Literal[
+        "core_overlap_ramp", "geometric_hats", "structured_hats", "from_partition_data"
+    ] = "core_overlap_ramp"
 
     rho: float = 0.5
     eps_type: str = "krylovschur"
@@ -75,7 +79,9 @@ class Params:
     outer_monitor: bool = True
     allow_dense_coarse_fallback: bool = False
 
-    rhs_mode: Literal["gaussian_point_source", "point_source", "plane_wave_exact"] = "gaussian_point_source"
+    rhs_mode: Literal["gaussian_point_source", "point_source", "plane_wave_exact"] = (
+        "gaussian_point_source"
+    )
     source_amplitude_real: float = 1.0
     source_amplitude_imag: float = 0.0
     gaussian_source_sigma: float = 5.0

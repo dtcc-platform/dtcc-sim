@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import numpy as np
 from mpi4py import MPI
-from dolfinx import fem
+from dolfinx import fem, mesh as dmesh
 
 from .params import PARAMS
 
@@ -26,6 +26,126 @@ class PartitionOfUnityData:
     chi_full: list[np.ndarray]
     multiplicity: np.ndarray
     ndofs_in_union: int
+
+
+def _cell_barycenters(mesh: dmesh.Mesh) -> np.ndarray:
+    gdim = mesh.geometry.dim
+    x = np.asarray(mesh.geometry.x[:, :gdim], dtype=np.float64)
+    dofmap = mesh.geometry.dofmap
+    n_cells = int(mesh.topology.index_map(mesh.topology.dim).size_local)
+
+    out = np.zeros((n_cells, gdim), dtype=np.float64)
+    for c in range(n_cells):
+        verts = dofmap[c]
+        out[c, :] = np.mean(x[verts], axis=0)
+    return out
+
+
+def _structured_hat_value_1d(t: np.ndarray, center: float, half_width: float) -> np.ndarray:
+    hw = max(float(half_width), 1.0e-15)
+    return np.maximum(1.0 - np.abs(t - float(center)) / hw, 0.0)
+
+
+def _build_geometric_hats_pou(
+    mesh: dmesh.Mesh,
+    V: fem.FunctionSpace,
+    *,
+    decomposition: dict,
+) -> PartitionOfUnityData:
+    cells_olap = _to_np_int_list(decomposition["cells_olap"])
+    dofs_olap = _to_np_int_list(decomposition["dofs_olap"])
+
+    X = np.asarray(V.tabulate_dof_coordinates(), dtype=np.float64)
+    if X.ndim != 2:
+        raise RuntimeError(f"Unexpected dof coordinate shape: {X.shape}")
+
+    n_global = X.shape[0]
+    gdim = mesh.geometry.dim
+    X = X[:, :gdim]
+
+    cell_bc = _cell_barycenters(mesh)
+
+    raw_weights: list[np.ndarray] = []
+    support_masks: list[np.ndarray] = []
+
+    for i, cell_ids in enumerate(cells_olap):
+        cell_ids = np.asarray(cell_ids, dtype=np.int32).reshape(-1)
+
+        if cell_ids.size == 0:
+            raw_weights.append(np.zeros(n_global, dtype=np.float64))
+            support_masks.append(np.zeros(n_global, dtype=bool))
+            continue
+
+        bc_i = np.asarray(cell_bc[cell_ids, :], dtype=np.float64)
+        if bc_i.ndim == 1:
+            bc_i = bc_i.reshape(1, -1)
+
+        mins = np.asarray(np.min(bc_i, axis=0), dtype=np.float64).reshape(-1)
+        maxs = np.asarray(np.max(bc_i, axis=0), dtype=np.float64).reshape(-1)
+
+        if mins.size != gdim or maxs.size != gdim:
+            raise RuntimeError(
+                f"Patch {i}: expected mins/maxs of size {gdim}, got {mins.size}/{maxs.size}"
+            )
+
+        centers = 0.5 * (mins + maxs)
+        half_widths = 0.5 * np.maximum(maxs - mins, 1.0e-15)
+
+        w = np.ones(n_global, dtype=np.float64)
+        for d in range(gdim):
+            w *= _structured_hat_value_1d(X[:, d], centers[d], half_widths[d])
+
+        support = np.zeros(n_global, dtype=bool)
+        dofs_i = np.asarray(dofs_olap[i], dtype=np.int32).reshape(-1)
+        support[dofs_i] = True
+        w[~support] = 0.0
+
+        raw_weights.append(w)
+        support_masks.append(support)
+
+    total = np.zeros(n_global, dtype=np.float64)
+    for w in raw_weights:
+        total += w
+
+    multiplicity = np.zeros(n_global, dtype=np.int32)
+    for sup in support_masks:
+        multiplicity += sup.astype(np.int32)
+
+    needs_fallback = (multiplicity > 0) & (total <= 1.0e-15)
+    if np.any(needs_fallback):
+        idx = np.where(needs_fallback)[0]
+        for w, sup in zip(raw_weights, support_masks):
+            take = idx[sup[idx]]
+            if take.size > 0:
+                w[take] = 1.0
+        total[:] = 0.0
+        for w in raw_weights:
+            total += w
+
+    chi_full: list[np.ndarray] = []
+    for w in raw_weights:
+        chi = np.zeros(n_global, dtype=np.float64)
+        nz = total > 1.0e-15
+        chi[nz] = w[nz] / total[nz]
+        chi_full.append(chi)
+
+    ndofs_in_union = int(np.count_nonzero(multiplicity > 0))
+
+    if ndofs_in_union > 0:
+        stacked = np.sum(np.vstack(chi_full), axis=0)
+        max_dev = float(np.max(np.abs(stacked[multiplicity > 0] - 1.0)))
+    else:
+        max_dev = 0.0
+
+    if PARAMS.verbose:
+        tprint(f"[pou] geometric hats sum-to-one: max|sum_i chi_i - 1| = {max_dev:.3e}")
+
+    return PartitionOfUnityData(
+        chi_full=chi_full,
+        multiplicity=multiplicity,
+        ndofs_in_union=ndofs_in_union,
+    )
+
 
 
 def _cell_layer_distances(
@@ -172,10 +292,10 @@ def build_partition_of_unity(
 ) -> PartitionOfUnityData:
     mode = PARAMS.pou_mode
 
-    if mode == "structured_hats":
+    if mode == "geometric_hats":
+        out = _build_geometric_hats_pou(mesh, V, decomposition=decomposition)
+    elif mode in ("core_overlap_ramp", "structured_hats", "from_partition_data"):
         out = _build_core_overlap_ramp_pou(mesh, V, decomposition=decomposition)
-    elif mode == "from_partition_data":
-        out = _build_from_partition_data(mesh, V, decomposition=decomposition)
     else:
         raise ValueError(f"Unsupported pou_mode: {mode!r}")
 
