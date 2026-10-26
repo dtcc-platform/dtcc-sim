@@ -156,7 +156,9 @@ def test_same_version_partitioner_build_change_rejects_offline_data(
         "extension_sha256": "unchanged-extension",
         "metis_provider_sha256": "original-library",
     }
-    monkeypatch.setattr(api, "_runtime_versions", lambda: {"partitioner": dict(identity)})
+    monkeypatch.setattr(
+        api, "_runtime_versions", lambda: {"partitioner": dict(identity)}
+    )
     sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.prepare()
     identity["metis_provider_sha256"] = "different-build-with-the-same-version"
@@ -341,7 +343,9 @@ def test_weight_choice_recorded_and_cross_mode_cache_rejected(
     import json
 
     params = HelmholtzParameters(pou_mode=mode)
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / mode, parameters=params)
+    sim = HelmholtzSimulator(
+        mesh_path=mesh, output_dir=tmp_path / mode, parameters=params
+    )
     assert sim._params().pou_mode == mode
     assert sim.describe()["parameters"]["pou_mode"] == mode
     sim.prepare()
@@ -371,3 +375,35 @@ def test_weight_cli_option():
     add_solver_arguments(parser)
     args = parser.parse_args(["--pou-mode", "geometric_hats"])
     assert parameters_from_args(args).pou_mode == "geometric_hats"
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_incompatible_solver_rejected_before_solve(
+    mesh, tmp_path, fake_backend, monkeypatch, legacy
+):
+    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+    sim.prepare()
+    import json
+
+    manifest = json.loads(sim.manifest_path.read_text())
+    if legacy:
+        manifest.pop("solver")
+        manifest["schema"] = 2
+    else:
+        manifest["solver"]["compatibility_revision"] += 1
+    sim.manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="solver implementation"):
+        sim.solve()
+    assert not any(call[0] == "solve" for call in fake_backend)
+    assert not (sim.output_dir / "solution.npy").exists()
+
+
+def test_backend_source_fingerprint_detects_change(tmp_path, monkeypatch):
+    root = tmp_path / "solver"
+    (root / "_backend").mkdir(parents=True)
+    for name in ("parameters.py", "simulator.py", "_backend/operator.py"):
+        (root / name).write_text("original")
+    monkeypatch.setattr(api, "__file__", str(root / "simulator.py"))
+    before = api._solver_identity()
+    (root / "_backend/operator.py").write_text("changed")
+    assert api._solver_identity() != before

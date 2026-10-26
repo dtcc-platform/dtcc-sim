@@ -21,6 +21,17 @@ if TYPE_CHECKING:
 _backend_lock = RLock()
 
 
+def _solver_identity():
+    """Fingerprint the shipped solver sources used to create offline data."""
+    root = Path(__file__).parent
+    paths = [root / "parameters.py", root / "simulator.py"]
+    paths.extend(sorted((root / "_backend").rglob("*.py")))
+    return {
+        "compatibility_revision": 1,
+        "sources": {str(path.relative_to(root)): _sha256(path) for path in paths},
+    }
+
+
 def _copy_parameters(params=None, parameters=None):
     if params is not None and parameters is not None:
         raise ValueError("Specify params or parameters, not both")
@@ -287,7 +298,8 @@ class HelmholtzSimulator:
 
     def _identity(self):
         identity = {
-            "schema": 2,
+            "schema": 3,
+            "solver": _solver_identity(),
             "parameters": asdict(self.parameters),
             "inputs": _mesh_input_hashes(self.mesh_path),
             "runtime": _runtime_versions(),
@@ -303,7 +315,8 @@ class HelmholtzSimulator:
             )
         if identity != self._identity():
             raise ValueError(
-                "Offline data does not match the mesh, parameters or runtime"
+                "Offline data does not match the mesh, parameters, runtime or solver "
+                "implementation; prepare a fresh case directory"
             )
         if checksum != _sha256(self.preconditioner_path):
             raise ValueError(
