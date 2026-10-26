@@ -122,7 +122,11 @@ ParaView, selecting `helmholtz_real`, `helmholtz_imaginary` or
 ## Python and saved results
 
 Use [`HelmholtzWorkflow`](../dtcc_sim/helmholtz/workflow.py) for local preparation
-and solving. The registered `datasets.helmholtz_simulation` also accepts explicit
+and solving. Pass `params=HelmholtzParameters(...)` and call `.simulate()` to
+receive a DTCC `VolumeMesh` with solution fields. `.result` and `.diagnostics`
+retain the numerical result and convergence details. `.prepare()`, `.solve()`
+and `.run()` remain available for advanced workflows, and `parameters=` remains
+a supported alias. The registered `datasets.helmholtz_simulation` also accepts explicit
 h, a fresh output folder and either an existing mesh or generation settings.
 See the [API reference](helmholtz.md#registered-dtcc-dataset) for a complete call.
 For supplied local meshes, omit `mesh_crs`; supply it only when the CRS is known.

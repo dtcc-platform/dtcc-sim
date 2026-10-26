@@ -36,16 +36,28 @@ def main():
     simulator = HelmholtzSimulator(
         mesh_path="/path/to/volume_mesh_gbg.xdmf",
         output_dir="/path/to/new-case",
-        parameters=parameters,
+        params=parameters,
     )
 
     print(simulator.describe())  # Configuration only; does not start a simulation.
-    # result = simulator.run()  # Explicitly builds offline data, then solves.
+    # mesh = simulator.simulate()  # DTCC VolumeMesh with solution fields.
+    # print(simulator.diagnostics)  # Convergence, iterations and true residual.
 
 
 if __name__ == "__main__":
     main()
 ```
+
+`simulate()` is the high-level interface shared with DTCC's other solvers. It
+returns a DTCC `VolumeMesh` with `helmholtz_real`, `helmholtz_imaginary` and
+`helmholtz_amplitude` vertex fields. Use `simulate(output_path="field.vtu")` to
+also save the returned mesh. The numerical result stays on `simulator.result`,
+and convergence details on `simulator.diagnostics`. This interface requires P1
+elements and raises for a nonconverged solve or invalid true residual.
+
+`params=` is the preferred constructor keyword, matching the other simulators.
+`parameters=` remains supported; passing both is an error. `.params` and
+`.parameters` refer to the same configuration.
 
 `prepare()` builds the offline data. `solve()` requires matching prepared data
 and returns `HelmholtzResult`: a complex solution array in FE DOF order,
@@ -190,7 +202,7 @@ def main():
         ),
         mesh_cache_dir="/path/to/mesh-cache",
         output_dir="/path/to/new-case",
-        parameters=HelmholtzParameters(
+        params=HelmholtzParameters(
             frequency_hz=5.0, n_subdomains=16, overlap_layers=1,
             oversample_layers=3, workers=16, threads_per_worker=1,
             rho=1.10, n_modes_per_patch=40,
@@ -198,7 +210,8 @@ def main():
     )
     print(workflow.describe())  # No download, meshing, or solve.
     # workflow.prepare_mesh()  # Generate/reuse and check tags, without solving.
-    # result = workflow.run()  # Full mesh → preconditioner → solve workflow.
+    # mesh = workflow.simulate()  # Full workflow returning a DTCC VolumeMesh.
+    # result = workflow.result  # Numerical diagnostics and FE solution.
 
 
 if __name__ == "__main__":

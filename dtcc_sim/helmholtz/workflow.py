@@ -4,10 +4,15 @@ from copy import deepcopy
 import json
 import warnings
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .meshing import CityMeshCache, CityMeshParameters
-from .parameters import HelmholtzParameters
-from .simulator import HelmholtzSimulator, _mesh_input_hashes
+from .simulator import (
+    HelmholtzSimulator, _mesh_input_hashes, _copy_parameters, _simulation_mesh,
+)
+
+if TYPE_CHECKING:
+    from dtcc_core.model import VolumeMesh
 
 
 def _check_boundary_tags(path, parameters):
@@ -66,6 +71,7 @@ class HelmholtzWorkflow:
         self,
         *,
         output_dir,
+        params=None,
         parameters=None,
         mesh_parameters=None,
         mesh_cache_dir=None,
@@ -73,9 +79,7 @@ class HelmholtzWorkflow:
         mesh_h=None,
     ):
         self.output_dir = Path(output_dir).expanduser().resolve()
-        self.parameters = deepcopy(parameters or HelmholtzParameters())
-        if not isinstance(self.parameters, HelmholtzParameters):
-            raise TypeError("parameters must be HelmholtzParameters")
+        self.parameters = _copy_parameters(params, parameters)
         if (mesh_path is None) == (mesh_parameters is None):
             raise ValueError("Specify either mesh_path or mesh_parameters")
         if mesh_parameters is not None and not isinstance(
@@ -101,6 +105,8 @@ class HelmholtzWorkflow:
         )
         self.simulator = None
         self.mesh_record = None
+        self.result = None
+        self.diagnostics = {}
         if self.mesh_path is not None:
             HelmholtzSimulator(
                 mesh_path=self.mesh_path,
@@ -114,6 +120,15 @@ class HelmholtzWorkflow:
                 or self.cache.directory in self.output_dir.parents
             ):
                 raise ValueError("Choose separate mesh-cache and case directories")
+
+    @property
+    def params(self):
+        """Simulation parameters; parameters remains a supported alias."""
+        return self.parameters
+
+    @params.setter
+    def params(self, value):
+        self.parameters = _copy_parameters(value)
 
     def describe(self):
         from dataclasses import asdict
@@ -173,3 +188,15 @@ class HelmholtzWorkflow:
     def run(self):
         self.prepare()
         return self.solve()
+
+    def simulate(self, *, output_path=None, unit="") -> "VolumeMesh":
+        """Resolve the mesh, solve and return a DTCC VolumeMesh with solution fields."""
+        if self.parameters.fe_degree != 1:
+            raise ValueError("simulate() returns vertex fields and requires FE degree 1")
+        self.result = self.run()
+        self.diagnostics = {
+            "converged": self.result.converged,
+            "iterations": self.result.iterations,
+            "relative_residual": self.result.relative_residual,
+        }
+        return _simulation_mesh(self.result, output_path=output_path, unit=unit)

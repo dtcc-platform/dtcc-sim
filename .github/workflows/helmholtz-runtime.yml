@@ -57,6 +57,7 @@ jobs:
           "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/helmholtz-ci/env" \
             python -m pytest -q \
               tests/test_helmholtz_pou.py \
+              tests/test_helmholtz_interface.py \
               tests/test_helmholtz_api.py \
               tests/test_helmholtz_results.py \
               tests/test_helmholtz_launchers.py \

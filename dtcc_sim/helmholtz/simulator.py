@@ -5,16 +5,40 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import xml.etree.ElementTree as ET
 
 from .parameters import HelmholtzParameters
 from ._backend.params import Params, bind_parameters
 
+if TYPE_CHECKING:
+    from dtcc_core.model import VolumeMesh
+
 _backend_lock = RLock()
+
+
+def _copy_parameters(params=None, parameters=None):
+    if params is not None and parameters is not None:
+        raise ValueError("Specify params or parameters, not both")
+    selected = params if params is not None else parameters
+    if selected is not None and not isinstance(selected, HelmholtzParameters):
+        raise TypeError("params must be HelmholtzParameters")
+    return deepcopy(selected if selected is not None else HelmholtzParameters())
+
+
+def _simulation_mesh(result, *, output_path=None, unit=""):
+    if not result.converged:
+        raise RuntimeError("Helmholtz solve did not converge; inspect diagnostics")
+    if not math.isfinite(result.relative_residual) or result.relative_residual < 0:
+        raise RuntimeError("Helmholtz returned an invalid true residual")
+    mesh = result.to_dtcc(unit=unit)
+    if output_path is not None:
+        mesh.save(output_path)
+    return mesh
 
 
 @dataclass(frozen=True)
@@ -193,10 +217,13 @@ class HelmholtzSimulator:
 
     Construction and describe() do not load a mesh or start a simulation.
     prepare() performs the offline stage; solve() performs the online stage;
-    run() performs both. Output is confined to the chosen case directory.
+    run() performs both and returns numerical diagnostics. simulate() performs
+    both and returns a DTCC VolumeMesh with solution fields. Output is confined
+    to the chosen case directory. params is the preferred parameter keyword;
+    parameters is a backwards-compatible alias.
     """
 
-    def __init__(self, *, mesh_path, output_dir, parameters=None):
+    def __init__(self, *, mesh_path, output_dir, params=None, parameters=None):
         self.mesh_path = Path(mesh_path).expanduser().resolve()
         self.output_dir = Path(output_dir).expanduser().resolve()
         if self.mesh_path.suffix.lower() not in (".xdmf", ".xmf"):
@@ -208,9 +235,18 @@ class HelmholtzSimulator:
             raise ValueError(
                 "Choose a separate output directory, not the input mesh directory or its parents"
             )
-        if parameters is not None and not isinstance(parameters, HelmholtzParameters):
-            raise TypeError("parameters must be HelmholtzParameters")
-        self.parameters = deepcopy(parameters or HelmholtzParameters())
+        self.parameters = _copy_parameters(params, parameters)
+        self.result = None
+        self.diagnostics = {}
+
+    @property
+    def params(self):
+        """Simulation parameters, also available through the parameters alias."""
+        return self.parameters
+
+    @params.setter
+    def params(self, value):
+        self.parameters = _copy_parameters(value)
 
     @property
     def preconditioner_path(self):
@@ -359,3 +395,20 @@ class HelmholtzSimulator:
         """Perform offline setup followed by the online solve."""
         self.prepare()
         return self.solve()
+
+    def simulate(self, *, output_path=None, unit="") -> "VolumeMesh":
+        """Run and return a DTCC VolumeMesh with real, imaginary and amplitude fields.
+
+        The numerical result and convergence details remain on result and
+        diagnostics. output_path optionally saves the returned mesh using its
+        file extension. Vertex fields require P1 elements.
+        """
+        if self.parameters.fe_degree != 1:
+            raise ValueError("simulate() returns vertex fields and requires FE degree 1")
+        self.result = self.run()
+        self.diagnostics = {
+            "converged": self.result.converged,
+            "iterations": self.result.iterations,
+            "relative_residual": self.result.relative_residual,
+        }
+        return _simulation_mesh(self.result, output_path=output_path, unit=unit)
