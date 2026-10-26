@@ -193,6 +193,10 @@ class HelmholtzWorkflow:
         """Resolve the mesh, solve and return a DTCC VolumeMesh with solution fields."""
         if self.parameters.fe_degree != 1:
             raise ValueError("simulate() returns vertex fields and requires FE degree 1")
+        if output_path is not None:
+            from .results import _checked_export_path
+
+            output_path = _checked_export_path(output_path)
         self.result = self.run()
         self.diagnostics = {
             "converged": self.result.converged,

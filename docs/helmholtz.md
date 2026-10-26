@@ -51,7 +51,9 @@ if __name__ == "__main__":
 `simulate()` is the high-level interface shared with DTCC's other solvers. It
 returns a DTCC `VolumeMesh` with `helmholtz_real`, `helmholtz_imaginary` and
 `helmholtz_amplitude` vertex fields. Use `simulate(output_path="field.vtu")` to
-also save the returned mesh. The numerical result stays on `simulator.result`,
+also save the returned mesh. Supported formats are `.vtu`, `.xdmf` and `.dtcc`.
+Existing exports and XDMF companion files are refused before solving and checked
+again before writing. The numerical result stays on `simulator.result`,
 and convergence details on `simulator.diagnostics`. This interface requires P1
 elements and raises for a nonconverged solve or invalid true residual.
 

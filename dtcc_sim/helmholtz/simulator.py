@@ -48,7 +48,11 @@ def _simulation_mesh(result, *, output_path=None, unit=""):
         raise RuntimeError("Helmholtz returned an invalid true residual")
     mesh = result.to_dtcc(unit=unit)
     if output_path is not None:
-        mesh.save(output_path)
+        from .results import _checked_export_path
+
+        path = _checked_export_path(output_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        mesh.save(path)
     return mesh
 
 
@@ -418,6 +422,10 @@ class HelmholtzSimulator:
         """
         if self.parameters.fe_degree != 1:
             raise ValueError("simulate() returns vertex fields and requires FE degree 1")
+        if output_path is not None:
+            from .results import _checked_export_path
+
+            output_path = _checked_export_path(output_path)
         self.result = self.run()
         self.diagnostics = {
             "converged": self.result.converged,

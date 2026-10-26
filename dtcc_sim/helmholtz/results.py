@@ -136,9 +136,9 @@ def result_to_dtcc(result, *, unit=""):
     return attach_helmholtz_fields(dtcc_mesh, coordinates, result.solution, unit=unit)
 
 
-def save_dtcc_result(result, path=None, *, unit=""):
-    """Save a DTCC volume mesh with three fields; never overwrite an existing export."""
-    path = Path(path or result.output_dir / "helmholtz.vtu").expanduser().resolve()
+def _checked_export_path(path):
+    """Validate an export destination and protect its companion files."""
+    path = Path(path).expanduser().resolve()
     if path.suffix.lower() not in (".vtu", ".xdmf", ".dtcc"):
         raise ValueError("Choose .vtu, .xdmf, or .dtcc for a DTCC Helmholtz result")
     outputs = [path]
@@ -151,7 +151,14 @@ def save_dtcc_result(result, path=None, *, unit=""):
         )
     if any(output.exists() for output in outputs):
         raise FileExistsError(f"DTCC result export already exists: {path}")
+    return path
+
+
+def save_dtcc_result(result, path=None, *, unit=""):
+    """Save a DTCC volume mesh with three fields; never overwrite an existing export."""
+    path = _checked_export_path(path or result.output_dir / "helmholtz.vtu")
     mesh = result_to_dtcc(result, unit=unit)
+    _checked_export_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     mesh.save(path)
     return path

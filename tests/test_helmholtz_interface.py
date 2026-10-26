@@ -114,3 +114,60 @@ def test_simulate_rejects_higher_order_before_running(constructor, monkeypatch):
     )
     with pytest.raises(ValueError, match="degree 1"):
         sim.simulate()
+
+
+@pytest.mark.parametrize(
+    "existing",
+    [
+        "result.vtu",
+        "result.dtcc",
+        "result.xdmf",
+        "result.h5",
+        "result_boundary_markers.xdmf",
+    ],
+)
+def test_simulate_protects_exports_before_running(
+    constructor, monkeypatch, tmp_path, existing
+):
+    protected = tmp_path / existing
+    protected.write_bytes(b"original data")
+    destination = (
+        protected if protected.suffix in (".vtu", ".dtcc") else tmp_path / "result.xdmf"
+    )
+    sim = constructor()
+    monkeypatch.setattr(
+        sim, "run", lambda: pytest.fail("must check destination before solving")
+    )
+    with pytest.raises(FileExistsError):
+        sim.simulate(output_path=destination)
+    assert protected.read_bytes() == b"original data"
+
+
+def test_simulate_rejects_invalid_export_before_running(
+    constructor, monkeypatch, tmp_path
+):
+    sim = constructor()
+    monkeypatch.setattr(
+        sim, "run", lambda: pytest.fail("must check format before solving")
+    )
+    with pytest.raises(ValueError, match="Choose"):
+        sim.simulate(output_path=tmp_path / "result.csv")
+
+
+def test_simulate_rechecks_export_after_running(constructor, monkeypatch, tmp_path):
+    sim = constructor()
+    destination = tmp_path / "result.vtu"
+
+    def run():
+        destination.write_bytes(b"created during solve")
+        return SimpleNamespace(
+            converged=True,
+            iterations=1,
+            relative_residual=1e-9,
+            to_dtcc=lambda **kw: object(),
+        )
+
+    monkeypatch.setattr(sim, "run", run)
+    with pytest.raises(FileExistsError):
+        sim.simulate(output_path=destination)
+    assert destination.read_bytes() == b"created during solve"
