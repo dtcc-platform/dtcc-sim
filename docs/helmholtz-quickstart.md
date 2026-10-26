@@ -22,7 +22,8 @@ conda activate /path/to/new-installation/env
 python -m dtcc_sim.helmholtz.check_runtime --workers 2 --mesh-generation
 ```
 
-Start with the [small generated-mesh example](../demos/HELMHOLTZ_SMALL.md).
+For a self-contained solver and plot, run the [visual box demo](helmholtz-visual-demo.md).
+For a city workflow, start with the [small generated-mesh example](../demos/HELMHOLTZ_SMALL.md).
 It needs no separately supplied thesis mesh and uses two workers. The reference
 configurations below use sixteen workers and require the specified inputs.
 

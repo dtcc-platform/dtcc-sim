@@ -66,8 +66,8 @@ iteration count, true relative residual, convergence flag, and GMRES history.
 completed solve outputs cannot be overwritten through this interface.
 
 Prepared data is checked against the XDMF and referenced HDF5 file contents,
-parameters, and numerical-library versions. A different input, configuration,
-or runtime requires a fresh case. The interface does not import environment
+parameters, numerical-library versions and the solver source fingerprint. A
+different input, configuration, runtime or solver requires a fresh case. The interface does not import environment
 variables named `HELMHOLTZ_*`; use the parameter object instead.
 Numeric controls and coefficient-map values must be finite numbers; boolean
 controls require actual booleans. JSON coefficient-map keys may be integer
@@ -75,9 +75,9 @@ strings. Boundary tag selections require unique integer markers. These checks
 run before numerical preparation and do not alter accepted coefficient values
 or boundary selections.
 
-Preparation manifests use schema 2 and include the SHA-256 checksum of the
+Preparation manifests use schema 3 and include the SHA-256 checksum of the
 saved preconditioner. Before and after the online solve, the interface checks
-that file, the mesh inputs, settings, and runtime. Failed checks prevent a
+that file, the mesh inputs, settings, runtime and solver implementation. Failed checks prevent a
 completed `diagnostics.json` from being written; partial artifacts require a
 fresh case directory. Checking the checksum reads the whole preconditioner
 file but does not rebuild it. Older preparation manifests without a checksum
@@ -494,8 +494,9 @@ implicitly select 16 workers. The city JSON example explicitly selects its
 | `HelmholtzWorkflow` / `python -m dtcc_sim.helmholtz.launch` | Complete generation request including h, or existing file with optional declared `mesh_h` | Explicit stage methods, `--mesh-only`, or `--run` | Reproducible configured workflow |
 | `datasets.helmholtz_simulation` | Explicit bounds, h, output folder, and mesh cache or mesh file | Calling the dataset executes it; `describe()` and validation are offline | Standard DTCC dataset interface |
 
-All command-line demos plan without executing unless `--run` or `--mesh-only`
-is supplied. `--mesh-only` generates/loads the mesh but does not solve. Direct
+The configurable mesh/workflow launchers plan without executing unless `--run`
+or `--mesh-only` is supplied. The standalone visual box demo executes when
+called with its required new `--output` directory. `--mesh-only` generates/loads the mesh but does not solve. Direct
 Python stage methods and dataset calls are executable APIs, not planning calls.
 Relative JSON paths resolve beside the JSON file; Python/dataset paths resolve
 against the caller's working directory.

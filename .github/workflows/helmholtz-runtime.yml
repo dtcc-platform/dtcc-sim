@@ -7,6 +7,7 @@ on:
       - '.github/workflows/helmholtz-runtime.yml'
       - 'dtcc_sim/helmholtz/**'
       - 'dtcc_sim/datasets.py'
+      - 'demos/helmholtz*.py'
       - 'requirements/helmholtz-linux-64/**'
       - 'tools/*helmholtz*.py'
       - 'tests/test_helmholtz*.py'
@@ -17,6 +18,7 @@ on:
       - '.github/workflows/helmholtz-runtime.yml'
       - 'dtcc_sim/helmholtz/**'
       - 'dtcc_sim/datasets.py'
+      - 'demos/helmholtz*.py'
       - 'requirements/helmholtz-linux-64/**'
       - 'tools/*helmholtz*.py'
       - 'tests/test_helmholtz*.py'
@@ -68,6 +70,10 @@ jobs:
               tests/test_helmholtz_mesh_workflow.py \
               tests/test_helmholtz_dataset.py \
               tests/test_helmholtz_installer.py
+      - name: Run the self-contained Gaussian visual demo
+        run: |
+          "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/helmholtz-ci/env" \
+            python demos/helmholtz_box.py --output "$RUNNER_TEMP/helmholtz-ci/box-demo"
       - name: Check small real mesh workflows when requested
         if: github.event_name == 'workflow_dispatch' && inputs.real_workflow
         run: |
@@ -86,3 +92,5 @@ jobs:
             ${{ runner.temp }}/helmholtz-ci/*.log
             ${{ runner.temp }}/helmholtz-ci/*.xml
             ${{ runner.temp }}/helmholtz-ci/verification/*.json
+            ${{ runner.temp }}/helmholtz-ci/box-demo/example-summary.json
+            ${{ runner.temp }}/helmholtz-ci/box-demo/amplitude-slice.png

@@ -11,6 +11,10 @@ Prerequisites: Python 3.9 or later to launch the installer, Git, a working Conda
 executable, Internet access, native build resources and space for a new scientific
 environment. The installed runtime uses Python 3.12. The Core patch is bundled
 as a separately reviewable dependency patch; it is not asserted to be upstream.
+The standalone boundary-persistence contribution is [Core PR #163](https://github.com/dtcc-platform/dtcc-core/pull/163).
+Once it is merged, the supported recipe must pin an official Core revision
+containing that change and remove the bundled patch application. Until then,
+this installer remains provisional for that dependency requirement.
 
 From the checkout root:
 
@@ -56,7 +60,9 @@ The `Helmholtz runtime` GitHub Actions workflow builds the pinned installation
 and runs the focused tests on changes to the solver, installer, dependencies,
 tests or workflow. It has read-only repository permission, does not persist the
 checkout credential, and retains diagnostic logs for seven days. It uses no
-server credentials or thesis inputs. The real geodata-dependent workflow can
+server credentials or thesis inputs. Every run includes a manufactured plane-wave
+accuracy solve and the self-contained Gaussian box demo, preserving its summary
+and amplitude screenshot as artifacts. The real geodata-dependent workflow can
 be requested separately with the manual `real_workflow` option, so upstream
 geodata availability does not gate ordinary focused checks.
 
