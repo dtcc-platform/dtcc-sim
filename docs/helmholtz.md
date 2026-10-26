@@ -550,3 +550,22 @@ result. The low-level `HelmholtzResult.save_dtcc()` remains a standalone mesh
 export; its diagnostics and preparation identity remain in the case directory.
 No numerical settings, preconditioner calculations, or source placement are
 changed by packaging.
+
+## Manufactured plane-wave accuracy checks
+
+`rhs_mode="plane_wave_exact"` specifies the known unit-amplitude field
+`exp(i k d·x)`, with the supplied direction normalized on the mesh dimension.
+It requires constant coefficients. The implementation supplies the matching
+volume forcing, natural flux on exterior faces, Robin data on the selected
+impedance facets, and exact nonzero Dirichlet data on selected Dirichlet facets.
+Dirichlet lifting is applied before setting constrained right-hand-side values.
+With unit A and V the volume forcing is zero; the nonzero boundary data still
+produce the wave. Gaussian-source configurations retain their source convention.
+
+`tests/test_helmholtz_manufactured.py` checks constant and nonunit coefficients,
+all-exterior and tagged impedance boundaries, natural faces and mixed nonzero
+Dirichlet data on two unit-cube refinements. Relative L2 error must decrease by
+at least a factor of 2.5 and be below 0.02 on the fine mesh. A separate small
+public `.simulate()` solve checks solution fields against the known wave and
+requires a true residual below 1e-7. These are accuracy checks, not a model of
+an incoming urban sound source or a replacement for city validation.

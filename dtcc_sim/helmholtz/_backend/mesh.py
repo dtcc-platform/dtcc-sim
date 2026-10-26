@@ -265,6 +265,36 @@ def _remap_requested_facet_tags(
     return mt, tag_to_local
 
 
+def _impedance_boundary_measures(mesh, facet_tags):
+    if PARAMS.boundary_mode not in ("impedance_only", "mixed"):
+        raise ValueError(f"Unsupported boundary_mode: {PARAMS.boundary_mode!r}")
+    if facet_tags is None:
+        if PARAMS.boundary_mode == "mixed":
+            raise RuntimeError("Mixed boundary mode requires facet tags")
+        return (ufl.ds(domain=mesh),)
+    remapped, tag_to_local = _remap_requested_facet_tags(
+        mesh, facet_tags, tuple(int(t) for t in PARAMS.impedance_facet_tags)
+    )
+    if remapped is None:
+        return ()
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=remapped)
+    return tuple(ds(tag) for tag in tag_to_local.values())
+
+
+def _global_bilinear_form(mesh, V, facet_tags, Acoef, Vcoef, beta):
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    k = float(PARAMS.k())
+    dx = ufl.dx(domain=mesh)
+    a = (
+        ufl.inner(Acoef * ufl.grad(u), ufl.grad(v)) * dx
+        - (k**2) * ufl.inner((Vcoef**2) * u, v) * dx
+    )
+    for measure in _impedance_boundary_measures(mesh, facet_tags):
+        a += (-1j * k) * ufl.inner(beta * u, v) * measure
+    return a
+
+
 def assemble_global_matrix(
     mesh: dmesh.Mesh,
     V: fem.FunctionSpace,
@@ -274,45 +304,7 @@ def assemble_global_matrix(
     beta,
     bcs: list[Any] | None = None,
 ) -> PETSc.Mat:
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-
-    k = float(PARAMS.k())
-    dx = ufl.dx(domain=mesh)
-
-    a = (
-        ufl.inner(Acoef * ufl.grad(u), ufl.grad(v)) * dx
-        - (k**2) * ufl.inner((Vcoef**2) * u, v) * dx
-    )
-
-    if PARAMS.boundary_mode == "impedance_only":
-        if facet_tags is None:
-            ds = ufl.ds(domain=mesh)
-            a += (-1j * k) * ufl.inner(beta * u, v) * ds
-        else:
-            remapped_mt, tag_to_local = _remap_requested_facet_tags(
-                mesh, facet_tags, tuple(int(t) for t in PARAMS.impedance_facet_tags)
-            )
-            if remapped_mt is not None:
-                ds = ufl.Measure("ds", domain=mesh, subdomain_data=remapped_mt)
-                for _, local_tag in tag_to_local.items():
-                    a += (-1j * k) * ufl.inner(beta * u, v) * ds(local_tag)
-
-    elif PARAMS.boundary_mode == "mixed":
-        if facet_tags is None:
-            raise RuntimeError("Mixed boundary mode requires facet tags")
-
-        remapped_mt, tag_to_local = _remap_requested_facet_tags(
-            mesh, facet_tags, tuple(int(t) for t in PARAMS.impedance_facet_tags)
-        )
-        if remapped_mt is not None:
-            ds = ufl.Measure("ds", domain=mesh, subdomain_data=remapped_mt)
-            for _, local_tag in tag_to_local.items():
-                a += (-1j * k) * ufl.inner(beta * u, v) * ds(local_tag)
-
-    else:
-        raise ValueError(f"Unsupported boundary_mode: {PARAMS.boundary_mode!r}")
-
+    a = _global_bilinear_form(mesh, V, facet_tags, Acoef, Vcoef, beta)
     A = fem_petsc.assemble_matrix(fem.form(a), bcs=[] if bcs is None else bcs)
     A.assemble()
     return A
@@ -381,8 +373,7 @@ def _gaussian_source_expression(mesh: dmesh.Mesh):
     return _as_scalar(amp) * ufl.exp(-r2 / (2.0 * sigma**2))
 
 
-def _plane_wave_expression(mesh):
-    x = ufl.SpatialCoordinate(mesh)
+def _plane_wave_direction(mesh):
     d = np.array(
         [
             float(PARAMS.plane_wave_direction_x),
@@ -395,12 +386,17 @@ def _plane_wave_expression(mesh):
     nrm = np.linalg.norm(d)
     if nrm <= 0.0:
         raise ValueError("Plane-wave direction must be nonzero")
-    d = d / nrm
+    return d / nrm
+
+
+def _plane_wave_expression(mesh):
+    x = ufl.SpatialCoordinate(mesh)
+    d = _plane_wave_direction(mesh)
     phase = sum(float(d[j]) * x[j] for j in range(mesh.geometry.dim))
     return ufl.exp(1j * float(PARAMS.k()) * phase)
 
 
-def build_rhs(mesh: dmesh.Mesh, V: fem.FunctionSpace, facet_tags: Any | None) -> PETSc.Vec:
+def build_rhs(mesh: dmesh.Mesh, V: fem.FunctionSpace, facet_tags: Any | None, bcs=None) -> PETSc.Vec:
     v = ufl.TestFunction(V)
     dx = ufl.dx(domain=mesh)
 
@@ -411,16 +407,30 @@ def build_rhs(mesh: dmesh.Mesh, V: fem.FunctionSpace, facet_tags: Any | None) ->
         L = -ufl.inner(f_expr, v) * dx
 
     elif rhs_mode == "plane_wave_exact":
+        if PARAMS.coefficient_mode != "constant":
+            raise ValueError("plane_wave_exact requires constant coefficients")
         u_exact = _plane_wave_expression(mesh)
         Acoef, Vcoef, beta = build_coefficients(mesh, facet_tags, None)
         k = float(PARAMS.k())
         f_expr = -ufl.div(Acoef * ufl.grad(u_exact)) - (k**2) * (Vcoef**2) * u_exact
-        L = ufl.inner(f_expr, v) * dx
+        # Manufactured data include natural flux everywhere and the Robin
+        # contribution on exactly the facets used by the bilinear form.
+        metadata = {"quadrature_degree": max(8, 2 * int(PARAMS.fe_degree) + 4)}
+        dx_exact = ufl.Measure("dx", domain=mesh, metadata=metadata)
+        ds_exact = ufl.Measure("ds", domain=mesh, metadata=metadata)
+        normal = ufl.FacetNormal(mesh)
+        L = ufl.inner(f_expr, v) * dx_exact
+        L += ufl.inner(ufl.dot(Acoef * ufl.grad(u_exact), normal), v) * ds_exact
+        for measure in _impedance_boundary_measures(mesh, facet_tags):
+            L += (-1j * k) * ufl.inner(beta * u_exact, v) * measure(metadata=metadata)
 
     else:
         raise ValueError(f"Unsupported rhs_mode: {rhs_mode!r}")
 
     b = fem_petsc.assemble_vector(fem.form(L))
+    if rhs_mode == "plane_wave_exact" and bcs:
+        a = _global_bilinear_form(mesh, V, facet_tags, Acoef, Vcoef, beta)
+        fem_petsc.apply_lifting(b, [fem.form(a)], [bcs])
     b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
     return b
 
@@ -446,9 +456,14 @@ def build_dirichlet_bcs_if_needed(
 
             if facets_arr.size > 0:
                 dofs = fem.locate_dofs_topological(V, fdim, facets_arr)
-                zero = fem.Function(V)
-                zero.x.array[:] = 0.0
-                bcs.append(fem.dirichletbc(zero, dofs))
+                value = fem.Function(V)
+                if PARAMS.rhs_mode == "plane_wave_exact":
+                    direction = _plane_wave_direction(mesh)
+                    k = float(PARAMS.k())
+                    value.interpolate(lambda x: np.exp(1j * k * (direction @ x[:len(direction)])))
+                else:
+                    value.x.array[:] = 0.0
+                bcs.append(fem.dirichletbc(value, dofs))
 
     if PARAMS.use_anchor_point:
         tprint("[mesh] WARNING: use_anchor_point=True requested, but anchor application is not implemented yet.")
@@ -462,21 +477,22 @@ def build_system():
     Acoef, Vcoef, beta = build_coefficients(mesh, facet_tags, cell_tags)
     bcs = build_dirichlet_bcs_if_needed(mesh, V, facet_tags)
     A = assemble_global_matrix(mesh, V, facet_tags, Acoef, Vcoef, beta, bcs=bcs)
-    b = build_rhs(mesh, V, facet_tags)
+    b = build_rhs(mesh, V, facet_tags, bcs=bcs)
     if len(bcs) > 0:
         fem_petsc.set_bc(b, bcs)
 
     if PARAMS.verbose:
         n = V.dofmap.index_map.size_local
         mins, maxs = mesh_bounds(mesh)
-        x0 = source_point(mesh)
-
         tprint(f"[mesh] FE space dofs N = {n}")
         tprint(f"[mesh] coefficient_mode = {PARAMS.coefficient_mode}")
         tprint(f"[mesh] rhs_mode = {PARAMS.rhs_mode}")
         tprint(f"[mesh] bounds min = {mins}")
         tprint(f"[mesh] bounds max = {maxs}")
-        tprint(f"[mesh] source x0 = {x0}")
+        if PARAMS.rhs_mode == "plane_wave_exact":
+            tprint(f"[mesh] plane wave direction = {_plane_wave_direction(mesh)}")
+        else:
+            tprint(f"[mesh] source x0 = {source_point(mesh)}")
         tprint(f"[mesh] k          = {float(PARAMS.k()):.6e}")
 
     return mesh, facet_tags, cell_tags, V, Acoef, Vcoef, beta, A, b

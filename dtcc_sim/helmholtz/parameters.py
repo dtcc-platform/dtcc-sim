@@ -178,3 +178,10 @@ class HelmholtzParameters:
         for name, allowed in choices.items():
             if getattr(self, name) not in allowed:
                 raise ValueError(f"{name} must be one of {allowed}")
+
+        if self.rhs_mode == "plane_wave_exact" and self.coefficient_mode != "constant":
+            raise ValueError("plane_wave_exact requires constant coefficients")
+        if self.rhs_mode == "plane_wave_exact" and not any((
+            self.plane_wave_direction_x, self.plane_wave_direction_y, self.plane_wave_direction_z
+        )):
+            raise ValueError("Plane-wave direction must be nonzero")

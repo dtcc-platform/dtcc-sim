@@ -15,7 +15,7 @@ import traceback
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / 'requirements/helmholtz-linux-64'
-TESTS = ['pou', 'interface', 'api', 'results', 'launchers', 'mesh_workflow', 'dataset']
+TESTS = ['pou', 'interface', 'manufactured', 'numerical', 'api', 'results', 'launchers', 'mesh_workflow', 'dataset']
 
 
 def digest(path):

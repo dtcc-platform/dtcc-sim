@@ -55,9 +55,11 @@ jobs:
       - name: Run focused Helmholtz and installer checks
         run: |
           "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/helmholtz-ci/env" \
-            python -m pytest -q \
+            python -m pytest -q --junitxml="$RUNNER_TEMP/helmholtz-ci/numerical-tests.xml" -o junit_family=xunit1 \
               tests/test_helmholtz_pou.py \
               tests/test_helmholtz_interface.py \
+              tests/test_helmholtz_manufactured.py \
+              tests/test_helmholtz_numerical.py \
               tests/test_helmholtz_api.py \
               tests/test_helmholtz_results.py \
               tests/test_helmholtz_launchers.py \
@@ -80,4 +82,5 @@ jobs:
             ${{ runner.temp }}/helmholtz-ci/*.json
             ${{ runner.temp }}/helmholtz-ci/*.txt
             ${{ runner.temp }}/helmholtz-ci/*.log
+            ${{ runner.temp }}/helmholtz-ci/*.xml
             ${{ runner.temp }}/helmholtz-ci/verification/*.json
