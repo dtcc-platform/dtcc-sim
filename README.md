@@ -52,6 +52,7 @@ and employment data and plots the resulting flows.
 
 - [Simulation datasets](docs/datasets/simulations.md): available simulations and result formats.
 - [Helmholtz workflow](docs/helmholtz.md): spectral preconditioning, city meshes and complex result fields.
+- [Helmholtz visual demo](docs/helmholtz-visual-demo.md): self-contained Gaussian source and amplitude slice.
 - [Demo scripts](demos/): heat, wind, reconstruction and traffic examples.
 - [Installation guide](docs/installation.md): FEniCSx setup and local Core development.
 - [Dataset QA matrix](docs/datasets/qa-matrix.md): validation scope.

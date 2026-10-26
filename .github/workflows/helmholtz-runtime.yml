@@ -57,6 +57,8 @@ jobs:
           "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/helmholtz-ci/env" \
             python -m pytest -q --junitxml="$RUNNER_TEMP/helmholtz-ci/numerical-tests.xml" -o junit_family=xunit1 \
               tests/test_helmholtz_pou.py \
+              tests/test_helmholtz_partitioning.py \
+              tests/test_helmholtz_slice.py \
               tests/test_helmholtz_interface.py \
               tests/test_helmholtz_manufactured.py \
               tests/test_helmholtz_numerical.py \

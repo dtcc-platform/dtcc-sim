@@ -569,3 +569,21 @@ at least a factor of 2.5 and be below 0.02 on the fine mesh. A separate small
 public `.simulate()` solve checks solution fields against the known wave and
 requires a true residual below 1e-7. These are accuracy checks, not a model of
 an incoming urban sound source or a replacement for city validation.
+
+
+### Partitioner seeds and prepared-data compatibility
+
+`metis_seed` is passed directly through `pymetis.Options(seed=...)`; it does not
+seed NumPy. The default is 0. Use -1 for METIS's native default. The thesis city
+profile explicitly uses -1 because its historical partition used the native
+default: the earlier implementation did not forward its declared seed of 0.
+Changing the seed can change partitions and convergence, so prepare a new case.
+
+Prepared manifests use schema 3 and record SHA-256 hashes of the shipped backend,
+public solver parameters and simulator sources. A different solver fingerprint,
+including a legacy manifest with no fingerprint, is rejected before the online
+solve. Prepare a fresh case directory after a solver change. Completed results
+remain available for loading and export; this safeguard governs reuse of offline
+preconditioner data, not access to saved results.
+
+See the [self-contained visual demo](helmholtz-visual-demo.md) for a generated box, Gaussian source, amplitude slice, viewing instructions and an actual screenshot.
