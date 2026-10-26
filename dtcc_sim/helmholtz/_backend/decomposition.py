@@ -181,9 +181,10 @@ def metis_partition_cells(
         raise ValueError("nparts must be positive")
 
     adjacency = [nb.tolist() for nb in neighbors]
-    np.random.seed(int(seed))
-
-    edgecuts, parts = pymetis.part_graph(int(nparts), adjacency=adjacency)
+    options = pymetis.Options(seed=int(seed))
+    edgecuts, parts = pymetis.part_graph(
+        int(nparts), adjacency=adjacency, options=options
+    )
     part = np.asarray(parts, dtype=np.int32)
 
     if part.ndim != 1 or len(part) != len(neighbors):

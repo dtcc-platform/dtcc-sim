@@ -141,6 +141,12 @@ class HelmholtzParameters:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{name} must be a positive integer")
+        if (
+            isinstance(self.metis_seed, bool)
+            or not isinstance(self.metis_seed, int)
+            or not -1 <= self.metis_seed <= 2147483647
+        ):
+            raise ValueError("metis_seed must be an integer in [-1, 2147483647]")
         for name in ("overlap_layers", "oversample_layers"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -181,7 +187,11 @@ class HelmholtzParameters:
 
         if self.rhs_mode == "plane_wave_exact" and self.coefficient_mode != "constant":
             raise ValueError("plane_wave_exact requires constant coefficients")
-        if self.rhs_mode == "plane_wave_exact" and not any((
-            self.plane_wave_direction_x, self.plane_wave_direction_y, self.plane_wave_direction_z
-        )):
+        if self.rhs_mode == "plane_wave_exact" and not any(
+            (
+                self.plane_wave_direction_x,
+                self.plane_wave_direction_y,
+                self.plane_wave_direction_z,
+            )
+        ):
             raise ValueError("Plane-wave direction must be nonzero")

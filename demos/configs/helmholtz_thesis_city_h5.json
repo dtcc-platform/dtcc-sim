@@ -12,6 +12,7 @@
     "workers": 16,
     "threads_per_worker": 1,
     "pou_mode": "geometric_hats",
+    "metis_seed": -1,
     "n_modes_per_patch": null,
     "local_evp_backend": "arpack_then_dense",
     "eps_initial_dim": 40,
