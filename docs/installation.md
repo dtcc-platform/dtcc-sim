@@ -29,7 +29,7 @@ uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,service]"
 The recipe supplies Python 3.12, DOLFINx 0.11.0, MPI/PETSc bindings, PyVista and
 uv. DOLFINx 0.11.0 is the supported solver baseline, also used by the Docker
 image. Other versions are outside the tested support contract. The editable
-installation adds Sim, Core from `develop`, and the test and service extras.
+installation adds Sim, its pinned Core revision, and the test and service extras.
 
 Verify the environment:
 
@@ -84,16 +84,19 @@ See the [Helmholtz quick start](helmholtz-quickstart.md) for a complete run.
 
 ## Core dependency and local development
 
-`pyproject.toml` declares Core's `develop` branch; `uv.lock` records its resolved
-commit. A plain `uv sync` keeps that snapshot. To adopt the latest Core revision:
+`pyproject.toml` and the Helmholtz installer pin the same official Core revision.
+`uv.lock` records that commit and its dependencies. To adopt another tested Core
+revision, update both project dependency declarations and the installer source
+pin, regenerate its `SHA256SUMS`, and resolve the lockfile:
 
 ```bash
-uv sync --upgrade-package dtcc-core
+python .github/scripts/update_core_pin.py --sha <full-core-commit>
+uv lock --upgrade-package dtcc-core
 ```
 
-Core and Sim develop together, with the latest Core `develop` as the
-compatibility target. Commit `uv.lock` when adopting a new Core commit or
-changing dependencies in `pyproject.toml`.
+Core and Sim develop together. Test a new Core revision before adopting it,
+and align the installer's Mesher pin with Core's declared dependency. Commit
+the source pins, checksums and `uv.lock` together with dependency changes.
 
 To test against a sibling Core checkout in the uv environment:
 
@@ -114,5 +117,5 @@ For test commands and development conventions, see
 
 For the optional recorded Linux x86-64 environment, see the
 [pinned installation procedure](helmholtz-reproducible-install.md). It includes
-the reviewed Core patch and guarded packaging workaround, with an option to
+the pinned Core revision and guarded packaging workaround, with an option to
 run focused checks and small real solves.

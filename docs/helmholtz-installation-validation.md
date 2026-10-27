@@ -2,9 +2,9 @@
 
 Use `environment-helmholtz.yml` in the [installation guide](installation.md#helmholtz-environment).
 The native TetGen dependency requires CMake >=3.24; the recipe states that minimum
-explicitly. The recorded validation used CMake 3.31.10 and built Mesher, TetGen and
-Core with its separate boundary-array patch from source. Public unpatched Core
-is not sufficient for the tagged native persistence tested here.
+explicitly. The installer uses CMake 3.31.10 and builds Mesher, TetGen and Core
+from pinned official sources. Tagged native persistence requires the Core
+revision declared by Sim and the installer.
 
 ## Recorded VTK packaging issue
 

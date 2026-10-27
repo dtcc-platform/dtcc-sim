@@ -1,20 +1,18 @@
 # Pinned Linux Helmholtz installation
 
 The optional installer reconstructs the recorded Linux x86-64 runtime in a new
-prefix, builds the native dependencies and Sim, applies the reviewed Core boundary
-patch, and runs dependency/readiness checks. It uses exact Conda artifact URLs,
+prefix, builds the native dependencies and Sim, and runs dependency/readiness
+checks. It uses exact Conda artifact URLs,
 pinned Python/build packages and native Git commits. It does not modify the
 active environment. Other operating systems should use the general installation
 guide; this recorded recipe is Linux-specific.
 
 Prerequisites: Python 3.9 or later to launch the installer, Git, a working Conda
 executable, Internet access, native build resources and space for a new scientific
-environment. The installed runtime uses Python 3.12. The Core patch is bundled
-as a separately reviewable dependency patch; it is not asserted to be upstream.
-The standalone boundary-persistence contribution is [Core PR #163](https://github.com/dtcc-platform/dtcc-core/pull/163).
-Once it is merged, the supported recipe must pin an official Core revision
-containing that change and remove the bundled patch application. Until then,
-this installer remains provisional for that dependency requirement.
+environment. The installed runtime uses Python 3.12. Core and Mesher are built
+from the official revisions in `requirements/helmholtz-linux-64/sources.json`.
+The pinned Core supports tagged native volume-mesh persistence. Its Mesher
+dependency and the installer use the same revision. No source patches are applied.
 
 From the checkout root:
 

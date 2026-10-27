@@ -138,8 +138,6 @@ class Installation:
             for name, pin in sources.items():
                 self.run('clone-' + name, ['git', 'clone', '--filter=blob:none', '--no-checkout', pin['url'], src / name])
                 self.run('checkout-' + name, ['git', 'checkout', '--detach', pin['commit']], cwd=src / name)
-            self.run('check-core-patch', ['git', 'apply', '--check', LOCK / 'core-boundaries.patch'], cwd=src / 'core')
-            self.run('apply-core-patch', ['git', 'apply', LOCK / 'core-boundaries.patch'], cwd=src / 'core')
             shutil.copytree(ROOT, src / 'sim', symlinks=True,
                 ignore=shutil.ignore_patterns('.git', '.agent', '.pytest_cache', '__pycache__', '.venv', 'build', 'dist', '*.egg-info'))
             wheels = self.work / 'wheelhouse'
@@ -163,7 +161,7 @@ class Installation:
                 'wheel_sha256': {p.name: digest(p) for p in wheels.glob('*.whl')},
                 'focused_tests': (int(re.search(r'(\d+) passed', (self.work / 'focused-tests.log').read_text()).group(1)) if self.args.verify else None),
                 'seconds': time.monotonic() - start,
-                'scope': 'Pinned new Linux x86-64 prefix, native builds and reviewed Core patch. Downloads/geodata may use caches. No historical partition or performance claim.'})
+                'scope': 'Pinned new Linux x86-64 prefix and native builds from official source revisions. Downloads/geodata may use caches. No historical partition or performance claim.'})
             self.status('completed', 'complete', passed=True)
             code = 0
         except BaseException:

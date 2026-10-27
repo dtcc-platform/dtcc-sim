@@ -338,10 +338,9 @@ FE degree 1; higher-order vertex evaluation is not currently implemented.
 VTU stores the fields for visualization. The installed DTCC VTU loader currently
 loads geometry only; use `.dtcc` to preserve fields when reopening in DTCC.
 XDMF/HDF5 export preserves fields and boundary markers. The pinned Core native
-writer omits boundary markers from `.dtcc` and `.dtccpkg`; an isolated Core
-schema/serialization fix restores them and has passed a full thesis re-export
-check. See the [review evidence](helmholtz-review.md#full-thesis-case-and-boundary-preservation).
-Until that dependency fix is installed, use XDMF/HDF5 when tags are needed.
+writer also preserves tagged facets in `.dtcc` and `.dtccpkg`. Boundary faces
+and labels remain distinct from cell markers. Readers must support the optional
+VolumeMesh boundary arrays to load tagged native artifacts.
 Existing exports are never overwritten.
 
 The launcher can save fields after solving:

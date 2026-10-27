@@ -6,7 +6,7 @@ DOLFINx 0.11.0. Keep this environment separate from the one used for heat/wind.
 ## 1. Install and check the runtime
 
 For the tested Linux x86-64 setup, use the [pinned installer](helmholtz-reproducible-install.md).
-It includes the reviewed Core boundary patch needed for tagged DTCC exports.
+It builds the pinned Core revision with tagged boundary persistence for DTCC exports.
 Replace the two example paths below with your Conda executable and a new
 installation directory outside this checkout:
 
@@ -29,10 +29,10 @@ configurations below use sixteen workers and require the specified inputs.
 
 ### Alternative environment setup
 
-The general setup below resolves dependencies rather than reconstructing the
-tested pins, and does not apply the reviewed Core patch automatically. See the
-[installation notes](helmholtz-installation-validation.md) for its Core and VTK
-requirements before using tagged exports. The pinned recipe is Linux-specific;
+The general setup below resolves the scientific dependencies rather than
+reconstructing the pinned runtime. It installs the same Core revision declared
+by Sim. See the [installation notes](helmholtz-installation-validation.md) for
+the VTK packaging requirements. The pinned recipe is Linux-specific;
 other platforms have not been validated by that recipe.
 
 ```bash

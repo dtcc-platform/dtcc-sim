@@ -134,8 +134,8 @@ verifies refusal across two real METIS builds with the same PyMetis version.
 ## Reproducible setup and automated checks
 
 The [pinned Linux installer](helmholtz-reproducible-install.md) recreates the
-recorded packages, native source pins and separate reviewed Core patch in a new
-prefix. The [scripted trial](validation/helmholtz-scripted-install.json) passed
+recorded packages and official native source pins in a new prefix.
+The [scripted trial](validation/helmholtz-scripted-install.json) passed
 without manual repairs after launch: native builds, dependency consistency,
 129 tests and two real mesh/solver/export cases. Both small solves took
 8 iterations with independent residuals about 3.02e-6 and 3.25e-6. A failed first
@@ -152,17 +152,13 @@ expectations without thesis inputs. No full city run is required by CI.
 
 ## Core boundary persistence dependency
 
-A separate Core patch preserves optional facet-vertex and marker arrays in
-native VolumeMesh serialization. It passed 61 focused Core checks; an earlier
-159-check Sim selection passed against its overlay. Re-exporting completed
-box and city solutions retained all 11,520 and 138,444 boundary facets,
-respectively. Cell tags and facet boundary tags remain distinct.
-
-The pinned public Core dependency does not include this patch. Native tagged
-result persistence requires it. Older strict Core readers reject tagged files
-with the extended schema; new readers accept older untagged files. XDMF/HDF5
-remains the interchange option with the unpatched reader. The patch preserves
-labels; it does not choose physical boundary conditions.
+The pinned official Core revision preserves optional facet-vertex and marker
+arrays in native VolumeMesh serialization. The installer builds that revision
+directly, without source patches. Cell tags and facet boundary tags remain
+distinct. Older strict Core readers reject tagged files with the extended
+schema; readers supporting boundary arrays also accept untagged files.
+XDMF/HDF5 remains an interchange option. Boundary persistence preserves labels;
+it does not choose physical boundary conditions.
 
 Earlier full-case field/export evidence is retained in
 [the box report](validation/helmholtz-thesis-boundary-check.json) and

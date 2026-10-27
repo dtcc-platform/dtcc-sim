@@ -149,6 +149,49 @@ def test_saved_case_load_preserves_solution_and_mesh_identity(tmp_path):
     assert result.prepared_identity["inputs"][str(path)] == "hash"
 
 
+@pytest.mark.parametrize("format", ["dtcc", "dtccpkg"])
+def test_tagged_fields_survive_native_result_export(tmp_path, vertices, format):
+    from dtcc_core.datasets import load_model_package
+    from dtcc_core.datasets.package import export_model_package
+    from dtcc_core.io import load_volume_mesh
+    from dtcc_sim.helmholtz.dataset import (
+        HelmholtzSimulationArgs,
+        HelmholtzSimulationDataset,
+    )
+
+    mesh = VolumeMesh(vertices=vertices, cells=np.array([[0, 1, 2, 3]], dtype=np.int64))
+    mesh.boundary_markers = {(0, 1, 2): -2, (0, 1, 3): 0, (0, 2, 3): 17}
+    values = np.array([3 + 4j, -2j, 1j, -1])
+    attach_helmholtz_fields(mesh, vertices, values, unit="Pa")
+    args = HelmholtzSimulationArgs(
+        bounds=[0, 0, 1, 1],
+        h=1,
+        mesh_path=tmp_path / "input.xdmf",
+        output_dir=tmp_path / "case",
+        field_unit="Pa",
+    )
+    mesh.dataset_context = HelmholtzSimulationDataset().create_context(args)
+    path = tmp_path / ("field." + format)
+    if format == "dtccpkg":
+        export_model_package(mesh, path, canonical=True)
+        restored = load_model_package(path)
+    else:
+        mesh.save(path)
+        restored = load_volume_mesh(path)
+    np.testing.assert_array_equal(restored.vertices, mesh.vertices)
+    np.testing.assert_array_equal(restored.cells, mesh.cells)
+    assert dict(
+        zip(map(tuple, restored.boundary_faces), restored.boundary_markers)
+    ) == mesh.boundary_markers
+    fields = {field.name: field for field in restored.fields}
+    for name, expected in zip(
+        ("helmholtz_real", "helmholtz_imaginary", "helmholtz_amplitude"),
+        (values.real, values.imag, abs(values)),
+    ):
+        np.testing.assert_array_equal(fields[name].values.ravel(), expected)
+        assert fields[name].unit == "Pa"
+
+
 @pytest.mark.parametrize("change", ["manifest", "mesh_name", "fe_degree"])
 def test_export_rejects_changed_case_identity_before_reading_mesh(tmp_path, change):
     from copy import deepcopy

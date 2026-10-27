@@ -32,6 +32,6 @@ city run.
 Each case writes `example-summary.json`, diagnostics/provenance, and
 `field.dtcc`, `field.xdmf` (with its HDF5 companion), `field.vtu` and
 `field.dtccpkg`. The package includes run context. Native tagged persistence
-requires the bundled reviewed Core patch. Open VTU in ParaView or reload the
+uses the pinned Core revision. Open VTU in ParaView or reload the
 DTCC/package result through Core. The installer verification additionally checks
 independent residuals and exact export round trips for this setup.
