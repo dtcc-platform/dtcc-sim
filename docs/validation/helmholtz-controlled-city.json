@@ -1,0 +1,21 @@
+{
+  "scope": "Preserved ramp solver versus integrated ramp solver on the exact h=5 city mesh, under identical current runtime and explicit test-only ARPACK initialization. This is distinct from historical thesis reproduction.",
+  "exact_integration_match": true,
+  "all_global_arrays_bitwise_equal": true,
+  "all_preconditioner_leaf_arrays_bitwise_equal": true,
+  "preconditioner_entries": 61,
+  "solution_bitwise_equal": true,
+  "residual_history_bitwise_equal": true,
+  "original_iterations": 39,
+  "integrated_iterations": 39,
+  "coarse_modes_each": 160,
+  "independent_true_residuals": {
+    "old": 7.604134416308496e-06,
+    "integrated": 7.604134416308496e-06
+  },
+  "independent_verification_passed": true,
+  "original_inputs_unchanged": true,
+  "source_report_sha256": "3c33cc42a86033c659c78b78cb873dd5825f446b7870e37441565afdf4b71c42",
+  "independent_report_sha256": "b297561d2924e06944dc852c0436002d28f38af218f95c739137534b02538e87",
+  "test_initialization_changes_production_defaults": false
+}

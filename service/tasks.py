@@ -52,7 +52,10 @@ def create_dataset_task(dataset_name, dataset_instance):
 # Register Celery tasks for datasets matching this service's module prefix
 _service_datasets = {}
 for name, ds in datasets.list().items():
-    if ds.__class__.__module__.startswith(MODULE_PREFIX):
+    if (
+        ds.__class__.__module__.startswith(MODULE_PREFIX)
+        and name != "helmholtz_simulation"
+    ):
         create_dataset_task(name, ds)
         _service_datasets[name] = ds
 

@@ -1,0 +1,31 @@
+{
+  "mesh_parameters": {
+    "bounds": [
+      319745.962899,
+      6398759.716755,
+      320245.962899,
+      6399259.716755
+    ],
+    "h": 5.0,
+    "domain_height": 80.0,
+    "min_building_detail": 1.0,
+    "options": {
+      "raster_cell_size": 2.0,
+      "raster_radius": 3.0
+    }
+  },
+  "mesh_cache_dir": "../../meshes/helmholtz",
+  "output_dir": "../../results/helmholtz/city-h5-f5-m16-modes40",
+  "parameters": {
+    "frequency_hz": 5.0,
+    "sound_speed": 343.0,
+    "n_subdomains": 16,
+    "overlap_layers": 1,
+    "oversample_layers": 3,
+    "rho": 1.1,
+    "n_modes_per_patch": 40,
+    "workers": 16,
+    "threads_per_worker": 1,
+    "pou_mode": "core_overlap_ramp"
+  }
+}

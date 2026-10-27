@@ -1,0 +1,39 @@
+{
+  "passed": true,
+  "api_checks": {
+    "passed": 37,
+    "seconds": 9.75,
+    "source": "recorded focused pytest tool output"
+  },
+  "export_checks": {
+    "passed": 22,
+    "seconds": 8.65,
+    "log": "export-regression-tests.log"
+  },
+  "real_small_solver_check": {
+    "passed": true,
+    "same_version_real_build_change_rejected": true,
+    "partitioner": {
+      "pymetis": "2025.2.2",
+      "extension_sha256": "db137bdeb39aa0a807e5b4baee1ee82d50cd46ee4fbe897003eea54d2cb4e498",
+      "metis_provider_sha256": "970cd0958ae3fe03ea5ce223d7b3fd68e1b05d3be2106fb9bd256afe00cf22e3"
+    },
+    "alternate_partitioner": {
+      "pymetis": "2025.2.2",
+      "extension_sha256": "ec533e742ee6f690a3209ead02a7e280d0517af38d7c26333f92a30f49b647a9",
+      "metis_provider_sha256": "ec533e742ee6f690a3209ead02a7e280d0517af38d7c26333f92a30f49b647a9"
+    },
+    "iterations": 8,
+    "true_relative_residual": 3.245275017261402e-06,
+    "solution_reload_exact": true,
+    "seconds": 11.668443605303764,
+    "scope": "Small real prepare/solve/reload and incompatible-build refusal; not the full controlled city comparison."
+  },
+  "source_sha256": {
+    "simulator.py": "5cf0caefcca458470a95c386bd1b631f6b4654cc8d72a20ed5622b5d46a441fd",
+    "results.py": "d67e67f5d0cd46834088e3968db255b5b6be7417be0275510833f087bafc8eb4"
+  },
+  "shared_runtime_changed": false,
+  "full_city_comparison_separate": "helmholtz-controlled-city.json",
+  "scope": "Cache identity and completed-result export guard only; numerical backend unchanged."
+}

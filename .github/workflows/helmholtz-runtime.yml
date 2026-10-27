@@ -1,0 +1,96 @@
+name: Helmholtz runtime
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - '.github/workflows/helmholtz-runtime.yml'
+      - 'dtcc_sim/helmholtz/**'
+      - 'dtcc_sim/datasets.py'
+      - 'demos/helmholtz*.py'
+      - 'requirements/helmholtz-linux-64/**'
+      - 'tools/*helmholtz*.py'
+      - 'tests/test_helmholtz*.py'
+      - 'pyproject.toml'
+      - 'environment-helmholtz.yml'
+  pull_request:
+    paths:
+      - '.github/workflows/helmholtz-runtime.yml'
+      - 'dtcc_sim/helmholtz/**'
+      - 'dtcc_sim/datasets.py'
+      - 'demos/helmholtz*.py'
+      - 'requirements/helmholtz-linux-64/**'
+      - 'tools/*helmholtz*.py'
+      - 'tests/test_helmholtz*.py'
+      - 'pyproject.toml'
+      - 'environment-helmholtz.yml'
+  workflow_dispatch:
+    inputs:
+      real_workflow:
+        description: Also generate a small city mesh and check both solvers and exports (uses external geodata)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: helmholtz-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      # These single-host checks do not use the runner's RDMA adapters.
+      UCX_TLS: self,sm,tcp
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build the pinned isolated runtime
+        run: |
+          python3 tools/install_helmholtz.py \
+            --conda "$CONDA/bin/conda" \
+            --work-dir "$RUNNER_TEMP/helmholtz-ci"
+      - name: Run focused Helmholtz and installer checks
+        run: |
+          "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/helmholtz-ci/env" \
+            python -m pytest -q --junitxml="$RUNNER_TEMP/helmholtz-ci/numerical-tests.xml" -o junit_family=xunit1 \
+              tests/test_helmholtz_pou.py \
+              tests/test_helmholtz_partitioning.py \
+              tests/test_helmholtz_slice.py \
+              tests/test_helmholtz_interface.py \
+              tests/test_helmholtz_manufactured.py \
+              tests/test_helmholtz_numerical.py \
+              tests/test_helmholtz_api.py \
+              tests/test_helmholtz_results.py \
+              tests/test_helmholtz_launchers.py \
+              tests/test_helmholtz_mesh_workflow.py \
+              tests/test_helmholtz_dataset.py \
+              tests/test_helmholtz_installer.py
+      - name: Run the self-contained Gaussian visual demo
+        run: |
+          "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/helmholtz-ci/env" \
+            python demos/helmholtz_box.py --output "$RUNNER_TEMP/helmholtz-ci/box-demo"
+      - name: Check small real mesh workflows when requested
+        if: github.event_name == 'workflow_dispatch' && inputs.real_workflow
+        run: |
+          "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/helmholtz-ci/env" \
+            python tools/verify_helmholtz_install.py "$RUNNER_TEMP/helmholtz-ci/verification"
+      - name: Preserve installation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: helmholtz-installation-diagnostics
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/helmholtz-ci/*.json
+            ${{ runner.temp }}/helmholtz-ci/*.txt
+            ${{ runner.temp }}/helmholtz-ci/*.log
+            ${{ runner.temp }}/helmholtz-ci/*.xml
+            ${{ runner.temp }}/helmholtz-ci/verification/*.json
+            ${{ runner.temp }}/helmholtz-ci/box-demo/example-summary.json
+            ${{ runner.temp }}/helmholtz-ci/box-demo/amplitude-slice.png

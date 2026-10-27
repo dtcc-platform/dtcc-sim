@@ -732,7 +732,7 @@ wheels = [
 [[package]]
 name = "dtcc-core"
 version = "0.9.8.dev0"
-source = { git = "https://github.com/dtcc-platform/dtcc-core.git?rev=develop#17c6efe44ca7622e6ef4a802627dfce3ef7f6174" }
+source = { git = "https://github.com/dtcc-platform/dtcc-core.git?rev=215f1732a1b2f8cef626d9ae86f880e91e6a8f74#215f1732a1b2f8cef626d9ae86f880e91e6a8f74" }
 dependencies = [
     { name = "affine" },
     { name = "aiohttp" },
@@ -768,10 +768,15 @@ dependencies = [
     { name = "tqdm" },
 ]
 
+[package.optional-dependencies]
+volume = [
+    { name = "dtcc-tetgen-wrapper" },
+]
+
 [[package]]
 name = "dtcc-mesher"
 version = "0.1.0"
-source = { git = "https://github.com/dtcc-platform/dtcc-mesher.git?rev=7ada8a89c98dbbedc34213387ee598bd92826f10#7ada8a89c98dbbedc34213387ee598bd92826f10" }
+source = { git = "https://github.com/dtcc-platform/dtcc-mesher.git?rev=d9643e735097c719ebeab8bacc06f4ed1f9ae042#d9643e735097c719ebeab8bacc06f4ed1f9ae042" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -788,6 +793,14 @@ dependencies = [
 docs = [
     { name = "sphinx" },
     { name = "sphinx-immaterial" },
+]
+helmholtz = [
+    { name = "pymetis" },
+    { name = "scipy" },
+    { name = "threadpoolctl" },
+]
+helmholtz-mesh = [
+    { name = "dtcc-core", extra = ["volume"] },
 ]
 service = [
     { name = "celery", extra = ["redis"] },
@@ -807,18 +820,30 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "celery", extras = ["redis"], marker = "extra == 'service'", specifier = ">=5.4" },
-    { name = "dtcc-core", git = "https://github.com/dtcc-platform/dtcc-core.git?rev=develop" },
+    { name = "dtcc-core", git = "https://github.com/dtcc-platform/dtcc-core.git?rev=215f1732a1b2f8cef626d9ae86f880e91e6a8f74" },
+    { name = "dtcc-core", extras = ["volume"], marker = "extra == 'helmholtz-mesh'", git = "https://github.com/dtcc-platform/dtcc-core.git?rev=215f1732a1b2f8cef626d9ae86f880e91e6a8f74" },
     { name = "fastapi", marker = "extra == 'service'", specifier = ">=0.125.0" },
     { name = "httpx", marker = "extra == 'service'", specifier = ">=0.27" },
+    { name = "pymetis", marker = "extra == 'helmholtz'" },
     { name = "pytest", marker = "extra == 'test'" },
+    { name = "scipy", marker = "extra == 'helmholtz'", specifier = ">=1.12" },
     { name = "sphinx", marker = "extra == 'docs'" },
     { name = "sphinx-immaterial", marker = "extra == 'docs'" },
+    { name = "threadpoolctl", marker = "extra == 'helmholtz'", specifier = ">=3.1" },
     { name = "uvicorn", marker = "extra == 'service'", specifier = ">=0.38.0" },
 ]
-provides-extras = ["test", "docs", "service"]
+provides-extras = ["helmholtz", "helmholtz-mesh", "test", "docs", "service"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "dtcc-sim", extras = ["test", "service"] }]
+
+[[package]]
+name = "dtcc-tetgen-wrapper"
+version = "0.1.0"
+source = { git = "https://github.com/dtcc-platform/dtcc-tetgen-wrapper.git?rev=22ab9ff2ee1dd03f82ce24dd0f378f00da7e487c#22ab9ff2ee1dd03f82ce24dd0f378f00da7e487c" }
+dependencies = [
+    { name = "numpy" },
+]
 
 [[package]]
 name = "et-xmlfile"
@@ -2528,6 +2553,33 @@ wheels = [
 ]
 
 [[package]]
+name = "pymetis"
+version = "2025.2.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/4e/c56ce33ddca372050ae829e5c3a3659e8096234c5c96ea010d27293d661b/pymetis-2025.2.2.tar.gz", hash = "sha256:79c6d56c30c6f3df7cc755617cbadcfc252a175ce4e5a59982edad0f1ab71c99", size = 348479, upload-time = "2025-11-06T17:40:09.73Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/5f/56fbe4dfdd25bcf3ac870de96bb4a7ce11083701465d25127b9e9933dde3/pymetis-2025.2.2-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:fccafb50056dc93e22effe14abadb87921d0314741ff0a4d6208df5c42ffdb68", size = 251291, upload-time = "2025-11-06T17:39:43.771Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/5b/17aed510e825e4d7f3a9bb195836fbf9d259e23114175c80e65bb4a749ae/pymetis-2025.2.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:b2758f36952c9fcf864838b6d01b5eab067f5f35ce80721f8d185276e97fe640", size = 236808, upload-time = "2025-11-06T17:39:45.451Z" },
+    { url = "https://files.pythonhosted.org/packages/87/46/bb55dd838496cc9c8a905d8f20f11e6ad1316d23e451678664a853930580/pymetis-2025.2.2-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e355cd0de2ee17e50f8022970727c7edc98a56136f2db6d623c632b6e7150a96", size = 275908, upload-time = "2025-11-06T17:39:47.696Z" },
+    { url = "https://files.pythonhosted.org/packages/91/ce/0f9db4a760e58486d4553ad5ad53d9a6f53f288f341d78851aa241409130/pymetis-2025.2.2-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:904d190253492bb48c0dd2e179adb590c4a94e8bbeacbdfe82d0b21a29ccda7f", size = 1312039, upload-time = "2025-11-06T17:39:49.214Z" },
+    { url = "https://files.pythonhosted.org/packages/03/df/9055f899bce6a0cee762367af42fa331279a684400b8f679b25d8af57453/pymetis-2025.2.2-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:6b0b2a38ced17850553982c8b18d9cd33afba91ac246ce0bdb3d6d8e569bd7e9", size = 251341, upload-time = "2025-11-06T17:39:50.64Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/26/4152817e91fa79d26d7ca7a86f169ffce57112d7ba7fab6e69d0ec07ee9f/pymetis-2025.2.2-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:38a4880968203263bfe709105a808ad8f5e0993c962e04639c3a5b36f60bc134", size = 236842, upload-time = "2025-11-06T17:39:51.923Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/0a/d511dc37e37179b50af47a07a0276be53cbee63fea0119fd0615a64d3662/pymetis-2025.2.2-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:08f9f603cc5328ee9b747d1cd6ced23a17ff99c1bcd17f20dfced92186e1d127", size = 275896, upload-time = "2025-11-06T17:39:53.339Z" },
+    { url = "https://files.pythonhosted.org/packages/15/75/a411f6fe26b4d90e4645501b1430e6241666baf268ff6dfbfd9fe3dedf02/pymetis-2025.2.2-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:896db1f37907335e4e60c39cc2bd5b66e3aebd52e04b092d8d1d2a4bcffba114", size = 1312211, upload-time = "2025-11-06T17:39:55.237Z" },
+    { url = "https://files.pythonhosted.org/packages/34/f6/a9c5f2094e05c1891b7d7e3632e8f8488bfdea1956d27add76adfcac797a/pymetis-2025.2.2-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:c070460ba8b96e2a5d3bfdf1337983d29db9ee3448cbc2c5e8a2fbd8cc65479c", size = 251762, upload-time = "2025-11-06T17:39:56.603Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/46/f4c6a5ebdb0f1a04e3621b560a2ea0493c67985527e7e416c53e4b86e23b/pymetis-2025.2.2-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:c9a7b93c5a4745bc5abe7316f7542a16a964906394dc32267318315f2804b43c", size = 236946, upload-time = "2025-11-06T17:39:57.992Z" },
+    { url = "https://files.pythonhosted.org/packages/59/5a/f24a69abdf5e1c022a181e82c48992c8518e09fa6f2620e5c08f0b79200a/pymetis-2025.2.2-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:b7c93735a8bc200a0f00b3efa6dcc51d9ee1500b48b7852b3a19372e33f04b37", size = 275870, upload-time = "2025-11-06T17:39:59.721Z" },
+    { url = "https://files.pythonhosted.org/packages/af/d6/f0212b3cfec2b2fa7d0ffc9591ef9b5a094223ef23ebe7d2e89706c6160a/pymetis-2025.2.2-cp314-cp314-musllinux_1_2_x86_64.whl", hash = "sha256:48650250a56611497e0c39c4e52539a5ee1b5349a930d7d7815a0224c85b2706", size = 1311897, upload-time = "2025-11-06T17:40:01.185Z" },
+    { url = "https://files.pythonhosted.org/packages/52/91/764248f2a2c70866e669a06027825b535ebc647587034c1fb2805eb13053/pymetis-2025.2.2-cp314-cp314t-macosx_10_15_x86_64.whl", hash = "sha256:9b0c4ff5e36156dd3d157304634c96642cf909a982ee8f778684a6201952466e", size = 263195, upload-time = "2025-11-06T17:40:02.572Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/f4/48ab5ecd30f5bea34db52d6027ed7392d6204550d5c4e704ee1568fad274/pymetis-2025.2.2-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:fc42996ef8b95078693698074883114f62c0209341f32face33ac6327599d3ad", size = 246663, upload-time = "2025-11-06T17:40:04.266Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/bc/f842a4770b87cf7f68326c87ebba3aac81f3bbb8e2c5b93fa4af3eb349f1/pymetis-2025.2.2-cp314-cp314t-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:db8169f36fb042a560e33bb80e15ec91f39f009518ed2fdd4784a457207cd644", size = 278483, upload-time = "2025-11-06T17:40:06.222Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/9f/0347ae3eaea801c1ba28d4f2301f317826d76b1cb4b40c7319d28dde1610/pymetis-2025.2.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:301c0e6556b37c3321ce190a5638f5ae2110341d6e3e2e5a2141687de06a5e51", size = 1315038, upload-time = "2025-11-06T17:40:08.182Z" },
+]
+
+[[package]]
 name = "pyogrio"
 version = "0.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3534,6 +3586,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b5/b4/205b0d5241d934e8add0c38aa924c4f9fb7330834ff11e5444db964ec3f9/starlette-1.6.0.tar.gz", hash = "sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b", size = 2716969, upload-time = "2026-08-08T18:27:57.512Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl", hash = "sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c", size = 75969, upload-time = "2026-08-08T18:27:56.196Z" },
+]
+
+[[package]]
+name = "threadpoolctl"
+version = "3.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/dc/6c58154c1c65f758ea979e7139cb76993a9cfc662d14e9be3c4a667cfb77/threadpoolctl-3.7.0.tar.gz", hash = "sha256:61348cfb77d53b9242e0017029244b559b810c142ced65b4e21eeca1843959a7", size = 31961, upload-time = "2026-09-15T15:46:20.263Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/3f/f88a53f60a472b46f4023f56d204dd7de33d34c5d2acbfa0d70a674e639e/threadpoolctl-3.7.0-py3-none-any.whl", hash = "sha256:cd8b60b5641b45c67bbf73c64c843235fc2d8a480c87389f52f5dbee893b86be", size = 26362, upload-time = "2026-09-15T15:46:19.168Z" },
 ]
 
 [[package]]

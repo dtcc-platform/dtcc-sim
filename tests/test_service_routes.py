@@ -1,5 +1,4 @@
 import asyncio
-import importlib
 import json
 import sys
 import types
@@ -70,19 +69,13 @@ def _install_fake_tasks(monkeypatch, celery_app):
 
 @pytest.fixture
 def routes_env(monkeypatch):
+    from service import routes
+
     registry = {}
-    fake_dtcc_core = types.ModuleType("dtcc_core")
     fake_datasets = types.ModuleType("dtcc_core.datasets")
     fake_datasets.list = lambda: registry
-    fake_dtcc_core.datasets = fake_datasets
-
-    monkeypatch.setitem(sys.modules, "dtcc_core", fake_dtcc_core)
-    monkeypatch.setitem(sys.modules, "dtcc_core.datasets", fake_datasets)
-    sys.modules.pop("service.routes", None)
-
-    import service.routes as routes
-
-    return importlib.reload(routes), registry
+    monkeypatch.setattr(routes, "datasets", fake_datasets)
+    return routes, registry
 
 
 def test_extract_formats_supports_enum_and_anyof(routes_env):

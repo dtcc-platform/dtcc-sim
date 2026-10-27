@@ -1,0 +1,131 @@
+{
+  "full_city_weights": {
+    "geometric_hats": {
+      "bitwise_equal": true,
+      "shape": [
+        16,
+        330073
+      ],
+      "sha256": "dfb079fcbfdb6a4f10b1b5a8a6a89cd28852d0ac7954ae5b595fbbfa48fce877",
+      "maximum_difference": 0.0,
+      "maximum_sum_to_one_error": 2.220446049250313e-16
+    },
+    "core_overlap_ramp": {
+      "bitwise_equal": true,
+      "shape": [
+        16,
+        330073
+      ],
+      "sha256": "4f70c113989a52836e5a141e6fe95b00feda09e99fd8ccd8a47931e1ab264b76",
+      "maximum_difference": 0.0,
+      "maximum_sum_to_one_error": 0.0
+    }
+  },
+  "small_real_solves": {
+    "geometric_hats": {
+      "passed": true,
+      "solution_bitwise_equal": true,
+      "residual_history_equal": true,
+      "all_cache_entries_bitwise_equal": true,
+      "cache_entries": 61,
+      "cross_mode_cache_rejected_before_solve": true,
+      "result_reload_exact": true,
+      "iterations": 8,
+      "coarse_modes": 2,
+      "reference_independent_true_residual": 3.0225920529420222e-06,
+      "integrated_independent_true_residual": 3.0225920529420222e-06,
+      "relative_field_difference": 0.0,
+      "seconds": {
+        "reference": 6.372328594326973,
+        "integrated": 6.329776771366596
+      }
+    },
+    "core_overlap_ramp": {
+      "passed": true,
+      "solution_bitwise_equal": true,
+      "residual_history_equal": true,
+      "all_cache_entries_bitwise_equal": true,
+      "cache_entries": 61,
+      "cross_mode_cache_rejected_before_solve": true,
+      "result_reload_exact": true,
+      "iterations": 8,
+      "coarse_modes": 1,
+      "reference_independent_true_residual": 3.245275017260653e-06,
+      "integrated_independent_true_residual": 3.245275017260653e-06,
+      "relative_field_difference": 0.0,
+      "seconds": {
+        "reference": 6.375986263155937,
+        "integrated": 6.336964391171932
+      }
+    }
+  },
+  "passed": true,
+  "seconds": 161.7015696913004,
+  "scope": "Exact full-city weight replay against saved recovered geometric and preserved ramp weights; small real prepare/solve comparisons against each source oracle. No new full-city offline eigensolve.",
+  "focused_tests": {
+    "passed": 120,
+    "scope": "API, PoU construction, results, launchers, mesh workflow and dataset checks against the final staged installation"
+  },
+  "dataset_workflow": {
+    "ramp": {
+      "passed": true,
+      "iterations": 8,
+      "true_relative_residual": 3.245275017128237e-06,
+      "exports_verified": [
+        "dtcc",
+        "xdmf",
+        "vtu",
+        "dtccpkg"
+      ],
+      "native_xdmf_package_boundary_roundtrips": "exact",
+      "package_context_roundtrip": "exact"
+    },
+    "geometric": {
+      "passed": true,
+      "iterations": 8,
+      "true_relative_residual": 3.0225920529656998e-06,
+      "exports_verified": [
+        "dtcc",
+        "xdmf",
+        "vtu",
+        "dtccpkg"
+      ],
+      "native_xdmf_package_boundary_roundtrips": "exact",
+      "package_context_roundtrip": "exact"
+    }
+  },
+  "weight_source_sha256": {
+    "recovered-geometric-pou.py": "7b88f42065a7252e1e511ec37660b0c3a84d312ea3a79c66cab01d0f80131fb0",
+    "preserved-ramp-pou.py": "38d1df010dce14b02023816aff1e15aa59218c7ad7d6501d437413c6c921637c"
+  },
+  "installed_backend_sha256": {
+    "dtcc_sim/helmholtz/check_runtime.py": "4c8503ccebaf5ce7e7ba44878b724132a0973962dd6bc5c897547b8aa2b0c136",
+    "dtcc_sim/helmholtz/__init__.py": "b9223d8368c9a86862f94b9662ab64bf97e80acf543cb2e9624f9b94c6cc76d7",
+    "dtcc_sim/helmholtz/cli.py": "5b154df14b242e2a9700dbf7f43111bd443c736a81cfd331f748099c209fdbbd",
+    "dtcc_sim/helmholtz/results.py": "d67e67f5d0cd46834088e3968db255b5b6be7417be0275510833f087bafc8eb4",
+    "dtcc_sim/helmholtz/dataset.py": "414f195437e8037e5a93ebfb13c02e9fdeacd486c0e5c61ed74ea129afb83a24",
+    "dtcc_sim/helmholtz/__main__.py": "5cb08ce3d58bd867f83ebf2910c018238f443a21d2291d33e664a254a17fb910",
+    "dtcc_sim/helmholtz/simulator.py": "5cf0caefcca458470a95c386bd1b631f6b4654cc8d72a20ed5622b5d46a441fd",
+    "dtcc_sim/helmholtz/launch.py": "cc6bde75c626e21f1dc9543b4ffe5b88132cd8f018e6513c0f37f39235ce9b10",
+    "dtcc_sim/helmholtz/workflow.py": "887781f59e832915e8a704aa6fcba271e982c060b7f6d22602e12491c3bde550",
+    "dtcc_sim/helmholtz/parameters.py": "ed325199787952e2b14f85122789608eb99057fa0f4c6cec4111377346505791",
+    "dtcc_sim/helmholtz/meshing.py": "b87bc738dd2af87000f5609aa69fe20ee35944cc7c3e09e7b17d5075b42ed7a3",
+    "dtcc_sim/helmholtz/_backend/coarse_space.py": "e3d2e3c4781867eda40f2d8d03500e7267eef95e5237924849315e08db0293cc",
+    "dtcc_sim/helmholtz/_backend/params.py": "176b5d8bfaaa95c471f4de5685dc9d0397d828f6ca65f9703285ebc9573904cb",
+    "dtcc_sim/helmholtz/_backend/__init__.py": "917b9911169d684187c63028bf2f53eb9547cd95f0ec586b37d41fe6e434113b",
+    "dtcc_sim/helmholtz/_backend/pou.py": "35792c9114025fb16eff988fe73ad9f9bfba70591f10b5132a63c3bf6a555dab",
+    "dtcc_sim/helmholtz/_backend/offline_setup.py": "49ba4b534e9f1599070769290f82082e7895b0b277a8e23ff4b7b31dfa820e04",
+    "dtcc_sim/helmholtz/_backend/augmented_local_evp.py": "ad776409e4307b8b8b087a3184fc083dafd201b33707a04a56f863ba2bc79ef0",
+    "dtcc_sim/helmholtz/_backend/preconditioner.py": "db36e009bd3a1a1cdd44dc4564e601aab45834d2acdce8e1561c7993698029ec",
+    "dtcc_sim/helmholtz/_backend/mesh.py": "47bd6dd39361d81a0722c8a3490c75149721377a2f95a6733e4c4cca2b864532",
+    "dtcc_sim/helmholtz/_backend/decomposition.py": "39ae8e9a6f152e65f1a319ed94453d19460490c35b4ef43557d6ab49b1272279",
+    "dtcc_sim/helmholtz/_backend/solve_twolevel.py": "233e26f90f73edeb1e0cb7e1f2ee1f19aa22ac704e8bce007c8099df5fc2900f",
+    "dtcc_sim/helmholtz/_backend/local_operators.py": "376295444320298d2c86879cc5ae417851025996df893f6f8b2bfc83b0edecfa"
+  },
+  "claims_excluded": [
+    "New full-city end-to-end reproduction",
+    "Bitwise historical thesis-field reproduction",
+    "Every thesis experiment uses geometric hats",
+    "Either construction is universally faster"
+  ]
+}

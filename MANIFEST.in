@@ -1,0 +1,8 @@
+include CONTRIBUTING.md
+include environment-*.yml
+recursive-include .github/scripts *.py
+recursive-include demos *.py *.sh *.json *.md *.png
+recursive-include docs *.md *.json
+recursive-include tools *.py
+recursive-include requirements/helmholtz-linux-64 *.txt *.json SHA256SUMS
+recursive-include tests *.py

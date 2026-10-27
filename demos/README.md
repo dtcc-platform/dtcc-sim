@@ -90,3 +90,6 @@ paraview demos/output/cooling.xdmf
 | `ground_value` | 0.0 | Ground temperature [°C] |
 
 See `UrbanHeatParameters` for complete parameter list.
+
+For a small Helmholtz mesh/solver/export run with recorded expectations, see
+[the small example](HELMHOLTZ_SMALL.md).

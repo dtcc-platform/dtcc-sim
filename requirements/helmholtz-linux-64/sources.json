@@ -1,0 +1,5 @@
+{
+  "core": {"url": "https://github.com/dtcc-platform/dtcc-core.git", "commit": "215f1732a1b2f8cef626d9ae86f880e91e6a8f74"},
+  "mesher": {"url": "https://github.com/dtcc-platform/dtcc-mesher.git", "commit": "d9643e735097c719ebeab8bacc06f4ed1f9ae042"},
+  "tetgen": {"url": "https://github.com/dtcc-platform/dtcc-tetgen-wrapper.git", "commit": "22ab9ff2ee1dd03f82ce24dd0f378f00da7e487c"}
+}

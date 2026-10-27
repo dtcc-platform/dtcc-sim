@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "source": "isolated installation of core-only wheel",
+  "core_commit": "f427c6e8e0973b179c0ee67bea0ea1ad29efe458",
+  "installed_python_files_verified": 38,
+  "mesh_generated": true,
+  "mesh_counts": {
+    "vertices": 242,
+    "tetrahedra": 762
+  },
+  "h": 25,
+  "frequency_hz": 5,
+  "patch_workers": 2,
+  "threads_per_worker": 1,
+  "iterations": 8,
+  "true_relative_residual": 3.2452750171616596e-06,
+  "acceptance_true_relative_residual_max": 1e-05,
+  "package_field_roundtrip": "exact",
+  "vtu_fields": "exact",
+  "dtcc_fields": "exact",
+  "xdmf_fields_and_geometry": "exact",
+  "boundary_marker_roundtrips": "exact: dtcc, dtccpkg, xdmf",
+  "boundary_facets": 400,
+  "package_context_roundtrip": "exact",
+  "independent_true_relative_residual": 3.2452750171616596e-06,
+  "core_boundary_fix_overlay": true,
+  "general_service_excluded": true,
+  "seconds": 28.778783194720745,
+  "scope": "Tiny real generated-mesh workflow, not a full-scale or physical validation"
+}

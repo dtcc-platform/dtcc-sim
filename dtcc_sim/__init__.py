@@ -8,6 +8,8 @@ from .traffic import (
     TrafficAssignmentParameters,
 )
 from .datasets import (
+    HelmholtzSimulationArgs,
+    HelmholtzSimulationDataset,
     UrbanHeatSimulationArgs,
     UrbanHeatSimulationDataset,
     AirQualityFieldArgs,
@@ -71,6 +73,8 @@ __all__ = [
     "__version__",
     "TrafficAssignmentSimulator",
     "TrafficAssignmentParameters",
+    "HelmholtzSimulationArgs",
+    "HelmholtzSimulationDataset",
     "UrbanHeatSimulationArgs",
     "UrbanHeatSimulationDataset",
     "AirQualityFieldArgs",

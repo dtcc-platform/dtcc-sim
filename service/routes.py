@@ -20,6 +20,7 @@ def _get_service_datasets() -> Dict[str, Any]:
         name: ds
         for name, ds in datasets.list().items()
         if ds.__class__.__module__.startswith(MODULE_PREFIX)
+        and name != "helmholtz_simulation"
     }
 
 
