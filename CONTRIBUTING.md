@@ -3,6 +3,8 @@
 Questions, bug reports and pull requests are welcome. Include a small reproducer
 when reporting a bug and describe the user-visible behavior of a proposed change.
 
+See [DESIGN.md](DESIGN.md) for architecture and contracts.
+
 ## Development environment
 
 Follow the [installation instructions](README.md#installation), then run commands
@@ -19,6 +21,17 @@ the real-number and complex-number FEniCSx environments and local Core overrides
 | Upgrade a locked dependency | `uv lock --upgrade-package <package>` |
 
 Commit `uv.lock` together with dependency changes in `pyproject.toml`.
+
+## Demos
+
+Follow the [demo guidelines](docs/demo-guidelines.md); the
+[demo catalog](demos/README.md) lists purposes and requirements. Run from the
+repository root in the appropriate environment, for example
+`python demos/urban_heat_cooling.py`. Plots and viewers open where provided;
+close them to continue. Existing Helmholtz launchers still require arguments.
+
+For solver verification, use the numerical tests below. Sim does not yet have
+Core's curated demo inventory and hygiene checks.
 
 ## Tests
 
