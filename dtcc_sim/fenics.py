@@ -1051,3 +1051,28 @@ def plot(u: Function, show: bool = True) -> Any:
     if show:
         plotter.show()
     return plotter
+
+
+def _mesh_from_dtcc(volume_mesh, *, require_markers=True):
+    """Convert a DTCC VolumeMesh to the private serial DOLFINx representation.
+
+    Tagged boundary faces travel through Core's XDMF writer; temporary files
+    are removed after loading. Parallel backend callers can supply their own
+    distributed meshes rather than duplicate a serial DTCC model on each rank.
+    """
+    from dtcc_core.model import VolumeMesh
+    from pathlib import Path
+    import tempfile
+
+    if not isinstance(volume_mesh, VolumeMesh):
+        raise TypeError("mesh must be a DTCC VolumeMesh")
+    if MPI.COMM_WORLD.size != 1:
+        raise ValueError("DTCC mesh conversion requires one MPI rank")
+    if require_markers and not len(volume_mesh.boundary_markers):
+        raise ValueError("DTCC mesh requires tagged boundary faces for boundary conditions")
+    with tempfile.TemporaryDirectory(prefix="dtcc-mesh-") as directory:
+        path = Path(directory) / "mesh.xdmf"
+        volume_mesh.save(path)
+        if require_markers:
+            return load_mesh_with_markers(path)
+        return load_mesh(path), None

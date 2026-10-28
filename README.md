@@ -50,6 +50,8 @@ and employment data and plots the resulting flows.
 
 ## Examples and documentation
 
+- [Equation solvers](docs/solvers.md): DTCC mesh inputs and application dataset mapping.
+
 - [Demo catalog](demos/README.md): dataset and solver examples with runtime requirements.
 - [Installation guide](docs/installation.md): FEniCSx setup and local Core development.
 - [Simulation datasets](docs/datasets/simulations.md): available simulations and result formats.

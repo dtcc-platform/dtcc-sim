@@ -1,49 +1,32 @@
-# A small Helmholtz amplitude example
+# Helmholtz box demo
 
-This example generates its own 1 × 1 × 1 m tetrahedral box and uses the public
-`HelmholtzSimulator(..., params=params).simulate()` API. It needs no city download,
-server files or thesis inputs. Use the
-[complex-number environment](installation.md#complex-number-environment),
-`fenicsx-env-complex`, which supplies the required complex PETSc and Matplotlib.
-
-From the repository root, with that environment active:
+Activate the [complex environment](installation.md#complex-number-environment)
+and run from the repository root:
 
 ```bash
-python demos/helmholtz_box.py --output /tmp/helmholtz-box-example
+python demos/helmholtz_box.py
 ```
 
-Choose a new output directory each time. This small example uses one MPI rank,
-one worker, two structured subdomains and four coarse modes per subdomain. It
-constructs 729 vertices and 3,072 tetrahedra. The solve is at 80 Hz with sound
-speed 343 m/s and constant unit coefficients.
+The demo uses Core’s `BoxMesh(8, 8, 8)` and `HelmholtzSolver` with no
+FEniCSx or MPI objects in the script. The offline box is 1 × 1 × 1 m.
+It uses 729 vertices, 3,072 tetrahedra, 80 Hz, sound speed 343 m/s, two structured
+subdomains and one worker. A unit-amplitude Gaussian source is centred at
+(0.5, 0.5, 0.5) m with sigma 0.12 m. All exterior faces have homogeneous
+impedance conditions; there are no Dirichlet faces or required boundary tags.
 
-The red star marks a finite-width Gaussian source centred at (0.5, 0.5, 0.5) m,
-with sigma = 0.12 m and unit source amplitude. It is not a Dirac point source.
-All six exterior faces use homogeneous impedance (Robin) conditions:
-`A ∂u/∂n − i k β u = 0`. There are no Dirichlet faces. No boundary labels are
-needed for this all-exterior impedance case.
+It uses `result.plot(field="helmholtz_amplitude")` for Core’s 3D field preview
+and saves `solution.vtu` and numerical case data under `output/helmholtz_box`. The solver
+creates the directory and replaces its previous outputs on repeated runs;
+unrelated files are preserved.
+Amplitude is in solver units, not calibrated sound pressure or dB.
 
-Open `amplitude-slice.png` in an ordinary image viewer. It shows the horizontal
-cut z = 0.5 m through the source. The complex P1 field is interpolated on the
-actual tetrahedron/plane intersections before taking its magnitude. Colour
-shading interpolates these cut-vertex magnitudes. The colour scale uses solver
-amplitude units, not calibrated pressure or sound pressure level (dB).
-
-![Amplitude slice through the Gaussian source](../demos/images/helmholtz-box-amplitude.png)
-
-The shown run converged in 6 iterations with an independently evaluated algebraic
-true relative residual of 2.0848 × 10⁻⁸. The script prints convergence, iterations,
-residual, geometry size, source and boundary settings, and saves the same data in
-`example-summary.json`. It refuses to report success if convergence fails or the
-true residual exceeds 10⁻⁷. Iterations and last digits can vary with runtime;
-this screenshot demonstrates the solution, not a performance benchmark or a
-mesh-convergence study.
-
-For an interactive volume view, open `field.vtu` in ParaView, select
-`helmholtz_amplitude` under point data, add a **Slice** filter with normal
-(0, 0, 1) and origin (0.5, 0.5, 0.5), then apply and rescale the colour range.
-`helmholtz_real` and `helmholtz_imaginary` are also attached to the volume mesh.
-
-The [small city example](../demos/helmholtz_small.py) remains available for the
-external-geodata and mesh-cache workflow. The box example isolates the solver
-and visualisation so it can be run without that service.
+For the high-level city dataset API, run `python demos/dataset_urban_noise.py`.
+That example requires live city data and uses `datasets.urban_noise_simulation`.
+It plots the amplitude field and reuses a separate mesh cache. Generated city
+runs also save `city.vtu`, containing the solver mesh’s building and ground faces.
+In ParaView, show `city.vtu` in grey and a slice of `solution.vtu` coloured by
+the solution field; both use the same coordinates.
+For configuration-driven runs, see the [workflow guide](helmholtz-quickstart.md).
+Numerical acceptance and headless export checks live in
+`tools/validate_helmholtz_box.py`, outside the demo. Its diagnostic slice
+interpolates the complex P1 field before computing magnitude.

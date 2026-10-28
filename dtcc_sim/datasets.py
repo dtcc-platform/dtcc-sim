@@ -12,7 +12,10 @@ from pydantic import Field
 from dtcc_core.datasets import DatasetDescriptor, DatasetBaseArgs
 
 from .traffic import TrafficAssignmentSimulator, TrafficAssignmentParameters
-from .helmholtz.dataset import HelmholtzSimulationArgs, HelmholtzSimulationDataset
+from .helmholtz.dataset import (
+    UrbanNoiseSimulationArgs,
+    UrbanNoiseSimulationDataset,
+)
 
 
 BoundaryConditionType = Literal["dirichlet", "neumann", "robin"]
@@ -26,6 +29,11 @@ WindSideTopBoundary = Literal["open", "slip"]
 
 class UrbanHeatSimulationArgs(DatasetBaseArgs):
     """Arguments for urban heat simulation dataset."""
+
+    output_dir: Optional[str] = Field(
+        None, min_length=1, pattern=r"\S",
+        description="Directory for solver outputs; repeated runs replace previous solver files",
+    )
 
     # PDE coefficients
     kappa: float = Field(1.0, description="Thermal diffusivity coefficient", gt=0)
@@ -278,10 +286,10 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
     ]
 
     def build(self, args):
-        from .urban_heat import UrbanHeatSimulator, UrbanHeatParameters
+        from .heat import HeatSolver, HeatParameters
 
         bounds = self.parse_bounds(args.bounds)
-        params = UrbanHeatParameters(
+        params = HeatParameters(
             kappa=args.kappa,
             sigma=args.sigma,
             T_ambient=args.T_ambient,
@@ -305,7 +313,7 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
             mesh_max_mesh_size=args.mesh_max_mesh_size,
             mesh_domain_height=args.mesh_domain_height,
         )
-        sim = UrbanHeatSimulator(bounds=bounds, params=params)
+        sim = HeatSolver(bounds=bounds, params=params, output_dir=args.output_dir)
         result = sim.simulate()
         if args.format == "dtcc":
             return self.export_to_bytes(result, args.format)
@@ -321,6 +329,11 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
 
 class AirQualityFieldArgs(DatasetBaseArgs):
     """Arguments for air quality field reconstruction dataset."""
+
+    output_dir: Optional[str] = Field(
+        None, min_length=1, pattern=r"\S",
+        description="Directory for solver outputs; repeated runs replace previous solver files",
+    )
 
     # Phenomenon to reconstruct
     phenomenon: str = Field(
@@ -733,6 +746,7 @@ class AirQualityFieldDataset(DatasetDescriptor):
             field_unit=field_unit,
             params=params,
             point_labels=labels,
+            output_dir=args.output_dir,
         )
 
         import numpy as np
@@ -868,6 +882,11 @@ class AirQualityFieldDataset(DatasetDescriptor):
 
 class TrafficSimulationArgs(DatasetBaseArgs):
     """Arguments for static road traffic simulation."""
+
+    output_dir: Optional[str] = Field(
+        None, min_length=1, pattern=r"\S",
+        description="Directory for solver outputs; repeated runs replace previous solver files",
+    )
 
     trips_per_employed: float = Field(
         2.0,
@@ -1156,6 +1175,7 @@ class TrafficSimulationDataset(DatasetDescriptor):
         )
         sim = TrafficAssignmentSimulator(
             roads=roads,
+            output_dir=args.output_dir,
             zones=deso,
             params=params,
         )
@@ -1186,6 +1206,11 @@ __all__ = [
 
 class UrbanWindSimulationArgs(DatasetBaseArgs):
     """Arguments for urban wind simulation dataset."""
+
+    output_dir: Optional[str] = Field(
+        None, min_length=1, pattern=r"\S",
+        description="Directory for solver outputs; repeated runs replace previous solver files",
+    )
 
     # Wind
     use_weather: bool = Field(
@@ -1492,10 +1517,12 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
     ]
 
     def build(self, args):
-        from .urban_wind import UrbanWindSimulator, UrbanWindParameters
+        from .flow import (NavierStokesSolver, NavierStokesParameters, StokesSolver, StokesParameters)
 
         bounds = self.parse_bounds(args.bounds)
-        params = UrbanWindParameters(
+        parameter_type = StokesParameters if args.equations == "stokes" else NavierStokesParameters
+        solver_type = StokesSolver if args.equations == "stokes" else NavierStokesSolver
+        params = parameter_type(
             rho=args.rho,
             nu=args.nu,
             nu_t=args.nu_t,
@@ -1524,7 +1551,7 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             power_law_alpha=args.power_law_alpha,
             closed_cavity=args.closed_cavity,
         )
-        sim = UrbanWindSimulator(bounds=bounds, params=params)
+        sim = solver_type(bounds=bounds, params=params, output_dir=args.output_dir)
         result = sim.simulate()
 
         if args.format:

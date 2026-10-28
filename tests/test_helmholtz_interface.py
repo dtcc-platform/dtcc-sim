@@ -8,14 +8,19 @@ import pytest
 from dtcc_core.model import VolumeMesh
 from dtcc_sim.helmholtz import (
     HelmholtzParameters,
-    HelmholtzSimulator,
+    HelmholtzSolver,
     HelmholtzWorkflow,
 )
 from dtcc_sim.helmholtz.results import attach_helmholtz_fields
 
 
-@pytest.fixture(params=[HelmholtzSimulator, HelmholtzWorkflow])
+@pytest.fixture(params=[HelmholtzSolver, HelmholtzWorkflow])
 def constructor(request, tmp_path):
+    (tmp_path / "mesh.xdmf").write_text(
+        '<Xdmf><DataItem Format="HDF">mesh.h5:/Mesh</DataItem></Xdmf>'
+    )
+    (tmp_path / "mesh.h5").write_bytes(b"input mesh data")
+
     def create(**kwargs):
         return request.param(
             mesh_path=tmp_path / "mesh.xdmf", output_dir=tmp_path / "case", **kwargs
@@ -53,7 +58,8 @@ def test_simulate_returns_dtcc_mesh_fields_and_keeps_diagnostics(
         return attach_helmholtz_fields(returned, vertices, values, unit=unit)
 
     result = SimpleNamespace(
-        converged=True, iterations=8, relative_residual=1e-8, to_dtcc=convert
+        converged=True, iterations=8, relative_residual=1e-8, to_dtcc=convert,
+        mesh_path=tmp_path / "mesh.xdmf"
     )
     sim = constructor(params=HelmholtzParameters())
     monkeypatch.setattr(sim, "run", lambda: result)
@@ -116,31 +122,37 @@ def test_simulate_rejects_higher_order_before_running(constructor, monkeypatch):
         sim.simulate()
 
 
-@pytest.mark.parametrize(
-    "existing",
-    [
-        "result.vtu",
-        "result.dtcc",
-        "result.xdmf",
-        "result.h5",
-        "result_boundary_markers.xdmf",
-    ],
-)
-def test_simulate_protects_exports_before_running(
-    constructor, monkeypatch, tmp_path, existing
-):
-    protected = tmp_path / existing
-    protected.write_bytes(b"original data")
-    destination = (
-        protected if protected.suffix in (".vtu", ".dtcc") else tmp_path / "result.xdmf"
-    )
+@pytest.mark.parametrize("suffix", ["vtu", "dtcc", "xdmf"])
+def test_simulate_replaces_previous_export(constructor, monkeypatch, tmp_path, suffix):
     sim = constructor()
-    monkeypatch.setattr(
-        sim, "run", lambda: pytest.fail("must check destination before solving")
+    destination = tmp_path / f"result.{suffix}"
+    destination.write_bytes(b"previous output")
+    mesh = VolumeMesh()
+    result = SimpleNamespace(
+        converged=True, iterations=1, relative_residual=1e-9,
+        mesh_path=sim.mesh_path, to_dtcc=lambda **kwargs: mesh,
     )
-    with pytest.raises(FileExistsError):
+    monkeypatch.setattr(sim, "run", lambda: result)
+    monkeypatch.setattr(VolumeMesh, "save", lambda mesh, path: path.write_bytes(b"new output"))
+    assert sim.simulate(output_path=destination) is mesh
+    assert destination.read_bytes() == b"new output"
+
+
+@pytest.mark.parametrize("companion", [False, True])
+def test_simulate_protects_input_before_running(constructor, monkeypatch, tmp_path, companion):
+    sim = constructor()
+    if companion:
+        sim.mesh_path.write_text('<Xdmf><DataItem Format="HDF">result.h5:/Mesh</DataItem></Xdmf>')
+        protected = tmp_path / "result.h5"
+        protected.write_bytes(b"input data")
+        destination = tmp_path / "result.xdmf"
+    else:
+        protected = destination = sim.mesh_path
+    original = protected.read_bytes()
+    monkeypatch.setattr(sim, "run", lambda: pytest.fail("must protect input before solving"))
+    with pytest.raises(ValueError, match="input mesh"):
         sim.simulate(output_path=destination)
-    assert protected.read_bytes() == b"original data"
+    assert protected.read_bytes() == original
 
 
 def test_simulate_rejects_invalid_export_before_running(
@@ -154,20 +166,18 @@ def test_simulate_rejects_invalid_export_before_running(
         sim.simulate(output_path=tmp_path / "result.csv")
 
 
-def test_simulate_rechecks_export_after_running(constructor, monkeypatch, tmp_path):
+def test_simulate_rechecks_input_protection_after_running(constructor, monkeypatch, tmp_path):
     sim = constructor()
-    destination = tmp_path / "result.vtu"
+    destination = tmp_path / "result.xdmf"
 
     def run():
-        destination.write_bytes(b"created during solve")
+        destination.write_text("<Xdmf/>")
         return SimpleNamespace(
-            converged=True,
-            iterations=1,
-            relative_residual=1e-9,
-            to_dtcc=lambda **kw: object(),
+            converged=True, iterations=1, relative_residual=1e-9,
+            mesh_path=destination, to_dtcc=lambda **kwargs: VolumeMesh(),
         )
 
     monkeypatch.setattr(sim, "run", run)
-    with pytest.raises(FileExistsError):
+    with pytest.raises(ValueError, match="input mesh"):
         sim.simulate(output_path=destination)
-    assert destination.read_bytes() == b"created during solve"
+    assert destination.read_text() == "<Xdmf/>"

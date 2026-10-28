@@ -136,8 +136,8 @@ def result_to_dtcc(result, *, unit=""):
     return attach_helmholtz_fields(dtcc_mesh, coordinates, result.solution, unit=unit)
 
 
-def _checked_export_path(path):
-    """Validate an export destination and protect its companion files."""
+def _checked_export_path(path, *, mesh_path=None):
+    """Validate an export destination and protect input mesh files."""
     path = Path(path).expanduser().resolve()
     if path.suffix.lower() not in (".vtu", ".xdmf", ".dtcc"):
         raise ValueError("Choose .vtu, .xdmf, or .dtcc for a DTCC Helmholtz result")
@@ -149,16 +149,20 @@ def _checked_export_path(path):
                 path.with_name(path.stem + "_boundary_markers.xdmf"),
             )
         )
-    if any(output.exists() for output in outputs):
-        raise FileExistsError(f"DTCC result export already exists: {path}")
+    if mesh_path is not None:
+        from .simulator import _mesh_input_hashes
+
+        inputs = {Path(name) for name in _mesh_input_hashes(mesh_path)}
+        if inputs.intersection(outputs):
+            raise ValueError("Result export would overwrite an input mesh file")
     return path
 
 
 def save_dtcc_result(result, path=None, *, unit=""):
-    """Save a DTCC volume mesh with three fields; never overwrite an existing export."""
-    path = _checked_export_path(path or result.output_dir / "helmholtz.vtu")
+    """Save a DTCC volume mesh with three fields, replacing a previous export."""
+    path = _checked_export_path(path if path is not None else result.output_dir / "helmholtz.vtu")
     mesh = result_to_dtcc(result, unit=unit)
-    _checked_export_path(path)
+    _checked_export_path(path, mesh_path=result.mesh_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     mesh.save(path)
     return path

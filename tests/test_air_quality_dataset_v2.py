@@ -74,6 +74,7 @@ def test_air_quality_field_xdmf_serializes_fenics_solution(monkeypatch):
             field_unit,
             params,
             point_labels,
+            output_dir=None,
         ):
             assert (bounds.xmin, bounds.ymin, bounds.xmax, bounds.ymax) == (
                 0.0,

@@ -28,10 +28,12 @@ Follow the [demo guidelines](docs/demo-guidelines.md); the
 [demo catalog](demos/README.md) lists purposes and requirements. Run from the
 repository root in the appropriate environment, for example
 `python demos/urban_heat_cooling.py`. Plots and viewers open where provided;
-close them to continue. Existing Helmholtz launchers still require arguments.
+close them to continue. The Helmholtz box and noise dataset demos need no arguments.
 
-For solver verification, use the numerical tests below. Sim does not yet have
-Core's curated demo inventory and hygiene checks.
+Run `python -m pytest tests/test_helmholtz_demos.py` for wave-demo hygiene and
+execution checks in the complex environment. The city run is opt-in with
+`DTCC_RUN_DEMOS=1`; it needs live geodata. For solver verification, use the
+numerical tests below. Other Sim demos are not yet covered by hygiene checks.
 
 ## Tests
 

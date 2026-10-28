@@ -22,7 +22,7 @@ a registered dataset and checked P1 result exports. Start with the
    real/imaginary/amplitude fields, boundaries, declared CRS and provenance.
 
 Existing configurations that omit `pou_mode` retain ramps. The dedicated
-[thesis city profile](../demos/configs/helmholtz_thesis_city_h5.json) selects
+[thesis city profile](../tools/configs/helmholtz_thesis_city_h5.json) selects
 geometric hats and rho-threshold modes. The choice is recorded and separates
 prepared caches. PyMetis/METIS native-build fingerprints also separate caches,
 because the same version string can produce a different partition. Completed
@@ -147,7 +147,7 @@ with the geodata-dependent check available separately. Workflow syntax and the
 server commands have been checked. Hosted GitHub Actions results are separate
 evidence and must be read from the corresponding commit checks; server
 validation alone does not establish a hosted CI pass. The small
-[runnable example](../demos/HELMHOLTZ_SMALL.md) provides commands and observed
+[runnable example](helmholtz-city-validation.md) provides commands and observed
 expectations without thesis inputs. No full city run is required by CI.
 
 ## Core boundary persistence dependency

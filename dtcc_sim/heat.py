@@ -1,5 +1,5 @@
 """
-Urban Heat Simulator
+Heat equation solver
 
 A steady-state diffusion model for air temperature in a 3D city volume.
 Supports multiple boundary condition types (Dirichlet, Neumann, Robin)
@@ -7,6 +7,8 @@ for different urban surfaces (walls, roofs, ground, open boundaries).
 """
 
 from __future__ import annotations
+
+from .output import _output_directory, _solution_path
 
 from enum import IntEnum
 from typing import Any, Mapping, Optional, Union
@@ -17,6 +19,7 @@ import dolfinx
 from pydantic import BaseModel, Field
 
 from dtcc_sim.fenics import *  # FEniCSx wrapper
+from dtcc_sim.fenics import _mesh_from_dtcc
 from dtcc_sim.smooth_reconstruction import _attach_scalar_field_to_volume_mesh
 
 
@@ -69,8 +72,8 @@ BCSpec = Union[DirichletBCSpec, NeumannBCSpec, RobinBCSpec]
 # -----------------------------------------------------------------------------
 
 
-class UrbanHeatParameters(BaseModel):
-    """Parameters for urban heat simulation.
+class HeatParameters(BaseModel):
+    """Parameters for the steady heat equation.
 
     This uses Pydantic BaseModel for validation and JSON schema generation,
     making it compatible with the dtcc-core dataset system.
@@ -269,9 +272,9 @@ def collapse_boundary_markers(
 # -----------------------------------------------------------------------------
 
 
-class UrbanHeatSimulator:
+class HeatSolver:
     """
-    Urban Heat Simulator: Steady-state thermal analysis for 3D urban environments.
+    Heat equation solver: Steady-state thermal analysis for 3D urban environments.
 
     Physical Model
     --------------
@@ -337,21 +340,21 @@ class UrbanHeatSimulator:
     Usage Examples
     --------------
     >>> # From bounds (auto-generates mesh)
-    >>> sim = UrbanHeatSimulator(bounds=bounds)
+    >>> sim = HeatSolver(bounds=bounds)
     >>> T = sim.simulate()
 
     >>> # From pre-computed mesh
-    >>> sim = UrbanHeatSimulator(mesh_path="mesh.xdmf")
+    >>> sim = HeatSolver(mesh_path="mesh.xdmf")
     >>> T = sim.simulate()
 
     >>> # Heat wave scenario with custom parameters
-    >>> params = UrbanHeatParameters(
+    >>> params = HeatParameters(
     ...     kappa=2.0,           # Enhanced mixing
     ...     T_ambient=20.0,      # 20°C ambient
     ...     wall_value=35.0,     # Hot building surfaces
     ...     wall_h=8.0,          # Moderate convection
     ... )
-    >>> sim = UrbanHeatSimulator(bounds=bounds, params=params)
+    >>> sim = HeatSolver(bounds=bounds, params=params)
     >>> T = sim.simulate(output_path="heatwave.xdmf")
 
     Notes
@@ -364,7 +367,7 @@ class UrbanHeatSimulator:
 
     See Also
     --------
-    UrbanHeatParameters : Parameter specification and validation
+    HeatParameters : Parameter specification and validation
     dtcc_sim.datasets.UrbanHeatSimulationDataset : Dataset wrapper interface
     """
 
@@ -375,7 +378,8 @@ class UrbanHeatSimulator:
         mesh_path: Optional[str] = None,
         mesh: Optional[dolfinx.mesh.Mesh] = None,
         markers: Optional[dolfinx.mesh.MeshTags] = None,
-        params: Optional[UrbanHeatParameters] = None,
+        output_dir: Optional[str] = None,
+        params: Optional[HeatParameters] = None,
         petsc_options: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """Initialize the urban heat simulator.
@@ -385,17 +389,19 @@ class UrbanHeatSimulator:
             mesh_path: Path to XDMF mesh file with markers
             mesh: Pre-loaded dolfinx mesh
             markers: Pre-loaded facet markers
+            output_dir: Optional directory for solution exports; repeated runs replace them.
             params: Simulation parameters
             petsc_options: PETSc solver options
 
         Note: Provide either bounds, mesh_path, or (mesh, markers).
         """
+        self.output_dir = _output_directory(output_dir)
         self.bounds = bounds
         self.mesh_path = mesh_path
         self.mesh = mesh
         self.markers = markers
 
-        self.params = params if params is not None else UrbanHeatParameters()
+        self.params = params if params is not None else HeatParameters()
         self.petsc_options = (
             dict(petsc_options)
             if petsc_options is not None
@@ -410,7 +416,7 @@ class UrbanHeatSimulator:
 
     def _build_mesh_from_bounds(self) -> None:
         """Build volume mesh from bounds using dtcc_core.datasets.city_volume_mesh."""
-        info("UrbanHeat: Building volume mesh from bounds...")
+        info("Heat: Building volume mesh from bounds...")
 
         try:
             import dtcc_core.datasets as datasets
@@ -436,7 +442,7 @@ class UrbanHeatSimulator:
         with tempfile.NamedTemporaryFile(suffix=".xdmf", delete=False) as tmp:
             tmp_path = tmp.name
 
-        info(f"UrbanHeat: Saving mesh to temporary file: {tmp_path}")
+        info(f"Heat: Saving mesh to temporary file: {tmp_path}")
         volume_mesh.save(tmp_path)
 
         # Load with FEniCSx
@@ -449,17 +455,25 @@ class UrbanHeatSimulator:
 
     def _load_if_needed(self) -> None:
         """Load or build mesh if not already available."""
+        from dtcc_core.model import VolumeMesh
+
+        if isinstance(self.mesh, VolumeMesh):
+            self.volume_mesh_dtcc = self.mesh
+            if self.markers is not None:
+                raise ValueError("DTCC meshes carry their boundary markers; omit markers")
+            self.mesh, self.markers = _mesh_from_dtcc(self.mesh)
+
         if self.mesh is not None and self.markers is not None:
             return
 
         if self.bounds is not None:
             self._build_mesh_from_bounds()
         elif self.mesh_path is not None:
-            info(f"UrbanHeat: Loading mesh from {self.mesh_path}")
+            info(f"Heat: Loading mesh from {self.mesh_path}")
             self.mesh, self.markers = load_mesh_with_markers(self.mesh_path)
         else:
             raise ValueError(
-                "UrbanHeatSimulator: provide bounds=..., mesh_path=..., or (mesh=..., markers=...)."
+                "HeatSolver: provide bounds=..., mesh_path=..., or (mesh=..., markers=...)."
             )
 
     def _apply_bc_spec(
@@ -525,12 +539,15 @@ class UrbanHeatSimulator:
             simulator builds the mesh from bounds, otherwise the temperature
             field as a dolfinx Function.
         """
+        output_path = _solution_path(
+            self.output_dir, output_path, "solution.xdmf", input_mesh=self.mesh_path,
+        )
         self._load_if_needed()
         assert self.mesh is not None and self.markers is not None
 
         # Infer buildings + collapse tags
         self.num_buildings = infer_num_buildings(self.mesh, self.markers)
-        info(f"UrbanHeat: inferred num_buildings = {self.num_buildings}")
+        info(f"Heat: inferred num_buildings = {self.num_buildings}")
 
         self.category_markers = collapse_boundary_markers(
             self.mesh, self.markers, self.num_buildings
@@ -539,7 +556,7 @@ class UrbanHeatSimulator:
         # Function space
         V = FunctionSpace(self.mesh, "Lagrange", self.params.degree)
         info(
-            f"UrbanHeat: Function space has {V.dofmap.index_map.size_global} degrees of freedom"
+            f"Heat: Function space has {V.dofmap.index_map.size_global} degrees of freedom"
         )
 
         # Measures over collapsed boundary categories
@@ -572,14 +589,14 @@ class UrbanHeatSimulator:
             )
 
         # Solve
-        info("UrbanHeat: Solving linear system...")
+        info("Heat: Solving linear system...")
         self.solution = solve(a == L, bcs=bcs, petsc_options=self.petsc_options)
-        info("UrbanHeat: Solution complete")
+        info("Heat: Solution complete")
         self._record_diagnostics(V)
 
         # Output
         if output_path is not None:
-            info(f"UrbanHeat: Saving solution to {output_path}")
+            info(f"Heat: Saving solution to {output_path}")
             self.solution.save(output_path)
 
         if self.volume_mesh_dtcc is not None:
@@ -642,7 +659,7 @@ class UrbanHeatSimulator:
     def _attach_temperature_field(self) -> Any:
         if self.mesh is None or self.solution is None:
             raise RuntimeError(
-                "UrbanHeatSimulator cannot attach a temperature field before "
+                "HeatSolver cannot attach a temperature field before "
                 "a mesh and solution are available."
             )
         if self.volume_mesh_dtcc is None:

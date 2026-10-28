@@ -15,10 +15,7 @@ Output is saved as XDMF for inspection in ParaView.
 """
 
 import numpy as np
-from pathlib import Path
 
-output_dir = Path(__file__).parent / "output"
-output_dir.mkdir(exist_ok=True)
 
 # ---- build mesh and markers ----
 import dolfinx.mesh
@@ -79,9 +76,9 @@ def poiseuille_inlet(x):
 
 
 # ---- solve ----
-from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
+from dtcc_sim import NavierStokesSolver, NavierStokesParameters
 
-params = UrbanWindParameters(
+params = NavierStokesParameters(
     wind_speed=U_max,
     wind_dir_deg=270.0,  # from west → flow in +x direction
     nu_t=0.01,  # eddy viscosity for stability
@@ -94,13 +91,14 @@ params = UrbanWindParameters(
     wall_model="noslip",
 )
 
-sim = UrbanWindSimulator(
+sim = NavierStokesSolver(
+    output_dir="output/channel_flow",
     mesh=mesh,
     markers=facet_tags,
     params=params,
     inlet_expression=poiseuille_inlet,
 )
-u, p = sim.simulate(output_path=str(output_dir / "channel_flow.xdmf"))
+u, p = sim.simulate()
 
 # ---- quick validation ----
 u_max = np.max(np.abs(u.x.array))

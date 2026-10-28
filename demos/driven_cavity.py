@@ -6,7 +6,7 @@ Classic benchmark: a unit cube [0,1]³ with no-slip walls on all faces
 except the top (z=1), which moves at constant tangential velocity in the
 +x direction (the "lid").
 
-The solver is set up by using the UrbanWindSimulator in direct-mesh
+The solver is set up by using the NavierStokesSolver in direct-mesh
 mode.  The lid velocity is imposed via a custom inlet_expression on
 the top face (inlet_marker=-2).  All other faces are no-slip walls.
 Since this is a fully enclosed cavity, outlet_marker=0 tells the solver
@@ -20,10 +20,7 @@ Output is saved as XDMF.
 """
 
 import numpy as np
-from pathlib import Path
 
-output_dir = Path(__file__).parent / "output"
-output_dir.mkdir(exist_ok=True)
 
 # ---- build mesh and markers ----
 import dolfinx.mesh
@@ -60,11 +57,11 @@ facet_tags = dolfinx.mesh.meshtags(
 )
 
 # ---- solve ----
-from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
+from dtcc_sim import NavierStokesSolver, NavierStokesParameters
 
 # Override markers: top=-2 is the lid (inlet), no outlet (closed cavity).
 # Wind direction 270° (from west) → flow in +x → lid slides in +x.
-params = UrbanWindParameters(
+params = NavierStokesParameters(
     wind_speed=1.0,
     wind_dir_deg=270.0,  # flow in +x direction
     inlet_marker=-2,  # top face is the lid
@@ -81,8 +78,8 @@ params = UrbanWindParameters(
     inlet_profile="uniform",
 )
 
-sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
-u, p = sim.simulate(output_path=str(output_dir / "driven_cavity.xdmf"))
+sim = NavierStokesSolver(mesh=mesh, markers=facet_tags, params=params, output_dir="output/driven_cavity")
+u, p = sim.simulate()
 
 # ---- quick validation ----
 u_max = np.max(np.abs(u.x.array))

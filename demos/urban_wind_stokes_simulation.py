@@ -11,24 +11,23 @@ inspection in ParaView.
 from mpi4py import MPI
 
 import dtcc_core as dtcc
-from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
+from dtcc_sim import StokesSolver, StokesParameters
 
 # Center coordinates (Poseidon statue in Gothenburg)
-x0 = 319995.962899
-y0 = 6399009.716755
+center_x = 319995.962899
+center_y = 6399009.716755
 
 # Meshing parameters
 H = 80.0   # domain height
-L = 100.0  # domain size (use 500m to get same domain as in dtcc-core demo build_meshes.py)
-h = 10.0   # max mesh size (needs to be smaller than 25m to get a sensible solution)
+L = 200.0  # horizontal domain size in meters
+h = 12.5   # target maximum mesh edge length in meters
 d = 1.0    # min building detail
 
 # Define bounds
-bounds = dtcc.Bounds(x0 - 0.5 * L, y0 - 0.5 * L, x0 + 0.5 * L, y0 + 0.5 * L)
+bounds = dtcc.Bounds(center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
 # Simulation parameters
-params = UrbanWindParameters(
-    equations="stokes",
+params = StokesParameters(
     wind_speed=5.0,
     wind_dir_deg=270.0,
     mesh_max_mesh_size=h,
@@ -52,5 +51,5 @@ if MPI.COMM_WORLD.rank == 0:
     surface_mesh.save("output/urban_wind_stokes_simulation_surface_mesh.vtu")
 
 # Run flow simulation
-sim = UrbanWindSimulator(bounds=bounds, params=params)
-sim.simulate(output_path="output/urban_wind_stokes_simulation.xdmf")
+sim = StokesSolver(bounds=bounds, params=params, output_dir="output/urban_wind_stokes_simulation")
+sim.simulate()

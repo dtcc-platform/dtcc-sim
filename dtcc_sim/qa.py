@@ -9,7 +9,7 @@ from typing import Literal
 SimulationQAStatus = Literal["present", "missing", "planned", "implemented"]
 
 SIMULATION_DATASET_NAMES: tuple[str, ...] = (
-    "helmholtz_simulation",
+    "urban_noise_simulation",
     "urban_heat_simulation",
     "urban_wind_simulation",
     "air_quality_field",
@@ -41,7 +41,7 @@ class SimulationValidationCase:
 
 VALIDATION_CASES: tuple[SimulationValidationCase, ...] = (
     SimulationValidationCase(
-        family="helmholtz", dataset="helmholtz_simulation", status="implemented",
+        family="helmholtz", dataset="urban_noise_simulation", status="implemented",
         scope="offline descriptor, validation, parameter plumbing, serialization, and convergence handling",
         test_reference="tests/test_helmholtz_dataset.py",
         notes="Dataset checks mock the workflow and do not run meshing or numerical solves; separate saved city comparisons cover the underlying solver.",
@@ -118,7 +118,7 @@ def simulation_validation_cases() -> tuple[SimulationValidationCase, ...]:
 def simulation_dataset_example_arguments(name):
     """Return minimal valid arguments for offline descriptor/context checks."""
     arguments = {"bounds": (0.0, 0.0, 1.0, 1.0)}
-    if name == "helmholtz_simulation":
+    if name == "urban_noise_simulation":
         arguments.update(h=5.0, output_dir="results/helmholtz-qa", mesh_cache_dir="meshes/helmholtz-qa")
     return arguments
 

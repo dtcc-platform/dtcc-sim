@@ -7,7 +7,6 @@ Runs the urban wind simulation in stationary Stokes mode through the
 dataset interface and prints the concrete structure of the returned data.
 """
 
-from pathlib import Path
 
 import numpy as np
 
@@ -51,22 +50,22 @@ def summarize_result(result) -> None:
 
 
 def main() -> None:
-    output_dir = Path(__file__).parent / "output"
-    output_dir.mkdir(exist_ok=True)
+    output_dir = "output/dataset_urban_wind_stokes_simulation"
 
-    # Gothenburg city-centre domain (SWEREF 99 TM), 200m x 200m.
-    x0 = 319_995.96
-    y0 = 6_399_009.72
+    # Poseidon in Gothenburg (EPSG:3006); 200 m × 200 m domain
+    center_x = 319995.962899
+    center_y = 6399009.716755
     L = 200.0
-    bounds = (x0, y0, x0 + L, y0 + L)
+    bounds = (center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
     args = dtcc_sim.UrbanWindSimulationArgs(
         bounds=bounds,
+        output_dir=output_dir,
         equations="stokes",
         wind_speed=5.0,
         wind_dir_deg=270.0,
         inlet_profile="log_law",
-        mesh_max_mesh_size=25.0,
+        mesh_max_mesh_size=12.5,
         mesh_domain_height=80.0,
     )
 
@@ -77,10 +76,6 @@ def main() -> None:
 
     summarize_result(result)
 
-    if hasattr(result, "save"):
-        output_path = output_dir / "dataset_urban_wind_stokes_simulation.dtcc"
-        result.save(output_path)
-        print(f"\nSaved volume mesh to: {output_path}")
 
 
 if __name__ == "__main__":

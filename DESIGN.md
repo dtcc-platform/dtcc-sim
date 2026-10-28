@@ -18,6 +18,7 @@ Application orchestration and catalog operation belong in DTCC Twin.
   Keep numerical backend objects and diagnostics available through solver APIs.
 - Separate scenario parameters, numerical solving and dataset integration.
   Dataset names describe domain products; solver names describe equations.
+  See the [solver API](docs/solvers.md) for the public names and mesh contract.
 - Make the common call direct, with documented domain defaults and explicit
   advanced controls. Validate required inputs and fail with actionable errors.
 - Keep heavy solver dependencies isolated from capabilities that do not need
@@ -37,8 +38,8 @@ Application orchestration and catalog operation belong in DTCC Twin.
 ## Trust and quality
 
 Preserve fields and their meaning across persistence. Use Core Packages when
-run context and provenance must travel with the model. Protect existing solver
-cases from accidental overwrite and keep mesh caches separate from results.
+run context and provenance must travel with the model. Create output directories internally and replace previous solver outputs on
+repeated runs, preserving unrelated files. Keep mesh caches separate from results.
 
 Use small offline contract tests and real numerical regression tests in the
 appropriate environment. Mocked tests do not validate solvers. Live-data and

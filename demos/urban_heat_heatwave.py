@@ -23,15 +23,15 @@ This scenario is useful for studying:
 
 import dtcc_sim
 
-# Define geographic bounds (200m x 200m area in Gothenburg)
-x0 = 319995.962899
-y0 = 6399009.716755
+# Poseidon in Gothenburg (EPSG:3006); 200 m × 200 m domain
+center_x = 319995.962899
+center_y = 6399009.716755
 L = 200.0
 
-bounds = (x0 - 0.5 * L, y0 - 0.5 * L, x0 + 0.5 * L, y0 + 0.5 * L)
+bounds = (center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
 # Configure heat wave scenario
-params = dtcc_sim.UrbanHeatParameters(
+params = dtcc_sim.HeatParameters(
     kappa=2.0,  # Higher thermal diffusivity (enhanced mixing)
     sigma=0.1,  # Relaxation to ambient air
     T_ambient=20.0,  # Ambient temperature
@@ -46,10 +46,10 @@ params = dtcc_sim.UrbanHeatParameters(
     roof_bc_type="robin",
     ground_bc_type="robin",
     open_bc_type="dirichlet",
-    mesh_max_mesh_size=30.0,
+    mesh_max_mesh_size=12.5,
     mesh_domain_height=60.0,
 )
 
 # Create simulator and run
-sim = dtcc_sim.UrbanHeatSimulator(bounds=bounds, params=params)
-T = sim.simulate(output_path="output/heatwave.xdmf")
+sim = dtcc_sim.HeatSolver(bounds=bounds, params=params, output_dir="output/urban_heat_heatwave")
+T = sim.simulate()

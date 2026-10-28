@@ -20,10 +20,7 @@ a separation bubble and wake behind the obstacle.
 """
 
 import numpy as np
-from pathlib import Path
 
-output_dir = Path(__file__).parent / "output"
-output_dir.mkdir(exist_ok=True)
 
 # ---- build mesh with Gmsh ----
 try:
@@ -131,9 +128,9 @@ n_roof = np.sum(markers_vals == 1)
 print(f"Obstacle facets: {n_wall} wall, {n_roof} roof")
 
 # ---- solve ----
-from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
+from dtcc_sim import NavierStokesSolver, NavierStokesParameters
 
-params = UrbanWindParameters(
+params = NavierStokesParameters(
     wind_speed=1.0,
     wind_dir_deg=270.0,  # from west → flow in +x
     nu_t=0.5,  # high eddy viscosity for stable low-Re flow
@@ -147,8 +144,8 @@ params = UrbanWindParameters(
     inlet_profile="uniform",
 )
 
-sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
-u, p = sim.simulate(output_path=str(output_dir / "bluff_body.xdmf"))
+sim = NavierStokesSolver(mesh=mesh, markers=facet_tags, params=params, output_dir="output/bluff_body")
+u, p = sim.simulate()
 
 # ---- quick validation ----
 u_max = np.max(np.abs(u.x.array))

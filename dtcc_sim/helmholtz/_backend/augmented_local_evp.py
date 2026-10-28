@@ -8,6 +8,10 @@ from scipy import linalg as sla
 
 from .params import PARAMS
 
+from dtcc_core.common import get_python_logger
+
+_logger = get_python_logger("dtcc-sim")
+
 
 def _csr_to_scipy(
     indptr: np.ndarray,
@@ -278,11 +282,10 @@ def solve_augmented_local_modes(
     nev = max(2, min(max_nev, int(nev_initial)))
 
     if verbose:
-        print(
+        _logger.info(
             f"[aug-evp] patch={patch_index:03d} backend={backend} "
             f"total_dim={total_dim} n_star={data.n_star} n_int={data.n_int} "
             f"rho2={float(rho)**2:.6e} nev_initial={nev_initial} max_nev={max_nev}",
-            flush=True,
         )
 
     if backend == "dense":
@@ -290,10 +293,9 @@ def solve_augmented_local_modes(
         if verbose:
             min_re = np.real(vals).min() if vals.size else float("nan")
             max_re = np.real(vals).max() if vals.size else float("nan")
-            print(
+            _logger.info(
                 f"[aug-evp:dense] patch={patch_index:03d} kept={phi.shape[1]} "
                 f"min_re={min_re:.6e} max_re={max_re:.6e}",
-                flush=True,
             )
         return vals, phi
 
@@ -302,10 +304,9 @@ def solve_augmented_local_modes(
 
     fixed_nloc = int(PARAMS.n_modes_per_patch)
     if verbose and fixed_nloc > 0:
-        print(
+        _logger.info(
             f"[aug-evp] patch={patch_index:03d} fixed mode selection: "
             f"n_modes_per_patch={fixed_nloc}",
-            flush=True,
         )
 
     last_error: Exception | None = None
@@ -349,12 +350,11 @@ def solve_augmented_local_modes(
                 frontier_crossed = bool(vals_raw.size >= fixed_nloc)
 
             if verbose:
-                print(
+                _logger.info(
                     f"[aug-evp] patch={patch_index:03d} attempt={attempt} "
                     f"nev={nev} ncv={ncv} kept={phi_kept.shape[1]} "
                     f"raw_min_re={raw_min_re:.6e} raw_max_re={raw_max_re:.6e} "
                     f"frontier_crossed={'yes' if frontier_crossed else 'no'}",
-                    flush=True,
                 )
 
             if frontier_crossed:
@@ -371,10 +371,9 @@ def solve_augmented_local_modes(
         except Exception as e:
             last_error = e
             if verbose:
-                print(
+                _logger.info(
                     f"[aug-evp] patch={patch_index:03d} attempt={attempt} failed: "
                     f"{type(e).__name__}: {e}",
-                    flush=True,
                 )
             if nev >= max_nev:
                 break
@@ -385,27 +384,24 @@ def solve_augmented_local_modes(
 
     if backend == "arpack_then_dense" and total_dim <= dense_fallback_max_dim:
         if verbose:
-            print(
+            _logger.info(
                 f"[aug-evp] patch={patch_index:03d} falling back to dense solve "
                 f"(total_dim={total_dim})",
-                flush=True,
             )
         vals, phi = _solve_dense(data, rho=float(rho), reg=float(reg_env))
         if verbose:
             min_re = np.real(vals).min() if vals.size else float("nan")
             max_re = np.real(vals).max() if vals.size else float("nan")
-            print(
+            _logger.info(
                 f"[aug-evp:dense] patch={patch_index:03d} kept={phi.shape[1]} "
                 f"min_re={min_re:.6e} max_re={max_re:.6e}",
-                flush=True,
             )
         return vals, phi
 
     if verbose:
-        print(
+        _logger.info(
             f"[aug-evp] patch={patch_index:03d} WARNING: threshold frontier not crossed "
             f"before max_nev={max_nev}; returning best available kept={best_phi.shape[1]}",
-            flush=True,
         )
 
     if best_phi.shape[1] > 0:

@@ -8,6 +8,7 @@ on:
       - 'dtcc_sim/helmholtz/**'
       - 'dtcc_sim/datasets.py'
       - 'demos/helmholtz*.py'
+      - 'demos/dataset_urban_noise.py'
       - 'requirements/helmholtz-linux-64/**'
       - 'tools/*helmholtz*.py'
       - 'tests/test_helmholtz*.py'
@@ -19,6 +20,7 @@ on:
       - 'dtcc_sim/helmholtz/**'
       - 'dtcc_sim/datasets.py'
       - 'demos/helmholtz*.py'
+      - 'demos/dataset_urban_noise.py'
       - 'requirements/helmholtz-linux-64/**'
       - 'tools/*helmholtz*.py'
       - 'tests/test_helmholtz*.py'
@@ -61,6 +63,7 @@ jobs:
               tests/test_helmholtz_pou.py \
               tests/test_helmholtz_partitioning.py \
               tests/test_helmholtz_slice.py \
+              tests/test_helmholtz_demos.py \
               tests/test_helmholtz_interface.py \
               tests/test_helmholtz_manufactured.py \
               tests/test_helmholtz_numerical.py \
@@ -70,10 +73,10 @@ jobs:
               tests/test_helmholtz_mesh_workflow.py \
               tests/test_helmholtz_dataset.py \
               tests/test_helmholtz_installer.py
-      - name: Run the self-contained Gaussian visual demo
+      - name: Validate the self-contained Gaussian example
         run: |
           "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/helmholtz-ci/env" \
-            python demos/helmholtz_box.py --output "$RUNNER_TEMP/helmholtz-ci/box-demo"
+            python tools/validate_helmholtz_box.py --output "$RUNNER_TEMP/helmholtz-ci/box-demo"
       - name: Check small real mesh workflows when requested
         if: github.event_name == 'workflow_dispatch' && inputs.real_workflow
         run: |

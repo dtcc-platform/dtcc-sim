@@ -12,8 +12,13 @@ from threading import RLock
 from typing import Any, TYPE_CHECKING
 import xml.etree.ElementTree as ET
 
+from ..output import _output_directory
 from .parameters import HelmholtzParameters
 from ._backend.params import Params, bind_parameters
+
+from dtcc_core.common import get_python_logger
+
+_logger = get_python_logger("dtcc-sim")
 
 if TYPE_CHECKING:
     from dtcc_core.model import VolumeMesh
@@ -50,7 +55,7 @@ def _simulation_mesh(result, *, output_path=None, unit=""):
     if output_path is not None:
         from .results import _checked_export_path
 
-        path = _checked_export_path(output_path)
+        path = _checked_export_path(output_path, mesh_path=result.mesh_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         mesh.save(path)
     return mesh
@@ -227,7 +232,7 @@ def _case_lease(directory):
         lock.unlink()
 
 
-class HelmholtzSimulator:
+class HelmholtzSolver:
     """Build a spectral preconditioner and solve on a supplied XDMF mesh.
 
     Construction and describe() do not load a mesh or start a simulation.
@@ -238,12 +243,25 @@ class HelmholtzSimulator:
     parameters is a backwards-compatible alias.
     """
 
-    def __init__(self, *, mesh_path, output_dir, params=None, parameters=None):
-        self.mesh_path = Path(mesh_path).expanduser().resolve()
-        self.output_dir = Path(output_dir).expanduser().resolve()
+    def __init__(self, *, output_dir, mesh_path=None, mesh=None, params=None, parameters=None):
+        if (mesh_path is None) == (mesh is None):
+            raise ValueError("Specify either mesh_path or mesh")
+        self.output_dir = _output_directory(output_dir)
+        if self.output_dir is None:
+            raise ValueError("Helmholtz requires output_dir for numerical artifacts")
+        self.mesh = mesh
+        if mesh is not None:
+            from dtcc_core.model import VolumeMesh
+
+            if not isinstance(mesh, VolumeMesh):
+                raise TypeError("mesh must be a DTCC VolumeMesh")
+        self.mesh_path = (
+            Path(mesh_path).expanduser().resolve()
+            if mesh_path is not None else self.output_dir / "input.xdmf"
+        )
         if self.mesh_path.suffix.lower() not in (".xdmf", ".xmf"):
             raise ValueError("mesh_path must name an XDMF mesh")
-        if (
+        if self.mesh is None and (
             self.output_dir == self.mesh_path.parent
             or self.output_dir in self.mesh_path.parents
         ):
@@ -315,52 +333,60 @@ class HelmholtzSimulator:
         checksum = identity.pop("preconditioner_sha256", None)
         if checksum is None:
             raise ValueError(
-                "Offline data has no integrity checksum; prepare a fresh case directory"
+                "Offline data has no integrity checksum; call prepare() again"
             )
         if identity != self._identity():
             raise ValueError(
                 "Offline data does not match the mesh, parameters, runtime or solver "
-                "implementation; prepare a fresh case directory"
+                "implementation; call prepare() again"
             )
         if checksum != _sha256(self.preconditioner_path):
             raise ValueError(
                 "Saved preconditioner checksum does not match prepared data; "
-                "prepare a fresh case directory"
+                "call prepare() again"
             )
 
     def prepare(self):
-        """Build offline data in a new or empty directory; never replace an existing case."""
-        if self.output_dir.exists() and any(self.output_dir.iterdir()):
-            raise FileExistsError(f"Output directory is not empty: {self.output_dir}")
+        """Prepare offline data, replacing previous solver outputs."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        with _case_lease(self.output_dir):
+            return self._prepare()
+
+    def _prepare(self):
+        """Build offline data, replacing this solver's previous case artifacts."""
+        _logger.info("Preparing two-level preconditioner for Helmholtz equation")
         params = self._params()
-        with _configured_backend(params, self.parameters.threads_per_worker) as (
-            offline,
-            _,
-        ):
+        with _configured_backend(params, self.parameters.threads_per_worker) as (offline, _):
+            if self.mesh is not None:
+                self.mesh.save(self.mesh_path)
             identity = self._identity()
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-            with _case_lease(self.output_dir) as lock:
-                if any(path != lock for path in self.output_dir.iterdir()):
-                    raise FileExistsError(
-                        f"Output directory is not empty: {self.output_dir}"
-                    )
-                payload = offline.build_and_save_preconditioner_data()
-                if not self.preconditioner_path.is_file():
-                    raise RuntimeError("Offline setup did not write the preconditioner")
-                if identity != self._identity():
-                    raise RuntimeError(
-                        "Mesh inputs changed during offline setup; choose a fresh case directory"
-                    )
-                identity["preconditioner_sha256"] = _sha256(self.preconditioner_path)
-                temporary = self.manifest_path.with_suffix(".json.tmp")
-                temporary.write_text(
-                    json.dumps(identity, indent=2, sort_keys=True) + "\n"
-                )
-                temporary.replace(self.manifest_path)
-                del payload
+            # Only these named numerical artifacts belong to the solver.
+            for name in (
+                "prepared.json", "prepared.json.tmp", "preconditioner_data.npz",
+                "solution.npy", "solution.xdmf", "solution.h5", "gmres_history.txt",
+                "diagnostics.json", "mesh_provenance.json", "solution.vtu", "city.vtu",
+            ):
+                (self.output_dir / name).unlink(missing_ok=True)
+            payload = offline.build_and_save_preconditioner_data()
+            if not self.preconditioner_path.is_file():
+                raise RuntimeError("Offline setup did not write the preconditioner")
+            if identity != self._identity():
+                raise RuntimeError("Mesh inputs changed during offline setup")
+            identity["preconditioner_sha256"] = _sha256(self.preconditioner_path)
+            temporary = self.manifest_path.with_suffix(".json.tmp")
+            temporary.write_text(json.dumps(identity, indent=2, sort_keys=True) + "\n")
+            temporary.replace(self.manifest_path)
+            del payload
         return self.preconditioner_path
 
     def solve(self):
+        """Solve with matching offline data, replacing previous solver outputs."""
+        if not self.output_dir.is_dir():
+            raise FileNotFoundError("Call prepare() before solve(); matching offline data is required")
+        with _case_lease(self.output_dir):
+            return self._solve()
+
+    def _solve(self):
         """Solve using offline data whose input/configuration manifest still matches."""
         if not self.manifest_path.is_file() or not self.preconditioner_path.is_file():
             raise FileNotFoundError(
@@ -373,59 +399,66 @@ class HelmholtzSimulator:
             "gmres_history.txt",
             "diagnostics.json",
         )
-        if any((self.output_dir / name).exists() for name in outputs):
-            raise FileExistsError(
-                "This case already has solve outputs; choose a fresh case directory"
-            )
         with _configured_backend(
             self._params(), self.parameters.threads_per_worker
         ) as (_, online):
-            with _case_lease(self.output_dir):
-                if any((self.output_dir / name).exists() for name in outputs):
-                    raise FileExistsError(
-                        "This case already has solve outputs; choose a fresh case directory"
-                    )
-                prepared_identity = json.loads(self.manifest_path.read_text())
-                self._verify_prepared_data(prepared_identity)
-                raw = online.solve()
-                self._verify_prepared_data(prepared_identity)
-                result = HelmholtzResult(
-                    **raw,
-                    output_dir=self.output_dir,
-                    mesh_path=self.mesh_path,
-                    fe_degree=self.parameters.fe_degree,
-                    mesh_name=self.parameters.mesh_name,
-                    prepared_identity=prepared_identity,
-                )
-                diagnostics = {
-                    "converged": result.converged,
-                    "iterations": result.iterations,
-                    "relative_residual": result.relative_residual,
-                    "gmres_history": result.gmres_history,
-                }
-                (self.output_dir / "diagnostics.json").write_text(
-                    json.dumps(diagnostics, indent=2) + "\n"
-                )
+            prepared_identity = json.loads(self.manifest_path.read_text())
+            self._verify_prepared_data(prepared_identity)
+            for name in outputs:
+                (self.output_dir / name).unlink(missing_ok=True)
+            _logger.info(
+                f"Solving Helmholtz equation at {self.parameters.frequency_hz:g} Hz "
+                f"(GMRES rtol={self.parameters.outer_rtol:.1e})"
+            )
+            raw = online.solve()
+            self._verify_prepared_data(prepared_identity)
+            result = HelmholtzResult(
+                **raw,
+                output_dir=self.output_dir,
+                mesh_path=self.mesh_path,
+                fe_degree=self.parameters.fe_degree,
+                mesh_name=self.parameters.mesh_name,
+                prepared_identity=prepared_identity,
+            )
+            diagnostics = {
+                "converged": result.converged,
+                "iterations": result.iterations,
+                "relative_residual": result.relative_residual,
+                "gmres_history": result.gmres_history,
+            }
+            (self.output_dir / "diagnostics.json").write_text(
+                json.dumps(diagnostics, indent=2) + "\n"
+            )
+        status = "converged" if result.converged else "FAILED to converge"
+        log_result = _logger.info if result.converged else _logger.error
+        log_result(
+            f"Helmholtz solve {status} after {result.iterations} iterations; "
+            f"true relative residual={result.relative_residual:.3e}"
+        )
         return result
 
     def run(self):
         """Perform offline setup followed by the online solve."""
-        self.prepare()
-        return self.solve()
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        with _case_lease(self.output_dir):
+            self._prepare()
+            return self._solve()
 
     def simulate(self, *, output_path=None, unit="") -> "VolumeMesh":
         """Run and return a DTCC VolumeMesh with real, imaginary and amplitude fields.
 
         The numerical result and convergence details remain on result and
-        diagnostics. output_path optionally saves the returned mesh using its
-        file extension. Vertex fields require P1 elements.
+        diagnostics. The returned mesh is saved as solution.vtu in output_dir;
+        output_path selects another export destination. Vertex fields require P1 elements.
         """
         if self.parameters.fe_degree != 1:
             raise ValueError("simulate() returns vertex fields and requires FE degree 1")
+        if output_path is None:
+            output_path = self.output_dir / "solution.vtu"
         if output_path is not None:
             from .results import _checked_export_path
 
-            output_path = _checked_export_path(output_path)
+            output_path = _checked_export_path(output_path, mesh_path=self.mesh_path if self.mesh is None else None)
         self.result = self.run()
         self.diagnostics = {
             "converged": self.result.converged,

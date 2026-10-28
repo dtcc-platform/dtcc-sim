@@ -15,9 +15,11 @@ repeat another demo; prefer improving an existing example over adding one.
 - Prefer small, offline inputs where possible. State environments, live-data
   requirements, units and limitations in the [demo catalog](../demos/README.md).
   Missing required dependencies or data must fail clearly, without fake results.
-- Show a useful visualization without a flag. Save only useful artifacts under
-  `output/`; directory creation belongs in the library. Supporting APIs must
-  allow safe repeated runs without manual path edits or deleting valuable cases.
+- Use Core’s `object.plot(...)` as the main plotting entrypoint and show a useful
+  visualization without a flag. Save only useful artifacts under
+  `output/`; directory creation belongs in the library. Solvers handle
+  directory creation internally. Repeated runs replace their own outputs in the
+  specified directory and preserve unrelated files.
 - Keep CLIs, deployment, detached launchers, benchmarks and reproduction tooling
   outside `demos/`. Numerical acceptance and export round-trip checks belong in
   tests. Keep headless setup, mocking and temporary output redirection there too.

@@ -32,3 +32,24 @@ def test_fenics_environment_import_smoke():
 
     importlib.import_module("dtcc_core")
     importlib.import_module("dtcc_sim")
+
+
+@pytest.mark.parametrize("level", ["WARNING", "INFO", "invalid"])
+def test_fenics_log_level_configuration(level):
+    import os
+    import subprocess
+    import sys
+
+    pytest.importorskip("dolfinx")
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import dtcc_sim; from dolfinx import log; print(log.get_log_level().name)"],
+        env={**os.environ, "DTCC_FENICSX_LOG_LEVEL": level},
+        capture_output=True, text=True,
+    )
+    if level == "invalid":
+        assert result.returncode != 0
+        assert "DTCC_FENICSX_LOG_LEVEL must be" in result.stderr
+    else:
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip().splitlines()[-1] == level

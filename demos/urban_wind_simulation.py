@@ -13,20 +13,20 @@ from pathlib import Path
 from mpi4py import MPI
 
 import dtcc_core.datasets as datasets
-from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
+from dtcc_sim import NavierStokesSolver, NavierStokesParameters
 
 # Output directory
-output_dir = Path(__file__).parent / "output"
-output_dir.mkdir(exist_ok=True)
+output_dir = Path("output/urban_wind_simulation")
 
-# Gothenburg city centre (SWEREF 99 TM)
-x0 = 319_995.96
-y0 = 6_399_009.72
+# Poseidon in Gothenburg (EPSG:3006)
+center_x = 319995.962899
+center_y = 6399009.716755
 L = 200.0
-bounds = (x0, y0, x0 + L, y0 + L)
+bounds = (center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
 # Simulation parameters
-params = UrbanWindParameters(
+params = NavierStokesParameters(
+    mesh_max_mesh_size=12.5,
     wind_speed=5.0,
     wind_dir_deg=270.0,
     nu_t=2.0,
@@ -66,5 +66,5 @@ if MPI.COMM_WORLD.rank == 0:
     surface_mesh.save(surface_mesh_path)
 
 # Run wind simulation
-sim = UrbanWindSimulator(bounds=bounds, params=params)
-sim.simulate(output_path=str(output_dir / "urban_wind_simulation.xdmf"))
+sim = NavierStokesSolver(bounds=bounds, params=params, output_dir="output/urban_wind_simulation")
+sim.simulate()

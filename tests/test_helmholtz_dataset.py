@@ -9,8 +9,8 @@ from dtcc_core.model import VolumeMesh, Field
 import dtcc_core.datasets as datasets
 import dtcc_sim.datasets  # noqa: F401 - Register simulation datasets.
 from dtcc_sim.helmholtz.dataset import (
-    HelmholtzSimulationArgs,
-    HelmholtzSimulationDataset,
+    UrbanNoiseSimulationArgs,
+    UrbanNoiseSimulationDataset,
 )
 
 
@@ -39,6 +39,8 @@ def fake_workflow(monkeypatch):
         vertices=np.array([[0.0, 0, 0], [1.0, 0, 0], [0.0, 1, 0], [0.0, 0, 1]]),
         cells=np.array([[0, 1, 2, 3]], dtype=np.int64),
     )
+
+    mesh.boundary_markers = {(0, 1, 2): -1, (0, 1, 3): 0, (0, 2, 3): -2, (1, 2, 3): -3}
 
     def to_dtcc(*, unit):
         calls["unit"] = unit
@@ -86,7 +88,7 @@ def test_registration_and_description_do_not_execute(monkeypatch, run_args):
         "dtcc_sim.helmholtz.workflow.HelmholtzWorkflow.run",
         lambda *args: pytest.fail("must not execute"),
     )
-    descriptor = datasets.helmholtz_simulation
+    descriptor = datasets.urban_noise_simulation
     description = descriptor.describe()
     assert description["data_category"] == "simulation"
     assert description["python_return_type"] == "dtcc_core.model.VolumeMesh"
@@ -114,14 +116,14 @@ def test_supplied_mesh_crs_is_declared_not_assumed(run_args, mesh_crs, expected)
     request = dict(run_args)
     request.pop("mesh_cache_dir")
     request.update(mesh_path="local-box.xdmf", mesh_crs=mesh_crs)
-    descriptor = datasets.helmholtz_simulation
+    descriptor = datasets.urban_noise_simulation
     context = descriptor.create_context(descriptor.validate(request))
     assert context.metadata.crs == expected
     assert context.request.parameters["mesh_crs"] == mesh_crs
 
 
 def test_generated_mesh_context_uses_epsg3006(run_args):
-    descriptor = datasets.helmholtz_simulation
+    descriptor = datasets.urban_noise_simulation
     assert descriptor.create_context(descriptor.validate(run_args)).metadata.crs == [
         "EPSG:3006"
     ]
@@ -131,7 +133,7 @@ def test_generated_mesh_context_uses_epsg3006(run_args):
 
 def test_generated_mesh_dispatch_and_native_fields(run_args, fake_workflow):
     calls, result, mesh = fake_workflow
-    returned = datasets.helmholtz_simulation(
+    returned = datasets.urban_noise_simulation(
         **run_args, strict_live=True, field_unit="Pa"
     )
     assert isinstance(returned, VolumeMesh)
@@ -144,13 +146,13 @@ def test_generated_mesh_dispatch_and_native_fields(run_args, fake_workflow):
     assert len(returned.fields) == 3 and all(
         field.unit == "Pa" for field in returned.fields
     )
-    assert not run_args["output_dir"].exists()  # The workflow is mocked.
+    assert (run_args["output_dir"] / "solution.vtu").is_file()
 
 
 def test_explicit_mesh_passes_declared_h(run_args, fake_workflow):
     run_args.pop("mesh_cache_dir")
     run_args["mesh_path"] = "provided.xdmf"
-    HelmholtzSimulationDataset().build(HelmholtzSimulationArgs(**run_args))
+    UrbanNoiseSimulationDataset().build(UrbanNoiseSimulationArgs(**run_args))
     calls, _, _ = fake_workflow
     assert calls["mesh_path"].name == "provided.xdmf" and calls["mesh_h"] == 5
     assert "mesh_parameters" not in calls
@@ -160,7 +162,7 @@ def test_explicit_mesh_passes_declared_h(run_args, fake_workflow):
 def test_single_file_serialization_delegates(
     run_args, fake_workflow, monkeypatch, format
 ):
-    descriptor = HelmholtzSimulationDataset()
+    descriptor = UrbanNoiseSimulationDataset()
 
     def export(mesh, fmt):
         assert mesh is fake_workflow[2] and fmt == format
@@ -169,7 +171,7 @@ def test_single_file_serialization_delegates(
 
     monkeypatch.setattr(descriptor, "export_to_bytes", export)
     assert (
-        descriptor.build(HelmholtzSimulationArgs(**run_args, format=format))
+        descriptor.build(UrbanNoiseSimulationArgs(**run_args, format=format))
         == b"exported fields"
     )
 
@@ -192,21 +194,21 @@ def test_single_file_serialization_delegates(
 def test_invalid_arguments_rejected_before_dispatch(run_args, fake_workflow, update):
     run_args.update(update)
     with pytest.raises((ValidationError, ValueError)):
-        datasets.helmholtz_simulation(**run_args)
+        datasets.urban_noise_simulation(**run_args)
     assert "ran" not in fake_workflow[0]
 
 
-@pytest.mark.parametrize("missing", ["h", "output_dir", "mesh_cache_dir"])
+@pytest.mark.parametrize("missing", ["h", "output_dir"])
 def test_required_run_settings(run_args, missing):
     run_args.pop(missing)
     with pytest.raises(ValidationError):
-        HelmholtzSimulationArgs(**run_args)
+        UrbanNoiseSimulationArgs(**run_args)
 
 
 def test_failed_convergence_is_not_returned_as_a_field(run_args, fake_workflow):
     fake_workflow[1].converged = False
     with pytest.raises(RuntimeError, match="did not converge"):
-        datasets.helmholtz_simulation(**run_args)
+        datasets.urban_noise_simulation(**run_args)
     assert "unit" not in fake_workflow[0]
 
 
@@ -217,21 +219,16 @@ def test_daemonic_worker_rejected_before_start(run_args, fake_workflow, monkeypa
         multiprocessing, "current_process", lambda: SimpleNamespace(daemon=True)
     )
     with pytest.raises(RuntimeError, match="non-daemonic"):
-        datasets.helmholtz_simulation(**run_args)
+        datasets.urban_noise_simulation(**run_args)
     assert "ran" not in fake_workflow[0]
 
 
 def test_example_plans_without_execution(tmp_path, monkeypatch):
-    import importlib.util
-    from pathlib import Path
+    from dtcc_sim.helmholtz import dataset_cli as demo
 
-    path = Path(__file__).resolve().parents[1] / "demos/dataset_helmholtz.py"
-    spec = importlib.util.spec_from_file_location("dataset_helmholtz_demo", path)
-    demo = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(demo)
     monkeypatch.setattr(
         datasets,
-        "helmholtz_simulation",
+        "urban_noise_simulation",
         lambda **kwargs: pytest.fail("must not execute"),
     )
     assert (
@@ -264,7 +261,7 @@ def _completed_run(context):
 
 
 def test_completed_context_carries_diagnostics_and_identity(run_args, fake_workflow):
-    mesh = datasets.helmholtz_simulation(**run_args, field_unit="Pa")
+    mesh = datasets.urban_noise_simulation(**run_args, field_unit="Pa")
     context = mesh.dataset_context
     run = _completed_run(context)
     assert run["converged"] and run["iterations"] == 3
@@ -286,7 +283,7 @@ def test_dataset_package_bytes_preserve_completed_run(
 ):
     from dtcc_core.datasets import load_model_package
 
-    encoded = datasets.helmholtz_simulation(**run_args, format="dtccpkg")
+    encoded = datasets.urban_noise_simulation(**run_args, format="dtccpkg")
     path = tmp_path / "result.dtccpkg"
     path.write_bytes(encoded)
     mesh = load_model_package(path)
@@ -297,7 +294,7 @@ def test_dataset_package_bytes_preserve_completed_run(
 
 
 def test_context_metadata_is_isolated_between_requests(run_args, fake_workflow):
-    descriptor = HelmholtzSimulationDataset()
+    descriptor = UrbanNoiseSimulationDataset()
     args = descriptor.validate(run_args)
     descriptor.build(args)
     assert _completed_run(descriptor.create_context(args))["iterations"] == 3
@@ -315,13 +312,41 @@ def test_context_metadata_is_isolated_between_requests(run_args, fake_workflow):
 def test_invalid_diagnostics_not_exported(run_args, fake_workflow, invalid):
     fake_workflow[1].relative_residual = invalid
     with pytest.raises(RuntimeError, match="invalid true residual"):
-        datasets.helmholtz_simulation(**run_args)
+        datasets.urban_noise_simulation(**run_args)
     assert "unit" not in fake_workflow[0]
 
 
 def test_standalone_dtcc_remains_a_fields_only_export(run_args, fake_workflow):
-    raw = datasets.helmholtz_simulation(**run_args, format="dtcc")
+    raw = datasets.urban_noise_simulation(**run_args, format="dtcc")
     mesh = VolumeMesh()
     mesh.from_proto(raw)
     assert len(mesh.fields) == 3
     assert mesh.dataset_context is None
+
+
+def test_noise_name_replaces_equation_name():
+    import dtcc_sim
+
+    assert "urban_noise_simulation" in datasets.list()
+    assert "helmholtz_simulation" not in datasets.list()
+    assert "noise_simulation" not in datasets.list()
+    assert dtcc_sim.UrbanNoiseSimulationDataset is UrbanNoiseSimulationDataset
+    assert datasets.urban_noise_simulation.name == "urban_noise_simulation"
+    assert datasets.urban_noise_simulation.title == "Urban Noise Simulation"
+    assert not hasattr(dtcc_sim, "HelmholtzSimulationDataset")
+    assert not hasattr(dtcc_sim, "NoiseSimulationDataset")
+
+
+def test_generated_city_surface_is_exported_and_replaced(run_args, fake_workflow):
+    import meshio
+
+    datasets.urban_noise_simulation(**run_args)
+    path = run_args["output_dir"] / "city.vtu"
+    city = meshio.read(path)
+    np.testing.assert_array_equal(city.cells_dict["triangle"], [[0, 1, 2], [0, 1, 3]])
+    np.testing.assert_array_equal(city.cell_data_dict["markers"]["triangle"], [-1, 0])
+    np.testing.assert_array_equal(city.points, fake_workflow[2].vertices)
+    assert not city.point_data
+    path.write_bytes(b"previous output")
+    datasets.urban_noise_simulation(**run_args)
+    assert len(meshio.read(path).cells_dict["triangle"]) == 2

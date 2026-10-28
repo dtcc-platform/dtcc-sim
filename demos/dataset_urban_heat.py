@@ -22,27 +22,24 @@ This is the recommended approach for production workflows and
 when integrating urban heat simulation into larger analysis pipelines.
 """
 
-from pathlib import Path
 import dtcc_sim
 
-# Create output directory
-Path("output").mkdir(exist_ok=True)
-
-# Define geographic bounds (200m x 200m area in Gothenburg)
-x0 = 319995.962899
-y0 = 6399009.716755
+# Poseidon in Gothenburg (EPSG:3006); 200 m × 200 m domain
+center_x = 319995.962899
+center_y = 6399009.716755
 L = 200.0
 
-bounds = (x0 - 0.5 * L, y0 - 0.5 * L, x0 + 0.5 * L, y0 + 0.5 * L)
+bounds = (center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
 # Create dataset arguments with simulation parameters
 dataset_args = dtcc_sim.UrbanHeatSimulationArgs(
     bounds=bounds,
+    output_dir="output/dataset_urban_heat",
     wall_value=25.0,
     ground_value=20.0,
     open_value=22.0,
     T_ambient=22.0,
-    mesh_max_mesh_size=30.0,
+    mesh_max_mesh_size=12.5,
     mesh_domain_height=60.0,
 )
 

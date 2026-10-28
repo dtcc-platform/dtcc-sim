@@ -7,10 +7,14 @@ from dolfinx import fem, mesh as dmesh
 
 from .params import PARAMS
 
+from dtcc_core.common import get_python_logger
+
+_logger = get_python_logger("dtcc-sim")
+
 
 def tprint(msg: str) -> None:
     if MPI.COMM_WORLD.rank == 0:
-        print(msg, flush=True)
+        _logger.info(msg)
 
 
 def _to_np_int_list(obj_array) -> list[np.ndarray]:

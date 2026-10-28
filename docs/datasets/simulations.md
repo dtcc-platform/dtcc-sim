@@ -11,15 +11,16 @@ print(datasets.traffic_simulation.describe())
 ```
 
 Call a dataset with `bounds=[xmin, ymin, xmax, ymax]` to run it.
-Helmholtz additionally requires explicit `h`, `output_dir`, and either
-`mesh_cache_dir` for generation or `mesh_path` for an existing XDMF mesh.
+`urban_noise_simulation` additionally requires explicit `h`, `output_dir`, and either
+`mesh_path` for an existing XDMF mesh or generation settings. Generated meshes
+use a sibling `<output_dir>-mesh-cache` by default; `mesh_cache_dir` overrides it.
 Dataset execution fetches upstream geospatial data. Heat, wind and air-quality
 reconstruction also require the
 [FEniCSx environment](../installation.md#fenicsx-environment).
 
 | Dataset | Python result | Formats | Output |
 | --- | --- | --- | --- |
-| `helmholtz_simulation` | `dtcc_core.model.VolumeMesh` | `dtccpkg`, `dtcc`, `vtu` | Complex Helmholtz field: real, imaginary, and amplitude; see [workflow](../helmholtz.md#registered-dtcc-dataset). |
+| `urban_noise_simulation` | `dtcc_core.model.VolumeMesh` | `dtccpkg`, `dtcc`, `vtu` | Complex Helmholtz field: real, imaginary, and amplitude; see [workflow](../helmholtz.md#registered-dtcc-dataset). |
 | `urban_heat_simulation` | `dtcc_core.model.VolumeMesh` | `xdmf`, `dtcc` | Temperature field from a steady-state heat equation. |
 | `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf`, `dtcc` | Scalar concentration field reconstructed from station observations. |
 | `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `dtcc` | Velocity, pressure and speed fields from CFD. |
