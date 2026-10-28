@@ -1,0 +1,21 @@
+name: fenicsx-env-complex
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - fenics-dolfinx=0.11.0
+  - petsc=*=complex_*
+  - petsc4py
+  - mpich
+  - cxx-compiler
+  - cmake>=3.24
+  - ninja
+  - pyvista
+  - matplotlib
+  - h5py
+  - numpy
+  - scipy
+  - pymetis
+  - threadpoolctl
+  - uv

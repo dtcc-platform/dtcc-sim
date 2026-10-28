@@ -24,6 +24,8 @@ Run Python scripts in the installed environment with `uv run python`.
 This environment supports traffic simulation and dataset inspection. For heat,
 wind and air-quality reconstruction, follow the
 [FEniCSx installation guide](docs/installation.md#fenicsx-environment).
+The Helmholtz solver requires complex PETSc; use the
+[complex-number environment](docs/installation.md#complex-number-environment).
 
 ## Quickstart
 

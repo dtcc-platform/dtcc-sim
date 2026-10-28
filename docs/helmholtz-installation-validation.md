@@ -1,6 +1,9 @@
 # Helmholtz installation validation
 
-Use `environment-helmholtz.yml` in the [installation guide](installation.md#helmholtz-environment).
+Use the complex-number environment `fenicsx-env-complex` from
+`fenicsx-env-complex.yml`, described in the
+[installation guide](installation.md#complex-number-environment).
+Complex PETSc is required to run the Helmholtz solver.
 The native TetGen dependency requires CMake >=3.24; the recipe states that minimum
 explicitly. The installer uses CMake 3.31.10 and builds Mesher, TetGen and Core
 from pinned official sources. Tagged native persistence requires the Core

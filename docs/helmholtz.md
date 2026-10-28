@@ -10,7 +10,9 @@ space. It requires a complex PETSc/DOLFINx environment and one MPI rank.
 historical thesis reconstruction and validation of the selectable weights;
 these checks do not establish every configuration.
 
-Install the optional Python dependencies in the activated FEniCSx environment:
+The Helmholtz solver requires complex PETSc. Activate the
+[complex-number environment](installation.md#complex-number-environment),
+`fenicsx-env-complex`, then install the optional Python dependencies:
 
 ```bash
 uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[helmholtz]"
@@ -462,7 +464,7 @@ folder. The true residual still needs interpretation separately from GMRES's
 transformed-system convergence. `HelmholtzResult.load(output_dir)` reopens the
 completed numerical result and diagnostics without rerunning the solver.
 
-The [installation guide](installation.md#helmholtz-environment) provides the
+The [installation guide](installation.md#complex-number-environment) provides the
 separate complex-PETSc runtime. Local Python, foreground CLI and detached Linux
 execution are supported. The general queued service excludes Helmholtz from
 both discovery and task registration; dedicated supervision and deployment are

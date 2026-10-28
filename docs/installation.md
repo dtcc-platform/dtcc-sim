@@ -17,19 +17,27 @@ solver execution requires the FEniCSx environment below.
 
 ## FEniCSx environment
 
+Use the real-number environment `fenicsx-env` for heat, wind and reconstruction.
+The Helmholtz solver requires complex PETSc and uses the
+[complex-number environment](#complex-number-environment), `fenicsx-env-complex`.
+Both environments use DOLFINx 0.11.0 and can share the same editable Sim checkout.
+
 Install a Conda-compatible distribution, then create the environment from the
 checked-in recipe:
 
 ```bash
-conda env create -f environment-fenicsx.yml
+source ~/miniconda3/etc/profile.d/conda.sh
+conda env create -f fenicsx-env.yml
 conda activate fenicsx-env
 uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,service]"
 ```
 
-The recipe supplies Python 3.12, DOLFINx 0.11.0, MPI/PETSc bindings, PyVista and
-uv. DOLFINx 0.11.0 is the supported solver baseline, also used by the Docker
-image. Other versions are outside the tested support contract. The editable
-installation adds Sim, its pinned Core revision, and the test and service extras.
+The recipe supplies Python 3.12, DOLFINx 0.11.0, real PETSc, MPI bindings,
+PyVista, Matplotlib, native build tools and uv. Adjust the initialization path
+if Conda is installed elsewhere. DOLFINx 0.11.0 is the supported solver baseline,
+also used by the Docker image. Other versions are outside the tested support
+contract. The editable installation adds Sim, its pinned Core revision, and the
+test and service extras.
 
 Verify the environment:
 
@@ -41,7 +49,7 @@ For later shells, activate it with `conda activate fenicsx-env`. To update an
 existing environment to the checked-in recipe:
 
 ```bash
-conda env update -f environment-fenicsx.yml
+conda env update -f fenicsx-env.yml
 ```
 
 Keep this environment separate from `.venv`. After activating Conda, use
@@ -49,26 +57,40 @@ Keep this environment separate from `.venv`. After activating Conda, use
 environment. The Conda workflow uses its installed scientific stack and does
 not use `uv.lock`. Docker uses the same Conda plus `uv pip` approach.
 
-## Helmholtz environment
+## Complex-number environment
 
-Helmholtz needs complex PETSc. Create a separate environment rather than
-changing the environment used for heat and wind:
+The complex-number FEniCSx environment is named `fenicsx-env-complex`.
+It provides complex PETSc, which is required to run the Helmholtz solver.
+PETSc's scalar type is selected at build time, so keep this environment
+separate from the real-number environment used for heat, wind and reconstruction:
 
 ```bash
-conda env create -f environment-helmholtz.yml
-conda activate dtcc-helmholtz
+conda env create -f fenicsx-env-complex.yml
+conda activate fenicsx-env-complex
 uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[helmholtz,helmholtz-mesh]"
 python -m dtcc_sim.helmholtz.check_runtime --workers 16 --mesh-generation
 ```
 
 The recipe supplies the complex numerical stack, a Conda C++ compiler,
-CMake 3.24 or later, and Ninja for native dependencies. The TetGen wrapper
-requires CMake 3.24 or later; an older system CMake is insufficient. Install
-the Python extras after activating the environment. The
-`helmholtz-mesh` extra obtains the volume-meshing dependencies through Core,
+CMake 3.24 or later, Ninja for native dependencies, and Matplotlib for the
+visual demo. The TetGen wrapper requires CMake 3.24 or later; an older system
+CMake is insufficient. Install the Python extras after activating the environment.
+The `helmholtz-mesh` extra obtains the volume-meshing dependencies through Core,
 including its Git-pinned TetGen wrapper. This installation requires network
 access and may compile native code. When only using existing XDMF meshes,
 install `.[helmholtz]` and omit `--mesh-generation` from the check.
+
+Both environments can use the same editable Sim checkout. Select the runtime
+before starting Python:
+
+```bash
+conda activate fenicsx-env          # Real-number environment
+conda activate fenicsx-env-complex  # Complex-number environment
+```
+
+To update the complex environment, run
+`conda env update -f fenicsx-env-complex.yml`. Restart Python or the notebook
+kernel when changing environments.
 
 The readiness command imports libraries, verifies complex PETSc, the supported
 DOLFINx version, one MPI rank, and whether the current process can start the
@@ -81,6 +103,29 @@ Helmholtz execution in this contribution uses Python or the local command-line
 launchers. It is excluded from the queued service registry; the general worker
 and Docker/Compose deployment do not supply its dedicated complex runtime.
 See the [Helmholtz quick start](helmholtz-quickstart.md) for a complete run.
+
+## MPI on macOS
+
+MPICH's default OFI provider can fail during initialization or finalization on
+macOS. If the error mentions `OFI poll failed`, try the TCP provider:
+
+```bash
+FI_PROVIDER=tcp python -c "from mpi4py import MPI; print(MPI.COMM_WORLD.size)"
+```
+
+If that succeeds, save the setting for both environments and reactivate the one
+you want to use:
+
+```bash
+conda env config vars set -n fenicsx-env FI_PROVIDER=tcp
+conda env config vars set -n fenicsx-env-complex FI_PROVIDER=tcp
+conda deactivate
+conda activate fenicsx-env-complex
+```
+
+The setting applies to these environments, rather than to every shell. See the
+[MPICH macOS issue](https://github.com/pmodels/mpich/issues/7760) and
+[provider configuration](https://github.com/pmodels/mpich#runtime-configuration-more-flexible).
 
 ## Core dependency and local development
 

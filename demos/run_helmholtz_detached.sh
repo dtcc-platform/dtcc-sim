@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 /path/to/run-config.json (activate the Helmholtz environment first)" >&2
+    echo "Usage: $0 /path/to/run-config.json (activate the complex-number environment fenicsx-env-complex first)" >&2
     exit 2
 fi
 config="$(python -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).expanduser().resolve())' "$1")"

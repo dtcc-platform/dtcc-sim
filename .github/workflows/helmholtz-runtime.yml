@@ -12,7 +12,7 @@ on:
       - 'tools/*helmholtz*.py'
       - 'tests/test_helmholtz*.py'
       - 'pyproject.toml'
-      - 'environment-helmholtz.yml'
+      - 'fenicsx-env-complex.yml'
   pull_request:
     paths:
       - '.github/workflows/helmholtz-runtime.yml'
@@ -23,7 +23,7 @@ on:
       - 'tools/*helmholtz*.py'
       - 'tests/test_helmholtz*.py'
       - 'pyproject.toml'
-      - 'environment-helmholtz.yml'
+      - 'fenicsx-env-complex.yml'
   workflow_dispatch:
     inputs:
       real_workflow:

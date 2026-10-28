@@ -27,7 +27,7 @@ def test_fenics_environment_import_smoke():
         pytest.skip(
             "FEniCSx runtime is not active "
             f"(missing {missing}); create it with "
-            "conda env create -f environment-fenicsx.yml"
+            "conda env create -f fenicsx-env.yml"
         )
 
     importlib.import_module("dtcc_core")

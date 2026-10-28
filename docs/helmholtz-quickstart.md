@@ -1,7 +1,9 @@
 # Run a Helmholtz simulation
 
-Run commands from the checkout root. Use Python 3.12 and complex PETSc with
-DOLFINx 0.11.0. Keep this environment separate from the one used for heat/wind.
+Run commands from the checkout root. The Helmholtz solver requires complex
+PETSc with DOLFINx 0.11.0 and Python 3.12. Use the complex-number environment
+`fenicsx-env-complex`, separate from the real-number `fenicsx-env` environment
+used for heat, wind and reconstruction.
 
 ## 1. Install and check the runtime
 
@@ -36,8 +38,8 @@ the VTK packaging requirements. The pinned recipe is Linux-specific;
 other platforms have not been validated by that recipe.
 
 ```bash
-conda env create -f environment-helmholtz.yml
-conda activate dtcc-helmholtz
+conda env create -f fenicsx-env-complex.yml
+conda activate fenicsx-env-complex
 uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[helmholtz,helmholtz-mesh]"
 python -m dtcc_sim.helmholtz.check_runtime --workers 16 --mesh-generation
 ```

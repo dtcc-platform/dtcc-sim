@@ -8,7 +8,7 @@ when reporting a bug and describe the user-visible behavior of a proposed change
 Follow the [installation instructions](README.md#installation), then run commands
 from the repository root. Sim is installed in editable mode, so Python edits
 take effect immediately. See the [installation guide](docs/installation.md) for
-the FEniCSx environment and local Core overrides.
+the real-number and complex-number FEniCSx environments and local Core overrides.
 
 | Task | Command |
 | --- | --- |
@@ -41,13 +41,23 @@ Run simulation checks with:
 uv run pytest -m "simulation and not expensive"
 ```
 
-FEniCSx tests skip when the runtime is absent. To exercise numerical solvers,
-activate the [FEniCSx environment](docs/installation.md#fenicsx-environment) and
-run:
+FEniCSx tests skip when the runtime is absent. To exercise heat, wind and
+reconstruction, activate the real-number
+[FEniCSx environment](docs/installation.md#fenicsx-environment) and run:
 
 ```bash
 conda activate fenicsx-env
-python -m pytest -m "fenics and not expensive"
+python -m pytest tests/test_urban_heat_dataset_v2.py tests/test_urban_wind.py \
+    tests/test_smooth_reconstruction.py
+```
+
+The Helmholtz solver requires complex PETSc. Run its numerical accuracy checks
+in the [complex-number environment](docs/installation.md#complex-number-environment):
+
+```bash
+conda activate fenicsx-env-complex
+uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,helmholtz,helmholtz-mesh]"
+python -m pytest tests/test_helmholtz_manufactured.py tests/test_helmholtz_numerical.py
 ```
 
 Passing tests with mocked solvers does not validate the numerical solvers.

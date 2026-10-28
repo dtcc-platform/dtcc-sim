@@ -2,8 +2,9 @@
 
 This example generates its own 1 × 1 × 1 m tetrahedral box and uses the public
 `HelmholtzSimulator(..., params=params).simulate()` API. It needs no city download,
-server files or thesis inputs. Use the tested Helmholtz environment described in
-[the installation guide](helmholtz-reproducible-install.md), with Matplotlib available.
+server files or thesis inputs. Use the
+[complex-number environment](installation.md#complex-number-environment),
+`fenicsx-env-complex`, which supplies the required complex PETSc and Matplotlib.
 
 From the repository root, with that environment active:
 
