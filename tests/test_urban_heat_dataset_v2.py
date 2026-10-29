@@ -73,7 +73,7 @@ def test_urban_heat_attaches_temperature_field_to_dtcc_mesh(monkeypatch):
         return dtcc_mesh
 
     monkeypatch.setattr(
-        "dtcc_sim.heat._attach_scalar_field_to_volume_mesh",
+        "dtcc_sim.heat.solver._attach_scalar_field_to_volume_mesh",
         fake_attach,
     )
 
@@ -111,7 +111,7 @@ def test_urban_heat_dataset_xdmf_serializes_fenics_solution(monkeypatch):
         assert fmt == "xdmf"
         return b"xdmf"
 
-    monkeypatch.setattr("dtcc_sim.heat.HeatSolver", FakeSimulator)
+    monkeypatch.setattr("dtcc_sim.heat.solver.HeatSolver", FakeSimulator)
     monkeypatch.setattr(dataset, "export_to_bytes", fake_export)
 
     payload = dataset.build(
@@ -135,7 +135,7 @@ def test_urban_heat_dataset_passes_boundary_parameters(monkeypatch):
         def simulate(self):
             return volume_mesh
 
-    monkeypatch.setattr("dtcc_sim.heat.HeatSolver", FakeSimulator)
+    monkeypatch.setattr("dtcc_sim.heat.solver.HeatSolver", FakeSimulator)
 
     result = dataset.build(
         UrbanHeatSimulationArgs(

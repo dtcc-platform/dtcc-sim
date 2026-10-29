@@ -33,5 +33,10 @@ geometric execution for the claims it demonstrates.
 Import the Core and solver APIs needed for the example. Linear Helmholtz demos
 use `workers=1`: the parallel backend uses multiprocessing `spawn`, which
 re-executes top-level scripts. Teach parallel execution through the launcher.
-Helmholtz amplitude is not sound-pressure level or dB. Existing demos are not
-all compliant yet; apply these guidelines when adding or revising them.
+Helmholtz amplitude is not sound-pressure level or dB.
+
+City volume examples use the Poseidon domain and common LOD2/cache settings
+listed in the [demo catalog](../demos/README.md). The Stockholm sensor example
+keeps its coverage-driven bounds and resolution. Analytical equation demos keep
+their synthetic meshes. Keep changes to shared city settings consistent across
+heat, wind, reconstruction and noise examples.

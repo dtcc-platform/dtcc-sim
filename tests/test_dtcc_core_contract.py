@@ -20,6 +20,7 @@ UPSTREAM_DATASET_CONTRACTS = [
             "min_building_detail",
             "raster_cell_size",
             "raster_radius",
+            "repair_boundary_corners",
         },
         "dtcc_core.model.VolumeMesh",
     ),

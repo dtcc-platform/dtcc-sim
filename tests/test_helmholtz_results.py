@@ -248,7 +248,7 @@ def test_dolfinx_mesh_exports_fields_and_tags_without_core_reader(
     from dolfinx import mesh as dmesh, fem, io
     import dtcc_core.io
     from dtcc_sim.helmholtz import HelmholtzParameters, HelmholtzResult
-    from dtcc_sim.helmholtz.simulator import _mesh_input_hashes, _runtime_versions
+    from dtcc_sim.helmholtz.solver import _mesh_input_hashes, _runtime_versions
 
     mesh = dmesh.create_unit_cube(MPI.COMM_WORLD, 1, 1, 1)
     mesh.topology.create_connectivity(2, 3)

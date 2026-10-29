@@ -45,7 +45,7 @@ print(metadata["description"])
 
 Importing `dtcc_sim.datasets` registers the simulation datasets with Core.
 This example reads local metadata. To run a traffic simulation for Gothenburg,
-see the [traffic demo](demos/traffic.py), which downloads road and population
+see the [traffic demo](demos/dataset_traffic.py), which downloads road and population
 and employment data and plots the resulting flows.
 
 ## Examples and documentation

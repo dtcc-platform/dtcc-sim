@@ -1,91 +1,22 @@
-"""
-Lid-driven cavity flow (3-D)
-=============================
-
-Classic benchmark: a unit cube [0,1]³ with no-slip walls on all faces
-except the top (z=1), which moves at constant tangential velocity in the
-+x direction (the "lid").
-
-The solver is set up by using the NavierStokesSolver in direct-mesh
-mode.  The lid velocity is imposed via a custom inlet_expression on
-the top face (inlet_marker=-2).  All other faces are no-slip walls.
-Since this is a fully enclosed cavity, outlet_marker=0 tells the solver
-to pin pressure at a single point instead of applying a zero-pressure
-outflow BC.
-
-This is a well-known recirculating flow — you should see a large
-primary vortex in the xz mid-plane when viewed in ParaView.
-
-Output is saved as XDMF.
-"""
+"""Stationary cavity flow with a smooth tangential lid [m/s]."""
 
 import numpy as np
+from dtcc_core import BoxMesh
+from dtcc_sim import NavierStokesParameters, NavierStokesSolver
+
+mesh = BoxMesh(16, 16, 16)
+mesh.boundary_markers[mesh.boundary_markers != -2] = -1
 
 
-# ---- build mesh and markers ----
-import dolfinx.mesh
-from dolfinx.mesh import exterior_facet_indices
-from mpi4py import MPI
+def lid(x):
+    return np.array([1.6*x[0]*(1-x[0])*x[1]*(1-x[1]),
+                     np.zeros(x.shape[1]), np.zeros(x.shape[1])])
 
-N = 10  # cells per direction
-mesh = dolfinx.mesh.create_box(
-    MPI.COMM_WORLD,
-    [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]],
-    [N, N, N],
-    dolfinx.mesh.CellType.tetrahedron,
-)
 
-fdim = mesh.topology.dim - 1
-mesh.topology.create_entities(fdim)
-mesh.topology.create_connectivity(fdim, mesh.topology.dim)
-
-boundary_facets = exterior_facet_indices(mesh.topology)
-midpoints = dolfinx.mesh.compute_midpoints(mesh, fdim, boundary_facets)
-markers_vals = np.full(len(boundary_facets), -7, dtype=np.int32)
-
-tol = 1e-10
-for i, mp in enumerate(midpoints):
-    x, y, z = mp
-    if abs(z - 1.0) < tol:
-        markers_vals[i] = -2  # top  → lid (inlet)
-    else:
-        markers_vals[i] = -1  # all other faces → no-slip wall
-
-order = np.argsort(boundary_facets)
-facet_tags = dolfinx.mesh.meshtags(
-    mesh, fdim, boundary_facets[order], markers_vals[order]
-)
-
-# ---- solve ----
-from dtcc_sim import NavierStokesSolver, NavierStokesParameters
-
-# Override markers: top=-2 is the lid (inlet), no outlet (closed cavity).
-# Wind direction 270° (from west) → flow in +x → lid slides in +x.
-params = NavierStokesParameters(
-    wind_speed=1.0,
-    wind_dir_deg=270.0,  # flow in +x direction
-    inlet_marker=-2,  # top face is the lid
-    outlet_marker=None,  # no outlet — closed cavity
-    closed_cavity=True,  # use null-space for pressure
-    nu_t=0.01,  # higher eddy viscosity for stability (Re ≈ 100)
-    dt=0.02,
-    max_steps=1000,
-    min_steps=100,
-    steady_tolerance=1e-5,
-    velocity_degree=2,
-    pressure_degree=1,
-    wall_model="noslip",
-    inlet_profile="uniform",
-)
-
-sim = NavierStokesSolver(mesh=mesh, markers=facet_tags, params=params, output_dir="output/driven_cavity")
-u, p = sim.simulate()
-
-# ---- quick validation ----
-u_max = np.max(np.abs(u.x.array))
-print(f"\nDriven cavity converged.")
-print(f"  max |u| = {u_max:.4f}")
-print(f"  u finite: {np.all(np.isfinite(u.x.array))}")
-print(f"  p finite: {np.all(np.isfinite(p.x.array))}")
-print(f"  Output saved to {output_dir / 'driven_cavity_velocity.xdmf'}")
-print(f"                   and {output_dir / 'driven_cavity_pressure.xdmf'}")
+params = NavierStokesParameters(nu=.1, wind_speed=.1, inlet_marker=-2,
+                               closed_cavity=True, grad_div_gamma=1.)
+solver = NavierStokesSolver(mesh=mesh, params=params, inlet_expression=lid,
+                           output_dir="output/driven_cavity")
+result = solver.simulate()
+result.info()
+result.plot(field="speed")

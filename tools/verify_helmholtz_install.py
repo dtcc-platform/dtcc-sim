@@ -32,7 +32,7 @@ def main():
     from dtcc_core.datasets import load_model_package
     from dtcc_core.datasets.package import export_model_package
     from dtcc_sim.helmholtz import HelmholtzResult,HelmholtzParameters,HelmholtzSolver
-    from dtcc_sim.helmholtz.simulator import _configured_backend
+    from dtcc_sim.helmholtz.solver import _configured_backend
     from dtcc_sim.helmholtz.check_runtime import inspect_runtime
     readiness=inspect_runtime(workers=2,mesh_generation=True);assert readiness['ready']
     write(R/'readiness.json',readiness)

@@ -84,7 +84,7 @@ def test_urban_wind_context_documents_cfd_model_and_presentation():
     assert manifest.presentation.limitations
     assert manifest.request.parameters["equations"] == "stokes"
     assert manifest.request.parameters["weather_aggregation"] == "nearest"
-    assert manifest.request.parameters["divergence_tolerance"] == 5e-3
+    assert manifest.request.parameters["divergence_tolerance"] == .1
     assert manifest.request.parameters["inlet_profile"] == "log_law"
 
 

@@ -8,166 +8,23 @@ for different urban surfaces (walls, roofs, ground, open boundaries).
 
 from __future__ import annotations
 
-from .output import _output_directory, _solution_path
+from ..timing import phase as timing_phase, timed, timed_run
+from ..meshing import prepare_city_mesh, publish_mesh_provenance
+from ..output import _output_directory, _solution_path, _export_city_surface
+from ..coordinates import input_crs, local_mesh_coordinates, write_coordinate_frame
+from .parameters import (
+    BndCat, BCSpec, HeatParameters, DirichletBCSpec, NeumannBCSpec, RobinBCSpec,
+)
 
-from enum import IntEnum
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional
 from pathlib import Path
 
 import numpy as np
 import dolfinx
-from pydantic import BaseModel, Field
 
 from dtcc_sim.fenics import *  # FEniCSx wrapper
 from dtcc_sim.fenics import _mesh_from_dtcc
 from dtcc_sim.smooth_reconstruction import _attach_scalar_field_to_volume_mesh
-
-
-# -----------------------------------------------------------------------------
-# Boundary categories (collapsed markers)
-# -----------------------------------------------------------------------------
-
-
-class BndCat(IntEnum):
-    """Boundary category enumeration for urban surfaces."""
-
-    WALL = 1
-    ROOF = 2
-    GROUND = 3
-    OPEN = 4
-
-
-# -----------------------------------------------------------------------------
-# Boundary condition specifications
-# -----------------------------------------------------------------------------
-
-
-class DirichletBCSpec(BaseModel):
-    """Dirichlet boundary condition: T = value"""
-
-    type: str = "dirichlet"
-    value: float = Field(..., description="Temperature value")
-
-
-class NeumannBCSpec(BaseModel):
-    """Neumann boundary condition: -k dT/dn = flux"""
-
-    type: str = "neumann"
-    flux: float = Field(..., description="Heat flux (outward normal)")
-
-
-class RobinBCSpec(BaseModel):
-    """Robin boundary condition: -k dT/dn = h(T - value)"""
-
-    type: str = "robin"
-    h: float = Field(..., description="Heat transfer coefficient")
-    value: float = Field(..., description="Reference temperature")
-
-
-BCSpec = Union[DirichletBCSpec, NeumannBCSpec, RobinBCSpec]
-
-
-# -----------------------------------------------------------------------------
-# Simulation parameters
-# -----------------------------------------------------------------------------
-
-
-class HeatParameters(BaseModel):
-    """Parameters for the steady heat equation.
-
-    This uses Pydantic BaseModel for validation and JSON schema generation,
-    making it compatible with the dtcc-core dataset system.
-    """
-
-    # PDE coefficients
-    kappa: float = Field(1.0, description="Thermal diffusivity coefficient", gt=0)
-    sigma: float = Field(
-        0.0,
-        description="Relaxation/reaction coefficient (for sigma*(T - T_ambient) term)",
-        ge=0,
-    )
-    T_ambient: float = Field(
-        0.0,
-        description="Ambient temperature (reference for relaxation and open boundaries)",
-    )
-
-    # Function space
-    degree: int = Field(
-        1, description="Polynomial degree for finite element space", ge=1, le=3
-    )
-
-    # Boundary conditions (using dict representation for Pydantic compatibility)
-    # Default: hot buildings, ambient open boundary (anomaly form)
-    wall_bc_type: str = Field(
-        "robin", description="BC type for walls: dirichlet, neumann, or robin"
-    )
-    wall_value: float = Field(
-        1.0, description="Temperature/reference value for wall BC"
-    )
-    wall_h: float = Field(
-        5.0, description="Heat transfer coeff for wall (Robin BC only)"
-    )
-    wall_flux: float = Field(0.0, description="Heat flux for wall (Neumann BC only)")
-
-    roof_bc_type: str = Field("robin", description="BC type for roofs")
-    roof_value: float = Field(
-        1.0, description="Temperature/reference value for roof BC"
-    )
-    roof_h: float = Field(
-        5.0, description="Heat transfer coeff for roof (Robin BC only)"
-    )
-    roof_flux: float = Field(0.0, description="Heat flux for roof (Neumann BC only)")
-
-    ground_bc_type: str = Field("robin", description="BC type for ground")
-    ground_value: float = Field(
-        0.0, description="Temperature/reference value for ground BC"
-    )
-    ground_h: float = Field(
-        2.0, description="Heat transfer coeff for ground (Robin BC only)"
-    )
-    ground_flux: float = Field(
-        0.0, description="Heat flux for ground (Neumann BC only)"
-    )
-
-    open_bc_type: str = Field("dirichlet", description="BC type for open boundaries")
-    open_value: float = Field(
-        0.0, description="Temperature/reference value for open BC"
-    )
-    open_h: float = Field(
-        1.0, description="Heat transfer coeff for open (Robin BC only)"
-    )
-    open_flux: float = Field(0.0, description="Heat flux for open (Neumann BC only)")
-
-    # Volume mesh parameters (for when built from bounds)
-    mesh_max_mesh_size: float = Field(25.0, description="Maximum mesh size in meters")
-    mesh_domain_height: float = Field(80.0, description="Domain height in meters")
-    mesh_raster_cell_size: float = Field(2.0, description="Terrain raster cell size")
-    mesh_raster_radius: float = Field(
-        3.0, description="Terrain raster interpolation radius"
-    )
-
-    def get_bc_spec(self, surface: str) -> BCSpec:
-        """Get boundary condition specification for a surface type.
-
-        Args:
-            surface: One of 'wall', 'roof', 'ground', 'open'
-
-        Returns:
-            BCSpec object (Dirichlet, Neumann, or Robin)
-        """
-        bc_type = getattr(self, f"{surface}_bc_type")
-        value = getattr(self, f"{surface}_value")
-        h = getattr(self, f"{surface}_h")
-        flux = getattr(self, f"{surface}_flux")
-
-        if bc_type == "dirichlet":
-            return DirichletBCSpec(value=value)
-        elif bc_type == "neumann":
-            return NeumannBCSpec(flux=flux)
-        elif bc_type == "robin":
-            return RobinBCSpec(h=h, value=value)
-        else:
-            raise ValueError(f"Unknown BC type: {bc_type}")
 
 
 DEFAULT_PETSC_OPTIONS: Mapping[str, Any] = {
@@ -381,6 +238,7 @@ class HeatSolver:
         output_dir: Optional[str] = None,
         params: Optional[HeatParameters] = None,
         petsc_options: Optional[Mapping[str, Any]] = None,
+        mesh_crs: Optional[str] = None,
     ) -> None:
         """Initialize the urban heat simulator.
 
@@ -399,6 +257,7 @@ class HeatSolver:
         self.bounds = bounds
         self.mesh_path = mesh_path
         self.mesh = mesh
+        self.mesh_crs = input_crs(mesh, generated=bounds is not None, declared=mesh_crs)
         self.markers = markers
 
         self.params = params if params is not None else HeatParameters()
@@ -416,24 +275,10 @@ class HeatSolver:
 
     def _build_mesh_from_bounds(self) -> None:
         """Build volume mesh from bounds using dtcc_core.datasets.city_volume_mesh."""
-        info("Heat: Building volume mesh from bounds...")
-
-        try:
-            import dtcc_core.datasets as datasets
-        except ImportError:
-            raise ImportError(
-                "dtcc_core is required to build mesh from bounds. "
-                "Install it or provide mesh_path/mesh directly."
-            )
+        info("Building a volume mesh for heat diffusion...")
 
         # Build volume mesh using the dataset
-        volume_mesh = datasets.city_volume_mesh(
-            bounds=self.bounds,
-            max_mesh_size=self.params.mesh_max_mesh_size,
-            domain_height=self.params.mesh_domain_height,
-            raster_cell_size=self.params.mesh_raster_cell_size,
-            raster_radius=self.params.mesh_raster_radius,
-        )
+        volume_mesh, self.mesh_record = prepare_city_mesh(self.bounds, self.params)
         self.volume_mesh_dtcc = volume_mesh
 
         # Save to temporary file and load with FEniCSx
@@ -442,7 +287,7 @@ class HeatSolver:
         with tempfile.NamedTemporaryFile(suffix=".xdmf", delete=False) as tmp:
             tmp_path = tmp.name
 
-        info(f"Heat: Saving mesh to temporary file: {tmp_path}")
+        info(f"Saving the generated heat mesh to {tmp_path}")
         volume_mesh.save(tmp_path)
 
         # Load with FEniCSx
@@ -453,6 +298,7 @@ class HeatSolver:
         h5_path = Path(tmp_path).with_suffix(".h5")
         h5_path.unlink(missing_ok=True)
 
+    @timed("mesh_preparation")
     def _load_if_needed(self) -> None:
         """Load or build mesh if not already available."""
         from dtcc_core.model import VolumeMesh
@@ -469,7 +315,7 @@ class HeatSolver:
         if self.bounds is not None:
             self._build_mesh_from_bounds()
         elif self.mesh_path is not None:
-            info(f"Heat: Loading mesh from {self.mesh_path}")
+            info(f"Loading the heat mesh from {self.mesh_path}")
             self.mesh, self.markers = load_mesh_with_markers(self.mesh_path)
         else:
             raise ValueError(
@@ -528,6 +374,7 @@ class HeatSolver:
 
         raise TypeError(f"Unsupported BC spec type: {type(spec)}")
 
+    @timed_run
     def simulate(self, *, output_path: Optional[str] = None) -> Any:
         """Run the urban heat simulation.
 
@@ -545,9 +392,31 @@ class HeatSolver:
         self._load_if_needed()
         assert self.mesh is not None and self.markers is not None
 
+        crs = input_crs(self.volume_mesh_dtcc, generated=self.bounds is not None, declared=self.mesh_crs)
+        with local_mesh_coordinates(self.mesh, crs=crs) as frame:
+            self.coordinate_frame = frame
+            self._solve_local_heat()
+            self.diagnostics["coordinate_frame"] = frame.as_dict()
+            result = self._attach_temperature_field()
+        with timing_phase("export"):
+            if output_path is not None:
+                info(f"Saving temperature to {output_path}")
+                self.solution.save(output_path)
+                write_coordinate_frame(output_path, self.coordinate_frame, comm=self.mesh.comm)
+                _export_city_surface(
+                    output_path, native_mesh=self.volume_mesh_dtcc, mesh=self.mesh,
+                    markers=getattr(self, "markers", None), mesh_path=self.mesh_path,
+                    frame=self.coordinate_frame,
+                )
+            publish_mesh_provenance(self, result, output_path)
+        return result
+
+    @timed("solver")
+    def _solve_local_heat(self):
+        """Assemble, solve and measure temperature in local coordinates."""
         # Infer buildings + collapse tags
         self.num_buildings = infer_num_buildings(self.mesh, self.markers)
-        info(f"Heat: inferred num_buildings = {self.num_buildings}")
+        info(f"Detected heat-domain buildings: {self.num_buildings}")
 
         self.category_markers = collapse_boundary_markers(
             self.mesh, self.markers, self.num_buildings
@@ -556,7 +425,7 @@ class HeatSolver:
         # Function space
         V = FunctionSpace(self.mesh, "Lagrange", self.params.degree)
         info(
-            f"Heat: Function space has {V.dofmap.index_map.size_global} degrees of freedom"
+            f"The temperature space has {V.dofmap.index_map.size_global} degrees of freedom"
         )
 
         # Measures over collapsed boundary categories
@@ -589,21 +458,12 @@ class HeatSolver:
             )
 
         # Solve
-        info("Heat: Solving linear system...")
+        info("Solving the stationary heat equation...")
         self.solution = solve(a == L, bcs=bcs, petsc_options=self.petsc_options)
-        info("Heat: Solution complete")
+        info("The heat solve is complete")
         self._record_diagnostics(V)
 
-        # Output
-        if output_path is not None:
-            info(f"Heat: Saving solution to {output_path}")
-            self.solution.save(output_path)
-
-        if self.volume_mesh_dtcc is not None:
-            return self._attach_temperature_field()
-
-        return self.solution
-
+    @timed("validation")
     def _record_diagnostics(self, V: dolfinx.fem.FunctionSpace) -> None:
         """Record finite, local solver diagnostics available after a solve."""
         if self.mesh is None or self.solution is None:
@@ -656,6 +516,7 @@ class HeatSolver:
             "petsc_options": dict(self.petsc_options),
         }
 
+    @timed("postprocessing")
     def _attach_temperature_field(self) -> Any:
         if self.mesh is None or self.solution is None:
             raise RuntimeError(

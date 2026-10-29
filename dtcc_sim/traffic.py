@@ -7,6 +7,7 @@ Wardrop user-equilibrium assignment with BPR link costs using Frank-Wolfe.
 
 from __future__ import annotations
 
+from .timing import phase as timing_phase, timed_run
 from pathlib import Path
 
 from .output import _output_directory, _solution_path
@@ -213,112 +214,117 @@ class TrafficAssignmentSimulator:
         self.zone_vertices: np.ndarray | None = None
         self.zone_codes: np.ndarray | None = None
 
+    @timed_run
     def simulate(self) -> RoadNetwork:
         """Run the traffic assignment and return a RoadNetwork with edge results."""
         output_path = _solution_path(self.output_dir, None, "solution.dtcc")
-        graph = self._build_directed_graph(self.roads)
-        zone_data = self._zone_data(self.zones)
-        zone_vertices = self._connect_zones(zone_data["centroids"], graph)
-        demand = self._build_demand_matrix(zone_data, zone_vertices, graph)
-        background_arc_flow = self._background_arc_flow(graph)
+        with timing_phase("graph_and_demand_preparation"):
+            graph = self._build_directed_graph(self.roads)
+            zone_data = self._zone_data(self.zones)
+            zone_vertices = self._connect_zones(zone_data["centroids"], graph)
+            demand = self._build_demand_matrix(zone_data, zone_vertices, graph)
+            background_arc_flow = self._background_arc_flow(graph)
 
         self.od_matrix = demand
         self.zone_vertices = zone_vertices
         self.zone_codes = zone_data["codes"]
 
-        if demand.sum() <= 0.0:
-            assigned_arc_flow = np.zeros(len(graph.tail), dtype=float)
-            iterations = 0
-            relative_gap = 0.0
-            assigned_demand = 0.0
-        else:
-            initial_costs = self._bpr_costs(background_arc_flow, graph)
-            assigned_arc_flow, assigned_demand = self._all_or_nothing(
-                demand,
-                zone_vertices,
-                initial_costs,
-                graph,
-            )
-            relative_gap = math.inf
-            iterations = 0
-
-            for iteration in range(1, self.params.max_iterations + 1):
-                costs = self._bpr_costs(assigned_arc_flow + background_arc_flow, graph)
-                auxiliary_flow, assigned_demand = self._all_or_nothing(
+        with timing_phase("assignment_solve"):
+            if demand.sum() <= 0.0:
+                assigned_arc_flow = np.zeros(len(graph.tail), dtype=float)
+                iterations = 0
+                relative_gap = 0.0
+                assigned_demand = 0.0
+            else:
+                initial_costs = self._bpr_costs(background_arc_flow, graph)
+                assigned_arc_flow, assigned_demand = self._all_or_nothing(
                     demand,
                     zone_vertices,
-                    costs,
+                    initial_costs,
                     graph,
                 )
-                relative_gap = self._relative_gap(
-                    assigned_arc_flow,
-                    auxiliary_flow,
-                    costs,
-                )
-                iterations = iteration
-                if relative_gap <= self.params.relative_gap_tolerance:
-                    break
+                relative_gap = math.inf
+                iterations = 0
 
-                step = self._line_search(
-                    assigned_arc_flow,
-                    auxiliary_flow,
-                    graph,
-                    background_arc_flow=background_arc_flow,
-                )
-                assigned_arc_flow = assigned_arc_flow + step * (
-                    auxiliary_flow - assigned_arc_flow
-                )
+                for iteration in range(1, self.params.max_iterations + 1):
+                    costs = self._bpr_costs(assigned_arc_flow + background_arc_flow, graph)
+                    auxiliary_flow, assigned_demand = self._all_or_nothing(
+                        demand,
+                        zone_vertices,
+                        costs,
+                        graph,
+                    )
+                    relative_gap = self._relative_gap(
+                        assigned_arc_flow,
+                        auxiliary_flow,
+                        costs,
+                    )
+                    iterations = iteration
+                    if relative_gap <= self.params.relative_gap_tolerance:
+                        break
 
-        arc_flow = assigned_arc_flow + background_arc_flow
-        costs = self._bpr_costs(arc_flow, graph)
+                    step = self._line_search(
+                        assigned_arc_flow,
+                        auxiliary_flow,
+                        graph,
+                        background_arc_flow=background_arc_flow,
+                    )
+                    assigned_arc_flow = assigned_arc_flow + step * (
+                        auxiliary_flow - assigned_arc_flow
+                    )
 
-        result = self._result_roadnetwork(
-            arc_flow=arc_flow,
-            arc_costs=costs,
-            graph=graph,
-            assigned_arc_flow=assigned_arc_flow,
-            background_arc_flow=background_arc_flow,
-        )
-        self.diagnostics = {
-            "iterations": iterations,
-            "relative_gap": float(relative_gap),
-            "converged": bool(
-                relative_gap <= self.params.relative_gap_tolerance
-                or demand.sum() <= 0.0
-            ),
-            "total_demand": float(demand.sum()),
-            "assigned_demand": float(assigned_demand),
-            "unassigned_demand": float(max(demand.sum() - assigned_demand, 0.0)),
-            "background_link_flow": float(background_arc_flow.sum()),
-            "zone_count": int(len(zone_vertices)),
-            "road_edge_count": int(len(np.asarray(self.roads.edges).reshape((-1, 2)))),
-            "directed_arc_count": int(len(graph.tail)),
-            "drivable_edge_count": int(len(np.unique(graph.edge_index))),
-            "excluded_edge_count": int(
-                len(np.asarray(self.roads.edges).reshape((-1, 2)))
-                - len(np.unique(graph.edge_index))
-            ),
-            "capacity_per_lane": float(self.params.capacity_per_lane),
-            "background_flow_fraction": float(self.params.background_flow_fraction),
-            "bidirectional": bool(self.params.bidirectional),
-            "bpr_alpha": float(self.params.alpha),
-            "bpr_beta": float(self.params.beta),
-            "output_edge_attributes": [
-                "flow",
-                "flow_forward",
-                "flow_reverse",
-                "flow_assigned",
-                "flow_background",
-                "capacity",
-                "free_flow_time",
-                "travel_time",
-                "speed",
-                "volume_capacity_ratio",
-                "traffic_excluded",
-            ],
-        }
-        if output_path is not None:
-            Path(output_path).write_bytes(result.to_proto().SerializeToString())
+            arc_flow = assigned_arc_flow + background_arc_flow
+            costs = self._bpr_costs(arc_flow, graph)
+
+        with timing_phase("postprocessing"):
+            result = self._result_roadnetwork(
+                arc_flow=arc_flow,
+                arc_costs=costs,
+                graph=graph,
+                assigned_arc_flow=assigned_arc_flow,
+                background_arc_flow=background_arc_flow,
+            )
+            self.diagnostics = {
+                "iterations": iterations,
+                "relative_gap": float(relative_gap),
+                "converged": bool(
+                    relative_gap <= self.params.relative_gap_tolerance
+                    or demand.sum() <= 0.0
+                ),
+                "total_demand": float(demand.sum()),
+                "assigned_demand": float(assigned_demand),
+                "unassigned_demand": float(max(demand.sum() - assigned_demand, 0.0)),
+                "background_link_flow": float(background_arc_flow.sum()),
+                "zone_count": int(len(zone_vertices)),
+                "road_edge_count": int(len(np.asarray(self.roads.edges).reshape((-1, 2)))),
+                "directed_arc_count": int(len(graph.tail)),
+                "drivable_edge_count": int(len(np.unique(graph.edge_index))),
+                "excluded_edge_count": int(
+                    len(np.asarray(self.roads.edges).reshape((-1, 2)))
+                    - len(np.unique(graph.edge_index))
+                ),
+                "capacity_per_lane": float(self.params.capacity_per_lane),
+                "background_flow_fraction": float(self.params.background_flow_fraction),
+                "bidirectional": bool(self.params.bidirectional),
+                "bpr_alpha": float(self.params.alpha),
+                "bpr_beta": float(self.params.beta),
+                "output_edge_attributes": [
+                    "flow",
+                    "flow_forward",
+                    "flow_reverse",
+                    "flow_assigned",
+                    "flow_background",
+                    "capacity",
+                    "free_flow_time",
+                    "travel_time",
+                    "speed",
+                    "volume_capacity_ratio",
+                    "traffic_excluded",
+                ],
+            }
+        with timing_phase("export"):
+            if output_path is not None:
+                Path(output_path).write_bytes(result.to_proto().SerializeToString())
         return result
 
     def _build_directed_graph(self, roads: RoadNetwork) -> _DirectedGraph:

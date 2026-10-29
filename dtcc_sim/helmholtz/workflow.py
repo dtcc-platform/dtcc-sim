@@ -1,5 +1,6 @@
 """Coordinate mesh preparation and the Helmholtz numerical stages."""
 
+from ..timing import timed, timed_run
 from copy import deepcopy
 import json
 import warnings
@@ -7,8 +8,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..output import _output_directory
-from .meshing import CityMeshCache, CityMeshParameters, _save_city_surface
-from .simulator import (
+from ..coordinates import input_crs
+from .meshing import CityMeshCache, CityMeshParameters
+from .solver import (
     HelmholtzSolver, _mesh_input_hashes, _copy_parameters, _simulation_mesh,
 )
 
@@ -78,6 +80,7 @@ class HelmholtzWorkflow:
         mesh_cache_dir=None,
         mesh_path=None,
         mesh_h=None,
+        mesh_crs=None,
     ):
         self.output_dir = _output_directory(output_dir)
         if self.output_dir is None:
@@ -100,6 +103,7 @@ class HelmholtzWorkflow:
             if not math.isfinite(mesh_h) or mesh_h <= 0:
                 raise ValueError("mesh_h must be finite and positive")
         self.mesh_parameters = deepcopy(mesh_parameters)
+        self.mesh_crs = input_crs(generated=mesh_parameters is not None, declared=mesh_crs)
         self.mesh_h = mesh_h
         self.mesh_path = (
             Path(mesh_path).expanduser().resolve() if mesh_path is not None else None
@@ -116,6 +120,7 @@ class HelmholtzWorkflow:
                 mesh_path=self.mesh_path,
                 output_dir=self.output_dir,
                 parameters=self.parameters,
+                mesh_crs=self.mesh_crs,
             )
         if self.cache is not None:
             if (
@@ -152,6 +157,8 @@ class HelmholtzWorkflow:
             "output_dir": str(self.output_dir),
         }
 
+    @timed_run
+    @timed("mesh_preparation")
     def prepare_mesh(self):
         if self.cache:
             path, record, reused = self.cache.resolve(self.mesh_parameters)
@@ -168,34 +175,40 @@ class HelmholtzWorkflow:
             }
         record["boundary_tags"] = _check_boundary_tags(path, self.parameters)
         self.simulator = HelmholtzSolver(
-            mesh_path=path, output_dir=self.output_dir, parameters=self.parameters
+            mesh_path=path, output_dir=self.output_dir, parameters=self.parameters,
+            mesh_crs=self.mesh_crs,
         )
         self.mesh_record = record
         return path
 
+    @timed_run
     def prepare(self):
         self.prepare_mesh()
         path = self.simulator.prepare()
         self._write_mesh_provenance()
         return path
 
+    @timed("export")
     def _write_mesh_provenance(self):
         (self.output_dir / "mesh_provenance.json").write_text(
             json.dumps(self.mesh_record, indent=2, sort_keys=True) + "\n"
         )
 
+    @timed_run
     def solve(self):
         if self.simulator is None:
             self.prepare_mesh()
         self.simulator.parameters = deepcopy(self.parameters)
         return self.simulator.solve()
 
+    @timed_run
     def run(self):
         self.prepare_mesh()
         result = self.simulator.run()
         self._write_mesh_provenance()
         return result
 
+    @timed_run
     def simulate(self, *, output_path=None, unit="") -> "VolumeMesh":
         """Resolve the mesh, solve and return a DTCC VolumeMesh with solution fields."""
         if self.parameters.fe_degree != 1:
@@ -212,7 +225,8 @@ class HelmholtzWorkflow:
             "iterations": self.result.iterations,
             "relative_residual": self.result.relative_residual,
         }
+        frame = getattr(self.result, "coordinate_frame", None)
+        if frame is not None:
+            self.diagnostics["coordinate_frame"] = frame
         mesh = _simulation_mesh(self.result, output_path=output_path, unit=unit)
-        if self.mesh_parameters is not None:
-            _save_city_surface(mesh, self.output_dir / "city.vtu")
         return mesh

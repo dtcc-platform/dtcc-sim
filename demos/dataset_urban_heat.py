@@ -1,38 +1,14 @@
-#!/usr/bin/env python3
-"""
-Urban Heat Simulation: Dataset Integration
-===========================================
+"""Stationary urban temperature through the dataset API."""
 
-This demo shows how to use the urban heat simulator as a dataset,
-integrating with the dtcc-core dataset framework.
+import dtcc_core.datasets as datasets
+import dtcc_sim.datasets
 
-The UrbanHeatSimulationDataset wraps the simulation workflow in a
-dataset interface, enabling:
-- Automatic parameter validation via Pydantic
-- JSON serialization for reproducibility
-- Integration with data processing pipelines
-- Consistent interface with other DTCC datasets
-
-The dataset encapsulates:
-1. Geographic bounds specification
-2. Volume mesh generation
-3. Heat equation solution
-
-This is the recommended approach for production workflows and
-when integrating urban heat simulation into larger analysis pipelines.
-"""
-
-import dtcc_sim
-
-# Poseidon in Gothenburg (EPSG:3006); 200 m × 200 m domain
 center_x = 319995.962899
 center_y = 6399009.716755
 L = 200.0
-
 bounds = (center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
-# Create dataset arguments with simulation parameters
-dataset_args = dtcc_sim.UrbanHeatSimulationArgs(
+result = datasets.urban_heat_simulation(
     bounds=bounds,
     output_dir="output/dataset_urban_heat",
     wall_value=25.0,
@@ -40,10 +16,8 @@ dataset_args = dtcc_sim.UrbanHeatSimulationArgs(
     open_value=22.0,
     T_ambient=22.0,
     mesh_max_mesh_size=12.5,
-    mesh_domain_height=60.0,
+    mesh_lod="lod2", mesh_cache_dir="output/city-mesh-cache",
+    mesh_domain_height=80.0,
 )
-
-# Build dataset (runs simulation)
-dataset = dtcc_sim.UrbanHeatSimulationDataset()
-print(dataset)
-T = dataset.build(dataset_args)
+result.info()
+result.plot(field="temperature")

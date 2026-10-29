@@ -29,7 +29,7 @@ checked-in recipe:
 source ~/miniconda3/etc/profile.d/conda.sh
 conda env create -f fenicsx-env.yml
 conda activate fenicsx-env
-uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,service]"
+uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,service,helmholtz-mesh]"
 ```
 
 The recipe supplies Python 3.12, DOLFINx 0.11.0, real PETSc, MPI bindings,
@@ -37,7 +37,9 @@ PyVista, Matplotlib, native build tools and uv. Adjust the initialization path
 if Conda is installed elsewhere. DOLFINx 0.11.0 is the supported solver baseline,
 also used by the Docker image. Other versions are outside the tested support
 contract. The editable installation adds Sim, its pinned Core revision, and the
-test and service extras.
+test and service extras. The `helmholtz-mesh` extra supplies Core’s volume
+mesher and is also needed by the real-valued city demos. Wind solvers reject
+complex PETSc before meshing; activate `fenicsx-env` for Stokes and Navier–Stokes.
 
 Verify the environment:
 
@@ -176,6 +178,18 @@ previous run. Heat and reconstruction save `solution.xdmf`; wind saves separate
 XDMF exports include HDF5 companions. Generated noise meshes use a sibling
 `<output_dir>-mesh-cache` unless `mesh_cache_dir` is explicitly supplied.
 
+The Gothenburg demos explicitly share `output/city-mesh-cache`, including noise,
+using terrain-following LOD2 geometry and boundary-corner repair. General scalar
+and flow calls opt into caching with `mesh_cache_dir` on their parameter models
+or dataset request. See [shared city meshing](solvers.md#shared-city-meshing).
+
+City-based heat, wind, reconstruction and Helmholtz runs also save `city.vtu`
+when the input has physical boundary tags. It contains ground, walls and roofs,
+excluding the artificial domain top and sides. Open it alongside the solution
+in ParaView; both use the original input coordinates. `city.coordinates.json`
+records the frame and CRS. Untagged reconstruction inputs produce no context
+surface. See [city geometry output](solvers.md#city-geometry-output).
+
 Omitting `output_dir` keeps other solvers' results in memory; Helmholtz requires
 it for numerical artifacts. An explicit `output_path` remains available for
 heat, wind and reconstruction when no output directory was specified. Helmholtz
@@ -188,3 +202,7 @@ the shared DTCC logger (`dtcc-sim`); nonconvergence is logged at ERROR.
 `verbose=True` adds detailed backend diagnostics. DOLFINx defaults to `WARNING`;
 set `DTCC_FENICSX_LOG_LEVEL=INFO` (or `DEBUG`) for backend tracing. Invalid log
 levels fail explicitly.
+
+Stationary wind configuration and numerical acceptance are described in the
+[flow guide](stationary-flow.md). The city wind demos explicitly select MUMPS LU
+and local pressure-space refinement in the real-number environment.

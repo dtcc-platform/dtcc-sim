@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from dtcc_sim.helmholtz import HelmholtzParameters, HelmholtzSolver
-from dtcc_sim.helmholtz import simulator as api
+from dtcc_sim.helmholtz import solver as api
 from dtcc_sim.helmholtz._backend.params import PARAMS, Params, bind_parameters
 
 
@@ -402,11 +402,15 @@ def test_incompatible_solver_rejected_before_solve(
 def test_backend_source_fingerprint_detects_change(tmp_path, monkeypatch):
     root = tmp_path / "solver"
     (root / "_backend").mkdir(parents=True)
-    for name in ("parameters.py", "simulator.py", "_backend/operator.py"):
+    for name in ("parameters.py", "solver.py", "_backend/operator.py"):
         (root / name).write_text("original")
-    monkeypatch.setattr(api, "__file__", str(root / "simulator.py"))
+    monkeypatch.setattr(api, "__file__", str(root / "solver.py"))
+    (root.parent / "coordinates.py").write_text("coordinate frame")
     before = api._solver_identity()
     (root / "_backend/operator.py").write_text("changed")
+    assert api._solver_identity() != before
+    before = api._solver_identity()
+    (root.parent / "coordinates.py").write_text("updated frame")
     assert api._solver_identity() != before
 
 

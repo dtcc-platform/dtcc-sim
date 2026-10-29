@@ -3,6 +3,7 @@
 import os
 
 from ._version import __version__
+from .meshing import CityMeshParameters, CityMeshCache, CityMeshSettings
 from .helmholtz import HelmholtzSolver, HelmholtzParameters
 from .traffic import (
     TrafficAssignmentSimulator,
@@ -35,13 +36,9 @@ try:
         SmoothReconstructionSimulator,
         SmoothReconstructionParameters,
     )
-    from .flow import (
-        StokesSolver,
-        StokesParameters,
-        NavierStokesSolver,
-        NavierStokesParameters,
-        BndCat as WindBndCat,
-    )
+    from .stokes import StokesSolver, StokesParameters
+    from .navierstokes import NavierStokesSolver, NavierStokesParameters
+    from ._flow.solver import BndCat as WindBndCat
 
     # Default FEniCSx log level (override with DTCC_FENICSX_LOG_LEVEL).
     # Note: FEniCSx backend messages use FEniCSx-native formatting.
@@ -77,6 +74,7 @@ except ModuleNotFoundError as exc:
         raise
 
 __all__ = [
+    "CityMeshParameters", "CityMeshCache", "CityMeshSettings",
     "__version__",
     "HelmholtzSolver",
     "HelmholtzParameters",

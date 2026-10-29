@@ -1,0 +1,226 @@
+{
+  "date": "2026-10-29",
+  "system": "Darwin",
+  "architecture": "arm64",
+  "numerical_threads": 1,
+  "geometry": {
+    "bounds": [
+      319895.962899,
+      6398909.716755,
+      320095.962899,
+      6399109.716755
+    ],
+    "strict_live": false,
+    "max_mesh_size": 12.5,
+    "top_cap_max_mesh_size": null,
+    "domain_height": 80.0,
+    "lod": "lod2",
+    "lod2_method": "catalogue",
+    "min_mesh_angle": 25.0,
+    "raster_cell_size": 2.0,
+    "raster_radius": 3.0,
+    "remove_outliers": true,
+    "outlier_threshold": 3.0,
+    "boundary_face_markers": true,
+    "repair_boundary_corners": true,
+    "min_building_detail": 0.5,
+    "min_building_area": 15.0,
+    "smoothing": 0,
+    "max_volume": null,
+    "mesher": null,
+    "tetgen_extra": "",
+    "tetgen_switches": null,
+    "tetgen_debug_output_dir": null,
+    "tetgen_debug_output_stem": null,
+    "tetgen_quality_failure_output_dir": null,
+    "tetgen_quality_failure_output_stem": null,
+    "flat_ground": false,
+    "show_footprints": false,
+    "footprint_cleaning_plot_block": true,
+    "ground_level": null,
+    "report_mesh_quality": true,
+    "stage_audit_enabled": false,
+    "pipeline_mode": "strict",
+    "format": null
+  },
+  "dependencies": {
+    "dtcc-core": {
+      "version": "0.9.8dev",
+      "commit": null
+    },
+    "dtcc-mesher": {
+      "version": "0.1.0",
+      "commit": "d9643e735097c719ebeab8bacc06f4ed1f9ae042"
+    },
+    "dtcc-tetgen-wrapper": {
+      "version": "0.1.0",
+      "commit": "22ab9ff2ee1dd03f82ce24dd0f378f00da7e487c"
+    }
+  },
+  "shared_cache_entry": "e5f2899897fe8b0a6c3b7bf32cac5056db838019c511c8838534cdc67c2e1402",
+  "verified_mesh_file_hashes": {
+    "mesh.h5": "4502f5ee2f0de14d14c806e9d01e39cac17dc495da64546968c6d9584f2d2895",
+    "mesh.xdmf": "56ed79971bbda7422a3e6b7e4d3818fd228579d9bd57b5d03cea57c353758077"
+  },
+  "mesh": {
+    "vertices": 6011,
+    "tetrahedra": 27474,
+    "minimum_signed_volume_m3": 6.186554213848426e-05,
+    "nonpositive_tetrahedra": 0,
+    "boundary_corners": 0
+  },
+  "demo_runs": {
+    "dataset_air_quality_field": [
+      {
+        "total_s": 36.14022545795888,
+        "mesh_preparation_s": 28.651385917095467,
+        "mesh_reused": false
+      },
+      {
+        "total_s": 7.686130125075579,
+        "mesh_preparation_s": 0.438424332998693,
+        "mesh_reused": true
+      }
+    ],
+    "dataset_traffic": [
+      {
+        "total_s": 0.6606995828915387
+      },
+      {
+        "total_s": 0.050553291803225875
+      }
+    ],
+    "dataset_urban_heat": [
+      {
+        "total_s": 4.064800250111148,
+        "mesh_preparation_s": 3.9971166669856757,
+        "mesh_reused": false
+      },
+      {
+        "total_s": 0.10951924999244511,
+        "mesh_preparation_s": 0.05328854196704924,
+        "mesh_reused": true
+      }
+    ],
+    "dataset_urban_noise": [
+      {
+        "total_s": 4.417941958177835,
+        "mesh_preparation_s": 0.058909458108246326,
+        "mesh_reused": true
+      },
+      {
+        "total_s": 3.9134277920238674,
+        "mesh_preparation_s": 0.06191637506708503,
+        "mesh_reused": true
+      }
+    ],
+    "dataset_urban_wind": [
+      {
+        "total_s": 15.753647584002465,
+        "mesh_preparation_s": 0.05679020821116865,
+        "mesh_reused": true
+      },
+      {
+        "total_s": 15.684445083141327,
+        "mesh_preparation_s": 0.055335375014692545,
+        "mesh_reused": true
+      }
+    ],
+    "dataset_urban_wind_stokes": [
+      {
+        "total_s": 4.327383042080328,
+        "mesh_preparation_s": 0.05439695785753429,
+        "mesh_reused": true
+      },
+      {
+        "total_s": 4.321754167089239,
+        "mesh_preparation_s": 0.055392874870449305,
+        "mesh_reused": true
+      }
+    ],
+    "smooth_reconstruction": [
+      {
+        "total_s": 0.15208749985322356,
+        "mesh_preparation_s": 0.0335938751231879,
+        "mesh_reused": true
+      },
+      {
+        "total_s": 0.1421729999128729,
+        "mesh_preparation_s": 0.033916583051905036,
+        "mesh_reused": true
+      }
+    ],
+    "urban_heat_cooling": [
+      {
+        "total_s": 0.1266701251734048,
+        "mesh_preparation_s": 0.05433679185807705,
+        "mesh_reused": true
+      },
+      {
+        "total_s": 0.10175312496721745,
+        "mesh_preparation_s": 0.054308417020365596,
+        "mesh_reused": true
+      }
+    ],
+    "urban_heat_heatwave": [
+      {
+        "total_s": 0.10392983397468925,
+        "mesh_preparation_s": 0.052358999848365784,
+        "mesh_reused": true
+      },
+      {
+        "total_s": 0.10732862493023276,
+        "mesh_preparation_s": 0.054413583129644394,
+        "mesh_reused": true
+      }
+    ],
+    "urban_wind_simulation": [
+      {
+        "total_s": 15.578938374994323,
+        "mesh_preparation_s": 0.053962958976626396,
+        "mesh_reused": true
+      },
+      {
+        "total_s": 15.534530792152509,
+        "mesh_preparation_s": 0.054561915807425976,
+        "mesh_reused": true
+      }
+    ],
+    "urban_wind_stokes_simulation": [
+      {
+        "total_s": 4.299651874927804,
+        "mesh_preparation_s": 0.055136708077043295,
+        "mesh_reused": true
+      },
+      {
+        "total_s": 4.29073654091917,
+        "mesh_preparation_s": 0.054819917073473334,
+        "mesh_reused": true
+      }
+    ]
+  },
+  "mesh_identity": "Identical cached XDMF/HDF5 files across all Gothenburg volume demos; canonical physical geometry also checked after Helmholtz output reordering.",
+  "stockholm": {
+    "lod": "lod1",
+    "domain_m": [
+      750.0,
+      750.0,
+      80.0
+    ],
+    "target_mesh_size_m": 100.0,
+    "lod2_volume_failure": {
+      "stage": "TetGen",
+      "code": 2,
+      "input_points": 10583,
+      "mesh_facets": 20601,
+      "boundary_polygons": 561
+    },
+    "runtime_lod_fallback": false
+  },
+  "checks": {
+    "real_suite": "444 passed, 18 skipped, 4 deselected",
+    "complex_suite": "222 passed, 8 skipped",
+    "base_suite": "302 passed, 57 skipped",
+    "mpi": "Two-rank cached city Stokes solve accepted; incomplete-cache errors propagated to both ranks"
+  }
+}
