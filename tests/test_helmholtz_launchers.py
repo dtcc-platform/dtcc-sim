@@ -1,20 +1,11 @@
 """Offline launcher consistency checks; numerical execution is forbidden."""
 
 from dataclasses import asdict
-import importlib.util
 import json
-from pathlib import Path
 
 from dtcc_sim.helmholtz import HelmholtzParameters
 from dtcc_sim.helmholtz.__main__ import main as mesh_main
-
-
-def dataset_demo():
-    path = Path(__file__).resolve().parents[1] / "demos/dataset_helmholtz.py"
-    spec = importlib.util.spec_from_file_location("dataset_helmholtz_demo", path)
-    demo = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(demo)
-    return demo
+from dtcc_sim.helmholtz.dataset_cli import main as dataset_main
 
 
 def test_all_launcher_defaults_match_python_parameters(tmp_path, capsys):
@@ -22,7 +13,7 @@ def test_all_launcher_defaults_match_python_parameters(tmp_path, capsys):
         ["--mesh", str(tmp_path / "mesh.xdmf"), "--output", str(tmp_path / "case")]
     )
     direct = json.loads(capsys.readouterr().out)
-    dataset_demo().main(
+    dataset_main(
         [
             "--bounds",
             "0",
@@ -49,7 +40,7 @@ def test_all_launcher_defaults_match_python_parameters(tmp_path, capsys):
 def test_dataset_launcher_exposes_preconditioner_and_resource_controls(
     tmp_path, capsys
 ):
-    dataset_demo().main(
+    dataset_main(
         [
             "--bounds",
             "0",
@@ -115,10 +106,10 @@ def test_export_rejects_higher_degree_before_execution(tmp_path, monkeypatch):
 
 
 def test_dataset_and_workflow_resolve_identical_default_mesh_requests(tmp_path):
-    from dtcc_sim.helmholtz.dataset import HelmholtzSimulationArgs
+    from dtcc_sim.helmholtz.dataset import UrbanNoiseSimulationArgs
     from dtcc_sim.helmholtz.meshing import CityMeshParameters
 
-    args = HelmholtzSimulationArgs(
+    args = UrbanNoiseSimulationArgs(
         bounds=[0, 0, 20, 20],
         h=5,
         output_dir=tmp_path / "case",

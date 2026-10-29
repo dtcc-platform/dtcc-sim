@@ -1,14 +1,14 @@
 """Helmholtz simulation with explicit or DTCC-generated meshes."""
 
 from .parameters import HelmholtzParameters
-from .simulator import HelmholtzResult, HelmholtzSimulator
+from .simulator import HelmholtzResult, HelmholtzSolver
 from .meshing import CityMeshParameters, CityMeshCache
 from .workflow import HelmholtzWorkflow
 
 __all__ = [
     "HelmholtzParameters",
     "HelmholtzResult",
-    "HelmholtzSimulator",
+    "HelmholtzSolver",
     "CityMeshParameters",
     "CityMeshCache",
     "HelmholtzWorkflow",

@@ -1,4 +1,4 @@
-"""DTCC dataset descriptor for the Helmholtz mesh-and-solver workflow."""
+"""Noise dataset descriptor backed by the Helmholtz mesh-and-solver workflow."""
 
 from copy import deepcopy
 from pathlib import Path
@@ -6,15 +6,16 @@ import tempfile
 from typing import Any, Literal
 import math
 
-from pydantic import Field, PrivateAttr, model_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 from dtcc_core.datasets import DatasetBaseArgs, DatasetDescriptor
 
-from .meshing import CityMeshParameters
+from ..output import _output_directory
+from .meshing import CityMeshParameters, _save_city_surface
 from .parameters import HelmholtzParameters
 from .._version import __version__
 
 
-class HelmholtzSimulationArgs(DatasetBaseArgs):
+class UrbanNoiseSimulationArgs(DatasetBaseArgs):
     """Explicit mesh resolution and output case with grouped solver parameters."""
 
     h: float = Field(
@@ -25,7 +26,7 @@ class HelmholtzSimulationArgs(DatasetBaseArgs):
     )
     output_dir: Path = Field(
         ...,
-        description="New or empty case directory for diagnostics and numerical artifacts",
+        description="Directory for solver outputs; repeated runs replace previous solver files",
     )
     mesh_path: Path | None = Field(
         None, description="Existing XDMF mesh, instead of DTCC generation"
@@ -36,7 +37,7 @@ class HelmholtzSimulationArgs(DatasetBaseArgs):
         description="Caller-declared CRS of an existing XDMF; omit for unknown or local coordinates. Does not reproject.",
     )
     mesh_cache_dir: Path | None = Field(
-        None, description="Required mesh-cache directory when generating from bounds"
+        None, description="Generated mesh cache; defaults to a sibling <output_dir>-mesh-cache"
     )
     domain_height: float = Field(
         80,
@@ -65,6 +66,14 @@ class HelmholtzSimulationArgs(DatasetBaseArgs):
 
     _run_metadata: dict[str, Any] | None = PrivateAttr(default=None)
 
+    @field_validator("output_dir", mode="before")
+    @classmethod
+    def validate_output_directory(cls, value):
+        directory = _output_directory(value)
+        if directory is None:
+            raise ValueError("output_dir is required for numerical artifacts")
+        return directory
+
     @model_validator(mode="after")
     def validate_workflow(self):
         if len(self.bounds) != 4 or not all(math.isfinite(x) for x in self.bounds):
@@ -89,8 +98,6 @@ class HelmholtzSimulationArgs(DatasetBaseArgs):
         else:
             if self.mesh_crs is not None:
                 raise ValueError("mesh_crs applies only to supplied XDMF meshes")
-            if self.mesh_cache_dir is None:
-                raise ValueError("mesh_cache_dir is required when generating a mesh")
             self.city_parameters().resolved_arguments()
         return self
 
@@ -106,17 +113,18 @@ class HelmholtzSimulationArgs(DatasetBaseArgs):
         )
 
 
-class HelmholtzSimulationDataset(DatasetDescriptor):
+class UrbanNoiseSimulationDataset(DatasetDescriptor):
     """Complex Helmholtz field on a supplied or generated city volume mesh."""
 
-    name = "helmholtz_simulation"
-    title = "Helmholtz Simulation"
+    name = "urban_noise_simulation"
+    title = "Urban Noise Simulation"
     description = (
-        "Complex scalar Helmholtz simulation using a spectral overlapping "
+        "Noise propagation modeled as a complex scalar Helmholtz field using "
+        "a spectral overlapping "
         "preconditioner. Select an XDMF mesh or generate a DTCC city mesh "
         "for the requested h. Returns real, imaginary, and amplitude vertex fields."
     )
-    ArgsModel = HelmholtzSimulationArgs
+    ArgsModel = UrbanNoiseSimulationArgs
     data_category = "simulation"
     result_kind = "mesh"
     python_return_type = "dtcc_core.model.VolumeMesh"
@@ -161,7 +169,7 @@ class HelmholtzSimulationDataset(DatasetDescriptor):
         "Solve with GMRES and save convergence history and true residual",
         "Map P1 values to mesh vertices and attach real, imaginary, and amplitude fields",
     ]
-    presentation_headline = "Complex Helmholtz Field"
+    presentation_headline = "Noise Wave Amplitude"
     presentation_summary = (
         "A simulated complex field and its amplitude over a tetrahedral volume mesh."
     )
@@ -265,6 +273,10 @@ class HelmholtzSimulationDataset(DatasetDescriptor):
         mesh = result.to_dtcc(unit=args.field_unit)
         # Attach before serialization as well as the base class's public-call hook.
         mesh.dataset_context = self.create_context(args)
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        mesh.save(args.output_dir / "solution.vtu")
+        if args.mesh_path is None:
+            _save_city_surface(mesh, args.output_dir / "city.vtu")
         if args.format == "dtccpkg":
             from dtcc_core.datasets.package import export_model_package
 

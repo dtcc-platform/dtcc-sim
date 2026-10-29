@@ -31,6 +31,8 @@ References
 
 from __future__ import annotations
 
+from .output import _output_directory, _solution_path
+
 from enum import IntEnum
 from pathlib import Path
 import time
@@ -73,6 +75,7 @@ from ufl import (
     ds,
 )
 
+from dtcc_sim.fenics import _mesh_from_dtcc
 from dtcc_sim.fenics import (
     FunctionSpace,
     _ensure_parent_dir,
@@ -194,7 +197,7 @@ DEFAULT_STOKES_PETSC_FALLBACK_DIRECT: Dict[str, Any] = {
 # ---------------------------------------------------------------------------
 
 
-class UrbanWindParameters(BaseModel):
+class _FlowParameters(BaseModel):
     """Parameters for the urban wind CFD solver.
 
     Groups
@@ -615,7 +618,7 @@ def categorize_boundary(
 
 
 def select_inlet_outlet(
-    params: UrbanWindParameters,
+    params: _FlowParameters,
     mesh: Optional[dolfinx.mesh.Mesh] = None,
     markers: Optional[dolfinx.mesh.MeshTags] = None,
 ) -> Tuple[int, Optional[int]]:
@@ -713,7 +716,7 @@ def _validate_bbox_markers(
     # Check inlet marker
     if inlet_marker not in global_available:
         raise RuntimeError(
-            f"UrbanWind: inlet marker {inlet_marker} not found in mesh tags.  "
+            f"Flow: inlet marker {inlet_marker} not found in mesh tags.  "
             f"Available markers: {sorted(global_available)}.  "
             f"Expected bbox markers: {sorted(BBOX_MARKER_NORMALS.keys())}."
         )
@@ -725,7 +728,7 @@ def _validate_bbox_markers(
         and outlet_marker not in global_available
     ):
         raise RuntimeError(
-            f"UrbanWind: outlet marker {outlet_marker} not found in mesh tags.  "
+            f"Flow: outlet marker {outlet_marker} not found in mesh tags.  "
             f"Available markers: {sorted(global_available)}.  "
             f"Set closed_cavity=True if no outlet face exists."
         )
@@ -734,7 +737,7 @@ def _validate_bbox_markers(
     expected_bbox = set(BBOX_MARKER_NORMALS.keys())
     if not expected_bbox.intersection(global_available):
         warning(
-            f"UrbanWind: none of the expected bbox markers "
+            f"Flow: none of the expected bbox markers "
             f"{sorted(expected_bbox)} found in mesh tags "
             f"{sorted(global_available)}.  Inlet/outlet selection may be wrong."
         )
@@ -746,7 +749,7 @@ def _validate_bbox_markers(
 
 
 def make_inlet_velocity_expression(
-    params: UrbanWindParameters,
+    params: _FlowParameters,
 ) -> callable:
     """Return a callable ``f(x) -> (3, N)`` for dolfinx interpolation.
 
@@ -883,7 +886,7 @@ def _validate_wind_volume_fields(volume_mesh_dtcc: Any) -> None:
     missing = [name for name in required if name not in fields]
     if missing:
         raise RuntimeError(
-            "UrbanWind: VolumeMesh output is missing required field(s): "
+            "Flow: VolumeMesh output is missing required field(s): "
             f"{', '.join(missing)}."
         )
 
@@ -891,23 +894,23 @@ def _validate_wind_volume_fields(volume_mesh_dtcc: Any) -> None:
         field = fields[name]
         if int(field.dim) != expected["dim"]:
             raise RuntimeError(
-                f"UrbanWind: field {name!r} has dim={field.dim}; "
+                f"Flow: field {name!r} has dim={field.dim}; "
                 f"expected dim={expected['dim']}."
             )
         if field.unit != expected["unit"]:
             raise RuntimeError(
-                f"UrbanWind: field {name!r} has unit={field.unit!r}; "
+                f"Flow: field {name!r} has unit={field.unit!r}; "
                 f"expected {expected['unit']!r}."
             )
         values = np.asarray(field.values)
         if values.size != n_vertices * expected["dim"]:
             raise RuntimeError(
-                f"UrbanWind: field {name!r} has {values.size} scalar values; "
+                f"Flow: field {name!r} has {values.size} scalar values; "
                 f"expected {n_vertices * expected['dim']} for {n_vertices} "
                 f"vertices and dim={expected['dim']}."
             )
         if not np.all(np.isfinite(values)):
-            raise RuntimeError(f"UrbanWind: field {name!r} contains non-finite values.")
+            raise RuntimeError(f"Flow: field {name!r} contains non-finite values.")
 
     velocity = np.asarray(fields["velocity"].values, dtype=np.float64).reshape(
         n_vertices, 3
@@ -916,7 +919,7 @@ def _validate_wind_volume_fields(volume_mesh_dtcc: Any) -> None:
     expected_speed = np.linalg.norm(velocity, axis=1)
     if not np.allclose(speed, expected_speed, rtol=1.0e-8, atol=1.0e-10):
         raise RuntimeError(
-            "UrbanWind: speed field is inconsistent with velocity magnitude."
+            "Flow: speed field is inconsistent with velocity magnitude."
         )
 
 
@@ -1018,7 +1021,7 @@ def _relative_change(a: float, b: float, eps: float = 1e-14) -> float:
 # ---------------------------------------------------------------------------
 
 
-class UrbanWindSimulator:
+class _FlowSolver:
     """Incompressible urban flow solver (Navier–Stokes or Stokes).
 
     Supports:
@@ -1027,11 +1030,11 @@ class UrbanWindSimulator:
 
     Usage
     -----
-    >>> sim = UrbanWindSimulator(bounds=bounds)
+    >>> sim = NavierStokesSolver(bounds=bounds)
     >>> out_mesh = sim.simulate()   # dtcc-core VolumeMesh with Fields
 
-    >>> params = UrbanWindParameters(wind_speed=8.0, wind_dir_deg=240.0)
-    >>> sim = UrbanWindSimulator(bounds=bounds, params=params)
+    >>> params = _FlowParameters(wind_speed=8.0, wind_dir_deg=240.0)
+    >>> sim = NavierStokesSolver(bounds=bounds, params=params)
     >>> out_mesh = sim.simulate()
     """
 
@@ -1042,14 +1045,17 @@ class UrbanWindSimulator:
         mesh_path: Optional[str] = None,
         mesh: Optional[dolfinx.mesh.Mesh] = None,
         markers: Optional[dolfinx.mesh.MeshTags] = None,
-        params: Optional[UrbanWindParameters] = None,
+        output_dir: Optional[str] = None,
+        params: Optional[_FlowParameters] = None,
         inlet_expression: Optional[callable] = None,
     ) -> None:
+        self.output_dir = _output_directory(output_dir)
         self.bounds = bounds
         self.mesh_path = mesh_path
         self.mesh = mesh
         self.markers = markers
-        self.params = params if params is not None else UrbanWindParameters()
+        self.params = params if params is not None else self.parameter_type()
+        self._validate_parameters()
         self.inlet_expression = inlet_expression
 
         # populated during simulation
@@ -1057,6 +1063,13 @@ class UrbanWindSimulator:
         self.num_buildings: int = 0
         self.category_markers: Optional[dolfinx.mesh.MeshTags] = None
         self.diagnostics: Dict[str, Any] = {}
+
+    def _validate_parameters(self):
+        if not isinstance(self.params, self.parameter_type):
+            raise TypeError(f"{type(self).__name__} requires {self.parameter_type.__name__}")
+        expected = self.parameter_type.model_fields["equations"].default
+        if self.params.equations != expected:
+            raise ValueError(f"{type(self).__name__} requires equations={expected!r}")
 
     # ------------------------------------------------------------------ mesh
     def _boundary_category_counts(self, mesh: dolfinx.mesh.Mesh) -> Dict[str, int]:
@@ -1128,7 +1141,7 @@ class UrbanWindSimulator:
         self,
         *,
         mesh: dolfinx.mesh.Mesh,
-        params: UrbanWindParameters,
+        params: _FlowParameters,
         u_sol: Function,
         p_sol: Function,
         inlet_marker: int,
@@ -1225,7 +1238,7 @@ class UrbanWindSimulator:
         comm = MPI.COMM_WORLD
         rank = comm.rank
 
-        info("UrbanWind: Building volume mesh from bounds …")
+        info("Flow: Building volume mesh from bounds …")
         try:
             import dtcc_core.datasets as datasets
         except ImportError:
@@ -1248,7 +1261,7 @@ class UrbanWindSimulator:
 
             with tempfile.NamedTemporaryFile(suffix=".xdmf", delete=False) as tmp:
                 tmp_path = tmp.name
-            info(f"UrbanWind: saving mesh to temporary file: {tmp_path}")
+            info(f"Flow: saving mesh to temporary file: {tmp_path}")
             volume_mesh.save(tmp_path)
 
         # broadcast the temp path so all ranks open the *same* file
@@ -1267,16 +1280,24 @@ class UrbanWindSimulator:
             Path(tmp_path).with_suffix(".h5").unlink(missing_ok=True)
 
     def _load_if_needed(self) -> None:
+        from dtcc_core.model import VolumeMesh
+
+        if isinstance(self.mesh, VolumeMesh):
+            self.volume_mesh_dtcc = self.mesh
+            if self.markers is not None:
+                raise ValueError("DTCC meshes carry their boundary markers; omit markers")
+            self.mesh, self.markers = _mesh_from_dtcc(self.mesh)
+
         if self.mesh is not None and self.markers is not None:
             return
         if self.bounds is not None:
             self._build_mesh_from_bounds()
         elif self.mesh_path is not None:
-            info(f"UrbanWind: Loading mesh from {self.mesh_path}")
+            info(f"Flow: Loading mesh from {self.mesh_path}")
             self.mesh, self.markers = load_mesh_with_markers(self.mesh_path)
         else:
             raise ValueError(
-                "UrbanWindSimulator: provide bounds, mesh_path, or (mesh, markers)."
+                "NavierStokesSolver: provide bounds, mesh_path, or (mesh, markers)."
             )
 
     # ------------------------------------------------------- weather helper
@@ -1299,7 +1320,7 @@ class UrbanWindSimulator:
         A true circular median is complex; the circular mean is a
         reasonable substitute for small station counts.
         """
-        return UrbanWindSimulator._circular_mean_deg(angles_deg)
+        return NavierStokesSolver._circular_mean_deg(angles_deg)
 
     def _nearest_station_index(self, pts: np.ndarray) -> int:
         """Return the index of the station closest to the domain centre."""
@@ -1339,13 +1360,13 @@ class UrbanWindSimulator:
                 import dtcc_core.datasets as datasets
             except ImportError as exc:
                 weather_error = (
-                    "UrbanWind: use_weather=True requires dtcc_core.datasets "
+                    "Flow: use_weather=True requires dtcc_core.datasets "
                     f"so reference wind can be fetched. Original error: {exc}"
                 )
                 datasets = None
 
             if weather_error is None:
-                info("UrbanWind: Fetching weather data …")
+                info("Flow: Fetching weather data …")
                 try:
                     sensors = datasets.weather(
                         bounds=self.bounds,
@@ -1374,13 +1395,13 @@ class UrbanWindSimulator:
                         weather_data = (ws, wd)
                     else:
                         weather_error = (
-                            "UrbanWind: use_weather=True but weather data did "
+                            "Flow: use_weather=True but weather data did "
                             "not include both wind_speed and wind_direction "
                             "values for the requested bounds."
                         )
                 except Exception as exc:
                     weather_error = (
-                        "UrbanWind: use_weather=True but the weather fetch "
+                        "Flow: use_weather=True but the weather fetch "
                         "failed. Disable use_weather or provide manual "
                         "wind_speed and wind_dir_deg. "
                         f"Original error: {exc}"
@@ -1397,14 +1418,14 @@ class UrbanWindSimulator:
 
         if weather_data is not None:
             ws, wd = weather_data
-            info(f"UrbanWind: weather → speed={ws:.1f} m/s, dir={wd:.0f}°")
+            info(f"Flow: weather → speed={ws:.1f} m/s, dir={wd:.0f}°")
             self.params = self.params.model_copy(
                 update={"wind_speed": ws, "wind_dir_deg": wd}
             )
             return
 
         raise RuntimeError(
-            "UrbanWind: use_weather=True but no usable wind data was returned."
+            "Flow: use_weather=True but no usable wind data was returned."
         )
 
     # ----------------------------------------------------- output helpers
@@ -1443,7 +1464,7 @@ class UrbanWindSimulator:
             xdmf.write_function(p_out)
         if mesh.comm.rank == 0:
             info(
-                f"UrbanWind: Saved XDMF solution files to {vel_path} and {pres_path}"
+                f"Flow: Saved XDMF solution files to {vel_path} and {pres_path}"
             )
 
     def _finalize_result(
@@ -1462,7 +1483,7 @@ class UrbanWindSimulator:
             if mesh.comm.size > 1:
                 if mesh.comm.rank == 0:
                     warning(
-                        "UrbanWind: dtcc-core VolumeMesh output is not "
+                        "Flow: dtcc-core VolumeMesh output is not "
                         "supported in MPI mode (output mapping uses local DOFs). "
                         "Returning dolfinx fields instead."
                     )
@@ -1471,7 +1492,7 @@ class UrbanWindSimulator:
             try:
                 setattr(result, "simulation_diagnostics", dict(self.diagnostics))
             except Exception:
-                warning("UrbanWind: could not attach simulation diagnostics.")
+                warning("Flow: could not attach simulation diagnostics.")
             return result
 
         return u_sol, p_sol
@@ -1494,7 +1515,7 @@ class UrbanWindSimulator:
         self,
         *,
         mesh: dolfinx.mesh.Mesh,
-        params: UrbanWindParameters,
+        params: _FlowParameters,
         output_path: Optional[str],
         fdim: int,
         inlet_marker: int,
@@ -1513,7 +1534,7 @@ class UrbanWindSimulator:
         side_top_slip = params.side_top_boundary == "slip"
 
         if rank0:
-            info("UrbanWind: Solving stationary Stokes system (monolithic mixed FEM)")
+            info("Flow: Solving stationary Stokes system (monolithic mixed FEM)")
 
         gdim = mesh.geometry.dim
         vel_el = basix.ufl.element(
@@ -1636,7 +1657,7 @@ class UrbanWindSimulator:
             bcs_mixed.append(dirichletbc(p_zero, outlet_dofs, W_p))
         else:
             raise NotImplementedError(
-                "UrbanWind: Stokes closed-cavity mode is not implemented yet. "
+                "Flow: Stokes closed-cavity mode is not implemented yet. "
                 "Use an outlet marker / open boundary for Stokes runs."
             )
 
@@ -1665,7 +1686,7 @@ class UrbanWindSimulator:
             pc_desc = stokes_opts.get("pc_type", "default")
             ksp_desc = stokes_opts.get("ksp_type", "default")
             info(
-                "UrbanWind: Stokes linear solve config "
+                "Flow: Stokes linear solve config "
                 f"(ksp={ksp_desc}, pc={pc_desc}, fieldsplit={use_fieldsplit})"
             )
 
@@ -1681,22 +1702,22 @@ class UrbanWindSimulator:
         stokes_monitor = None
         if rank0:
             def _stokes_monitor(_ksp, its: int, rnorm: float) -> None:
-                info(f"UrbanWind: Stokes KSP iter={its:4d}  |r|={rnorm:.3e}")
+                info(f"Flow: Stokes KSP iter={its:4d}  |r|={rnorm:.3e}")
 
             stokes_monitor = _stokes_monitor
             ksp.setMonitor(stokes_monitor)
         if rank0:
             info(
-                "UrbanWind: Stokes linear solve started "
+                "Flow: Stokes linear solve started "
                 "(PC setup may take time before first KSP iteration appears)"
             )
-            info("UrbanWind: Stokes KSP setup started")
+            info("Flow: Stokes KSP setup started")
         t_setup_start = time.perf_counter()
         ksp.setUp()
         t_setup_elapsed = time.perf_counter() - t_setup_start
         if rank0:
-            info(f"UrbanWind: Stokes KSP setup done in {t_setup_elapsed:.2f}s")
-            info("UrbanWind: Stokes Krylov iterations started")
+            info(f"Flow: Stokes KSP setup done in {t_setup_elapsed:.2f}s")
+            info("Flow: Stokes Krylov iterations started")
         t_ksp_start = time.perf_counter()
         ksp.solve(b, w.x.petsc_vec)
         w.x.scatter_forward()
@@ -1710,7 +1731,7 @@ class UrbanWindSimulator:
         if ksp_reason < 0 and params.petsc_stokes is None:
             if rank0:
                 warning(
-                    "UrbanWind: Stokes default KSP diverged "
+                    "Flow: Stokes default KSP diverged "
                     f"(reason={ksp_reason}, its={ksp_its}); "
                     "retrying with safe iterative preconditioner."
                 )
@@ -1732,16 +1753,16 @@ class UrbanWindSimulator:
                 if rank0 and stokes_monitor is not None:
                     ksp_fb.setMonitor(stokes_monitor)
                 if rank0:
-                    info("UrbanWind: Stokes safe-iterative KSP setup started")
+                    info("Flow: Stokes safe-iterative KSP setup started")
                 t_setup_start = time.perf_counter()
                 ksp_fb.setUp()
                 t_setup_elapsed = time.perf_counter() - t_setup_start
                 if rank0:
                     info(
-                        "UrbanWind: Stokes safe-iterative KSP setup done in "
+                        "Flow: Stokes safe-iterative KSP setup done in "
                         f"{t_setup_elapsed:.2f}s"
                     )
-                    info("UrbanWind: Stokes safe-iterative Krylov iterations started")
+                    info("Flow: Stokes safe-iterative Krylov iterations started")
                 w.x.array[:] = 0.0
                 w.x.scatter_forward()
                 t_ksp_start = time.perf_counter()
@@ -1754,14 +1775,14 @@ class UrbanWindSimulator:
             except Exception as exc:
                 if rank0:
                     warning(
-                        "UrbanWind: safe-iterative Stokes retry failed with "
+                        "Flow: safe-iterative Stokes retry failed with "
                         f"{type(exc).__name__}: {exc}"
                     )
 
         if ksp_reason < 0 and params.petsc_stokes is None:
             if rank0:
                 warning(
-                    "UrbanWind: safe iterative Stokes retry diverged "
+                    "Flow: safe iterative Stokes retry diverged "
                     f"(reason={ksp_reason}, its={ksp_its}); "
                     "retrying with direct LU (MUMPS)."
                 )
@@ -1774,13 +1795,13 @@ class UrbanWindSimulator:
                 )
                 ksps_to_destroy.append(ksp_fb)
                 if rank0:
-                    info("UrbanWind: Stokes fallback KSP setup started")
+                    info("Flow: Stokes fallback KSP setup started")
                 t_setup_start = time.perf_counter()
                 ksp_fb.setUp()
                 t_setup_elapsed = time.perf_counter() - t_setup_start
                 if rank0:
                     info(
-                        f"UrbanWind: Stokes fallback KSP setup done in "
+                        f"Flow: Stokes fallback KSP setup done in "
                         f"{t_setup_elapsed:.2f}s"
                     )
                 w.x.array[:] = 0.0
@@ -1795,13 +1816,13 @@ class UrbanWindSimulator:
             except Exception as exc:
                 if rank0:
                     warning(
-                        "UrbanWind: direct Stokes fallback failed with "
+                        "Flow: direct Stokes fallback failed with "
                         f"{type(exc).__name__}: {exc}"
                     )
 
         if ksp_reason < 0:
             raise RuntimeError(
-                "UrbanWind: Stokes linear solve failed "
+                "Flow: Stokes linear solve failed "
                 f"(reason={ksp_reason}, its={ksp_its}). "
                 "Provide `petsc_stokes` options for your MPI setup."
             )
@@ -1863,13 +1884,13 @@ class UrbanWindSimulator:
 
         if rank0:
             info(
-                f"UrbanWind: Stokes solve complete  "
+                f"Flow: Stokes solve complete  "
                 f"KSP its={ksp_its} reason={ksp_reason}  "
                 f"t_solve={t_ksp_elapsed:.2f}s"
             )
             slip_part = f"  slip_un={slip_un_rms:.3e}" if not np.isnan(slip_un_rms) else ""
             info(
-                f"UrbanWind: Stokes diagnostics  div_rms={div_rms:.3e}  "
+                f"Flow: Stokes diagnostics  div_rms={div_rms:.3e}  "
                 f"flux_imb={flux_imbalance:.3e}{slip_part}"
             )
 
@@ -1913,6 +1934,11 @@ class UrbanWindSimulator:
         dtcc_core VolumeMesh (if bounds were given) or tuple ``(u, p)``
             of dolfinx Functions when mesh was provided directly.
         """
+        self._validate_parameters()
+        output_path = _solution_path(
+            self.output_dir, output_path, "solution.xdmf", input_mesh=self.mesh_path,
+            stems=("_velocity", "_pressure"),
+        )
         self._load_if_needed()
         assert self.mesh is not None and self.markers is not None
 
@@ -1939,7 +1965,7 @@ class UrbanWindSimulator:
 
         # ---- boundary setup ----
         self.num_buildings = infer_num_buildings(mesh, self.markers)
-        info(f"UrbanWind: inferred {self.num_buildings} buildings")
+        info(f"Flow: inferred {self.num_buildings} buildings")
         top_marker = -2
         lateral_marker_normals = {
             marker: normal
@@ -1956,12 +1982,12 @@ class UrbanWindSimulator:
         )
 
         info(
-            f"UrbanWind: inlet marker = {inlet_marker}, "
+            f"Flow: inlet marker = {inlet_marker}, "
             f"outlet marker = {outlet_marker}"
             f"{'' if self._has_outlet else ' (closed cavity – no outlet)'}"
         )
-        info(f"UrbanWind: top marker = {top_marker}")
-        info(f"UrbanWind: side/top boundary model = {params.side_top_boundary}")
+        info(f"Flow: top marker = {top_marker}")
+        info(f"Flow: side/top boundary model = {params.side_top_boundary}")
 
         self.category_markers = categorize_boundary(
             mesh,
@@ -1976,7 +2002,7 @@ class UrbanWindSimulator:
         V = FunctionSpace(mesh, "Lagrange", params.velocity_degree, dim=3)
         Q = FunctionSpace(mesh, "Lagrange", params.pressure_degree)
         info(
-            f"UrbanWind: V dofs = {V.dofmap.index_map.size_global}, "
+            f"Flow: V dofs = {V.dofmap.index_map.size_global}, "
             f"Q dofs = {Q.dofmap.index_map.size_global}"
         )
 
@@ -2022,18 +2048,18 @@ class UrbanWindSimulator:
 
             u_in_func.interpolate(_inlet_expr_scaled)
             info(
-                f"UrbanWind: inlet ramp enabled over {ramp_time:.3f} s "
+                f"Flow: inlet ramp enabled over {ramp_time:.3f} s "
                 f"(initial scale={initial_scale:.3f})"
             )
         else:
             u_in_func.interpolate(inlet_expr)
 
         if rank0:
-            info("UrbanWind: setup phase 1/5 - locating boundary dofs")
+            info("Flow: setup phase 1/5 - locating boundary dofs")
 
         # Locate inlet dofs
         if rank0:
-            info("UrbanWind: setup phase 1a/5 - inlet dofs")
+            info("Flow: setup phase 1a/5 - inlet dofs")
         fdim = mesh.topology.dim - 1
         inlet_facets = self.category_markers.find(int(BndCat.INLET))
         # Check globally — some ranks may have zero local inlet facets
@@ -2043,7 +2069,7 @@ class UrbanWindSimulator:
             all_cats_global = mesh.comm.allgather(sorted(all_cats))
             merged = sorted(set().union(*[set(c) for c in all_cats_global]))
             raise RuntimeError(
-                "UrbanWind: no inlet facets found after boundary categorisation.  "
+                "Flow: no inlet facets found after boundary categorisation.  "
                 f"Available category values (global): {merged}."
             )
         inlet_dofs = locate_dofs_topological(V, fdim, inlet_facets)
@@ -2051,7 +2077,7 @@ class UrbanWindSimulator:
 
         # ---- wall BCs ----
         if rank0:
-            info("UrbanWind: setup phase 1b/5 - wall and side/top BCs")
+            info("Flow: setup phase 1b/5 - wall and side/top BCs")
         bcs_vel: List[dolfinx.fem.DirichletBC] = [bc_inlet]
 
         solid_tags = [int(BndCat.WALL), int(BndCat.ROOF), int(BndCat.GROUND)]
@@ -2069,16 +2095,16 @@ class UrbanWindSimulator:
                 weak_slip_tags = [int(BndCat.SIDE), int(BndCat.TOP)]
                 if rank0:
                     warning(
-                        "UrbanWind: using MPI-safe weak slip enforcement on side/top "
+                        "Flow: using MPI-safe weak slip enforcement on side/top "
                         "(normal-velocity penalty), replacing strong component BCs."
                     )
             else:
                 if rank0:
-                    info("UrbanWind: setup phase 1c/5 - applying side/top slip BCs")
+                    info("Flow: setup phase 1c/5 - applying side/top slip BCs")
                 top_facets = self.markers.find(int(top_marker))
                 if len(top_facets) > 0:
                     if rank0:
-                        info("UrbanWind: setup phase 1c.1 - top uz dofs")
+                        info("Flow: setup phase 1c.1 - top uz dofs")
                     dofs_z = locate_dofs_topological(V.sub(2), fdim, top_facets)
                     bcs_vel.append(dirichletbc(PETSc.ScalarType(0.0), dofs_z, V.sub(2)))
 
@@ -2091,7 +2117,7 @@ class UrbanWindSimulator:
                     if abs(normal[0]) >= abs(normal[1]):
                         if rank0:
                             info(
-                                f"UrbanWind: setup phase 1c.2 - side marker {marker} ux dofs"
+                                f"Flow: setup phase 1c.2 - side marker {marker} ux dofs"
                             )
                         dofs_x = locate_dofs_topological(V.sub(0), fdim, facets)
                         bcs_vel.append(
@@ -2100,7 +2126,7 @@ class UrbanWindSimulator:
                     else:
                         if rank0:
                             info(
-                                f"UrbanWind: setup phase 1c.3 - side marker {marker} uy dofs"
+                                f"Flow: setup phase 1c.3 - side marker {marker} uy dofs"
                             )
                         dofs_y = locate_dofs_topological(V.sub(1), fdim, facets)
                         bcs_vel.append(
@@ -2109,7 +2135,7 @@ class UrbanWindSimulator:
 
         # Pressure BC
         if rank0:
-            info("UrbanWind: setup phase 1d/5 - pressure BC setup")
+            info("Flow: setup phase 1d/5 - pressure BC setup")
         if self._has_outlet:
             # phi=0 on outlet face
             outlet_facets = self.category_markers.find(int(BndCat.OUTLET))
@@ -2117,7 +2143,7 @@ class UrbanWindSimulator:
             n_outlet_global = mesh.comm.allreduce(len(outlet_facets), op=MPI.SUM)
             if n_outlet_global == 0:
                 raise RuntimeError(
-                    "UrbanWind: _has_outlet is True but no outlet facets found.  "
+                    "Flow: _has_outlet is True but no outlet facets found.  "
                     "Set closed_cavity=True if the domain has no outlet, or "
                     f"check outlet_marker.  Available marker values (global): "
                     f"{sorted(set(int(v) for v in self.markers.values))}."
@@ -2143,7 +2169,7 @@ class UrbanWindSimulator:
             weak_slip_gamma = Constant(mesh, PETSc.ScalarType(gamma_val))
             if rank0:
                 info(
-                    f"UrbanWind: weak slip penalty gamma={gamma_val:.4g} "
+                    f"Flow: weak slip penalty gamma={gamma_val:.4g} "
                     f"(hmin={hmin:.4g}, dt={dt_val:.4g})"
                 )
 
@@ -2162,7 +2188,7 @@ class UrbanWindSimulator:
             )
 
         if rank0:
-            info("UrbanWind: setup phase 2/5 - building variational forms")
+            info("Flow: setup phase 2/5 - building variational forms")
 
         # ---- IPCS variational forms ----
 
@@ -2227,7 +2253,7 @@ class UrbanWindSimulator:
                 else 50.0 * nu_eff / h_min
             )
             gamma_c = Constant(mesh, PETSc.ScalarType(gamma_val))
-            info(f"UrbanWind: friction model — β={params.beta_wall}, γ={gamma_val:.4g}")
+            info(f"Flow: friction model — β={params.beta_wall}, γ={gamma_val:.4g}")
 
             for tag in solid_tags:
                 # tangential friction: β * (u_t · v_t)  with u_t = u - (u·n)n
@@ -2280,7 +2306,7 @@ class UrbanWindSimulator:
         # ---- Assemble LHS matrices ----
         # A1 depends on u_n via convection — reassembled each step
         if rank0:
-            info("UrbanWind: setup phase 3/5 - assembling initial matrices")
+            info("Flow: setup phase 3/5 - assembling initial matrices")
         A1 = _fem_petsc.create_matrix(a1)
         A1.zeroEntries()
         _fem_petsc.assemble_matrix(A1, a1, bcs=bcs_vel)
@@ -2295,7 +2321,7 @@ class UrbanWindSimulator:
 
         # ---- KSP solvers ----
         if rank0:
-            info("UrbanWind: setup phase 4/5 - configuring linear solvers")
+            info("Flow: setup phase 4/5 - configuring linear solvers")
         ksp1 = self._make_ksp(
             A1, params.petsc_velocity or DEFAULT_VELOCITY_PETSC, "vel"
         )
@@ -2314,7 +2340,7 @@ class UrbanWindSimulator:
 
         # ---- Diagnostics forms ----
         if rank0:
-            info("UrbanWind: setup phase 5/5 - preparing diagnostics and loop")
+            info("Flow: setup phase 5/5 - preparing diagnostics and loop")
         one_c = Constant(mesh, PETSc.ScalarType(1.0))
         vol_form = _fem_form(one_c * dx)
         div_norm_form = _fem_form(div(u_n) * div(u_n) * dx)
@@ -2365,7 +2391,7 @@ class UrbanWindSimulator:
         slip_un_rms = float("nan")
         if rank0:
             info(
-                "UrbanWind: Starting pseudo-time loop "
+                "Flow: Starting pseudo-time loop "
                 f"(mode={params.simulation_mode}) …"
             )
         t_sim = 0.0
@@ -2455,14 +2481,14 @@ class UrbanWindSimulator:
                 omega = min(omega, params.spike_relaxation)
                 if rank0:
                     info(
-                        f"UrbanWind: velocity solve did not converge at step {step} "
+                        f"Flow: velocity solve did not converge at step {step} "
                         f"(reason={ksp1_reason}); applying extra damping."
                     )
             if step >= params.spike_min_step and rel > params.spike_rel_threshold:
                 omega = min(omega, params.spike_relaxation)
                 if rank0:
                     info(
-                        f"UrbanWind: spike damping active at step {step} "
+                        f"Flow: spike damping active at step {step} "
                         f"(rel={rel:.3e}, omega={omega:.3f})"
                     )
             u_nm1.x.array[:] = u_n.x.array
@@ -2581,7 +2607,7 @@ class UrbanWindSimulator:
                         f"  slip_un={slip_un_rms:.3e}" if not np.isnan(slip_un_rms) else ""
                     )
                     info(
-                        f"UrbanWind: step {step:5d}  rel={rel:.3e}  "
+                        f"Flow: step {step:5d}  rel={rel:.3e}  "
                         f"div_rms={div_rms:.3e}  flux_imb={flux_imbalance:.3e}  "
                         f"CFL={cfl:.2f}{slip_part}  "
                         f"KSP its: vel={its1} pres={its2} corr={its3}"
@@ -2593,7 +2619,7 @@ class UrbanWindSimulator:
                             flux_imbalance < params.flux_imbalance_tolerance
                         )
                         info(
-                            "UrbanWind: criteria steady  "
+                            "Flow: criteria steady  "
                             f"rel={rel:.3e}/{params.steady_tolerance:.3e} "
                             f"[{'OK' if rel_ok else 'WAIT'}]  "
                             f"div={div_rms:.3e}/{params.divergence_tolerance:.3e} "
@@ -2612,14 +2638,14 @@ class UrbanWindSimulator:
                                 fluximb_curr < params.stat_flux_imbalance_tolerance
                             )
                             info(
-                                "UrbanWind: criteria stat    "
+                                "Flow: criteria stat    "
                                 f"dKE={ke_rel:.3e}/{params.stat_tolerance:.3e} "
                                 f"[{'OK' if dke_ok else 'WAIT'}]  "
                                 f"dFlux={flux_rel:.3e}/{params.stat_tolerance:.3e} "
                                 f"[{'OK' if dflux_ok else 'WAIT'}]"
                             )
                             info(
-                                "UrbanWind: criteria stat    "
+                                "Flow: criteria stat    "
                                 f"mean_div={div_curr:.3e}/{params.stat_divergence_tolerance:.3e} "
                                 f"[{'OK' if divw_ok else 'WAIT'}]  "
                                 f"mean_flux_imb={fluximb_curr:.3e}/{params.stat_flux_imbalance_tolerance:.3e} "
@@ -2629,14 +2655,14 @@ class UrbanWindSimulator:
                         else:
                             steps_left = max(0, stat_checks_start - step)
                             info(
-                                "UrbanWind: criteria stat    "
+                                "Flow: criteria stat    "
                                 f"windowed checks start in {steps_left} step(s) "
                                 f"(warmup={params.stat_warmup_steps}, "
                                 f"window={params.stat_window})"
                             )
                     if cfl > params.cfl_target:
                         info(
-                            f"UrbanWind: CFL advisory at step {step}: "
+                            f"Flow: CFL advisory at step {step}: "
                             f"{cfl:.2f} > target {params.cfl_target:.2f}"
                         )
 
@@ -2647,7 +2673,7 @@ class UrbanWindSimulator:
                     if converged_count >= params.steady_window:
                         if rank0:
                             info(
-                                f"UrbanWind: Steady state reached at step {step} "
+                                f"Flow: Steady state reached at step {step} "
                                 f"(rel={rel:.3e}, div_rms={div_rms:.3e}, "
                                 f"flux_imb={flux_imbalance:.3e})"
                             )
@@ -2659,7 +2685,7 @@ class UrbanWindSimulator:
                 if stat_ready and stat_is_converged:
                     if rank0:
                         info(
-                            f"UrbanWind: Statistical stationarity reached at step {step} "
+                            f"Flow: Statistical stationarity reached at step {step} "
                             f"(dKE={ke_rel:.3e}, dFlux={flux_rel:.3e}, "
                             f"mean_div_rms={div_curr:.3e}, "
                             f"mean_flux_imb={fluximb_curr:.3e})"
@@ -2685,21 +2711,21 @@ class UrbanWindSimulator:
                     dt_c.value = PETSc.ScalarType(dt_val)
                     if rank0 and (step <= params.log_initial_steps or step % params.log_every_steps == 0):
                         info(
-                            f"UrbanWind: adaptive dt update at step {step}: "
+                            f"Flow: adaptive dt update at step {step}: "
                             f"{old_dt:.3e} -> {dt_val:.3e}"
                         )
             t_sim += dt_step
         else:
             if rank0:
                 info(
-                    f"UrbanWind: Reached max_steps={params.max_steps} "
+                    f"Flow: Reached max_steps={params.max_steps} "
                     f"(final rel={rel:.3e})"
                 )
             step = params.max_steps
 
         if rank0:
             summary = (
-                f"UrbanWind: Summary  reason={stop_reason}  step={step}  "
+                f"Flow: Summary  reason={stop_reason}  step={step}  "
                 f"rel={rel:.3e}  div_rms={div_rms:.3e}  flux_imb={flux_imbalance:.3e}  "
                 f"CFL={cfl:.2f}  dt={dt_val:.3e}  t={t_sim:.3e}"
             )
@@ -2793,8 +2819,34 @@ class UrbanWindSimulator:
 
 __all__ = [
     "BndCat",
-    "UrbanWindParameters",
-    "UrbanWindSimulator",
+    "NavierStokesParameters",
+    "StokesParameters",
+    "StokesSolver",
+    "NavierStokesSolver",
     "select_inlet_outlet",
     "BBOX_MARKER_NORMALS",
 ]
+
+
+class NavierStokesParameters(_FlowParameters):
+    """Parameters for the incompressible Navier–Stokes equations."""
+
+    equations: Literal["navier_stokes"] = Field("navier_stokes", frozen=True)
+
+
+class StokesParameters(_FlowParameters):
+    """Parameters for stationary incompressible Stokes flow."""
+
+    equations: Literal["stokes"] = Field("stokes", frozen=True)
+
+
+class NavierStokesSolver(_FlowSolver):
+    """Solve incompressible Navier–Stokes flow using pressure correction."""
+
+    parameter_type = NavierStokesParameters
+
+
+class StokesSolver(_FlowSolver):
+    """Solve stationary incompressible Stokes flow using a mixed formulation."""
+
+    parameter_type = StokesParameters

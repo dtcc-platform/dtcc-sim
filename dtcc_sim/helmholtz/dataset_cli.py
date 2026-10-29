@@ -1,8 +1,8 @@
-"""Inspect or explicitly execute the registered Helmholtz dataset."""
+"""Inspect or explicitly execute the registered noise dataset."""
 
 import argparse
 import json
-from dtcc_sim.helmholtz.dataset import HelmholtzSimulationArgs
+from dtcc_sim.helmholtz.dataset import UrbanNoiseSimulationArgs
 from dtcc_sim.helmholtz.cli import add_solver_arguments, parameters_from_args
 import dtcc_core.datasets as datasets
 
@@ -22,7 +22,7 @@ def main(argv=None):
         help="Execute the dataset; otherwise only print validated settings",
     )
     args = parser.parse_args(argv)
-    request = HelmholtzSimulationArgs(
+    request = UrbanNoiseSimulationArgs(
         bounds=args.bounds,
         h=args.h,
         output_dir=args.output,
@@ -33,7 +33,7 @@ def main(argv=None):
     print(json.dumps(request.model_dump(mode="json"), indent=2))
     if not args.run:
         return 0
-    result = datasets.helmholtz_simulation(**request.model_dump(mode="python"))
+    result = datasets.urban_noise_simulation(**request.model_dump(mode="python"))
     result.save(request.output_dir / "helmholtz.dtcc")
     print("Saved DTCC fields; diagnostics:", request.output_dir / "diagnostics.json")
     return 0

@@ -3,7 +3,7 @@
 import argparse
 import json
 
-from . import HelmholtzSimulator
+from . import HelmholtzSolver
 from .cli import add_solver_arguments, parameters_from_args
 
 
@@ -21,7 +21,7 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     params = parameters_from_args(args)
-    simulator = HelmholtzSimulator(
+    simulator = HelmholtzSolver(
         mesh_path=args.mesh, output_dir=args.output, parameters=params
     )
     if not args.run:

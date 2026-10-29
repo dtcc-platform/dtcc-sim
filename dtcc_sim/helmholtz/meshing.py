@@ -108,6 +108,40 @@ def _generate_mesh(arguments, path):
     return {"vertices": len(vertices), "tetrahedra": len(cells)}
 
 
+def _save_city_surface(mesh, path):
+    """Export the generated domain's ground and building facets in solver coordinates."""
+    from copy import deepcopy
+    import numpy as np
+    from dtcc_core.model import Mesh
+
+    if isinstance(mesh.boundary_markers, dict):
+        faces = np.asarray(list(mesh.boundary_markers), dtype=np.int64)
+        markers = np.asarray(list(mesh.boundary_markers.values()))
+    else:
+        faces = np.asarray(mesh.boundary_faces)
+        markers = np.asarray(mesh.boundary_markers)
+    if faces.ndim != 2 or faces.shape[1] != 3 or markers.shape != (len(faces),):
+        raise ValueError("city.vtu requires tagged triangular boundary faces")
+    if not np.issubdtype(faces.dtype, np.integer) or not np.issubdtype(markers.dtype, np.integer):
+        raise ValueError("City boundary faces and markers must be integers")
+    if not len(faces) or faces.min() < 0 or faces.max() >= len(mesh.vertices):
+        raise ValueError("City boundary faces must reference valid mesh vertices")
+    if np.any(markers < -6):
+        raise ValueError("City boundary markers must use the DTCC city mesh convention")
+    # Ground is -1; building facets are nonnegative. -2 through -6 are artificial boundaries.
+    keep = (markers == -1) | (markers >= 0)
+    if not keep.any():
+        raise ValueError("City mesh has no tagged ground or building faces to export")
+    vertices, indices = np.unique(faces[keep], return_inverse=True)
+    surface = Mesh(
+        vertices=np.array(mesh.vertices[vertices], copy=True),
+        faces=indices.reshape(-1, 3),
+        markers=np.array(markers[keep], copy=True),
+    )
+    surface.transform = deepcopy(mesh.transform)
+    surface.save(path)
+
+
 class CityMeshCache:
     """Reuse only intact meshes with matching full configuration and mesher versions."""
 

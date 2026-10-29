@@ -17,9 +17,9 @@ pytestmark = pytest.mark.simulation
 @pytest.fixture(params=["urban_heat_simulation", "air_quality_field"])
 def scalar_dataset(request, monkeypatch):
     if request.param == "urban_heat_simulation":
-        module_name = "dtcc_sim.urban_heat"
-        simulator_name = "UrbanHeatSimulator"
-        parameters_name = "UrbanHeatParameters"
+        module_name = "dtcc_sim.heat"
+        simulator_name = "HeatSolver"
+        parameters_name = "HeatParameters"
         field_name, unit = "temperature", "degC"
     else:
         module_name = "dtcc_sim.smooth_reconstruction"

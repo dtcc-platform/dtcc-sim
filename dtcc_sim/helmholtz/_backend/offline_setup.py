@@ -19,6 +19,10 @@ from .coarse_space import (
     summarize_coarse_space,
 )
 
+from dtcc_core.common import get_python_logger
+
+_logger = get_python_logger("dtcc-sim")
+
 
 def _obj_array_to_list(arr) -> list[np.ndarray]:
     if isinstance(arr, np.ndarray) and arr.dtype == object:
@@ -30,7 +34,7 @@ def _obj_array_to_list(arr) -> list[np.ndarray]:
 
 def tprint(msg: str) -> None:
     if PARAMS.verbose:
-        print(msg, flush=True)
+        _logger.info(msg)
 
 
 def _ensure_parent(path_str: str) -> None:

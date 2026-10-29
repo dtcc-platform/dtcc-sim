@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from dtcc_sim.qa import (
     SIMULATION_DATASET_NAMES,
     simulation_dataset_example_arguments,
@@ -199,3 +201,12 @@ def test_qa_matrix_covers_registered_simulation_datasets():
 
     for name in SIMULATION_DATASET_NAMES:
         assert f"`{name}`" in matrix
+
+
+@pytest.mark.parametrize("output_dir", ["", " "])
+def test_simulation_datasets_reject_empty_output_directory(output_dir):
+    for name, descriptor in simulation_dataset_descriptors().items():
+        arguments = simulation_dataset_example_arguments(name)
+        arguments["output_dir"] = output_dir
+        with pytest.raises(ValueError):
+            descriptor.validate(arguments)

@@ -20,7 +20,7 @@ def _get_service_datasets() -> Dict[str, Any]:
         name: ds
         for name, ds in datasets.list().items()
         if ds.__class__.__module__.startswith(MODULE_PREFIX)
-        and name != "helmholtz_simulation"
+        and name != "urban_noise_simulation"
     }
 
 
@@ -90,6 +90,7 @@ def list_datasets():
     dataset_info = {}
     for name, ds in service_datasets.items():
         schema = ds.show_options()
+        schema["properties"].pop("output_dir", None)
         descriptor = ds.describe() if hasattr(ds, "describe") else {}
         formats = descriptor.get("supported_formats") or _extract_formats(schema)
 
@@ -117,6 +118,8 @@ def list_datasets():
 def submit_job(name: str, params: Dict[str, Any] = Body()):
     _, ds = _require_dataset(name)
     params = dict(params)
+    if params.get("output_dir") is not None:
+        raise HTTPException(422, "output_dir is local-only; use format for service results")
 
     # Enforce format (default to first supported format)
     if "format" not in params or params["format"] is None:

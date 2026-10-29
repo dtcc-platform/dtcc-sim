@@ -1,13 +1,13 @@
-# Small Helmholtz example
+# Small city validation tool
 
-Use the validated complex runtime. The [pinned Linux installer](../docs/helmholtz-reproducible-install.md)
+Use the validated complex runtime. The [pinned Linux installer](helmholtz-reproducible-install.md)
 can create it automatically. Activate its new environment with
 `conda activate /path/to/installation/env`, then run from this checkout:
 
 ```bash
-python demos/helmholtz_small.py --output /path/to/new-geometric-case
-python demos/helmholtz_small.py --output /path/to/new-geometric-case --run
-python demos/helmholtz_small.py --output /path/to/new-ramp-case \
+python tools/validate_helmholtz_city.py --output /path/to/new-geometric-case
+python tools/validate_helmholtz_city.py --output /path/to/new-geometric-case --run
+python tools/validate_helmholtz_city.py --output /path/to/new-ramp-case \
   --pou-mode core_overlap_ramp --run
 ```
 

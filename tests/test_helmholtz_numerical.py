@@ -7,7 +7,7 @@ pytest.importorskip("dolfinx")
 from mpi4py import MPI
 from dolfinx import mesh as dmesh, io
 
-from dtcc_sim.helmholtz import HelmholtzParameters, HelmholtzSimulator
+from dtcc_sim.helmholtz import HelmholtzParameters, HelmholtzSolver
 
 
 @pytest.mark.fenics
@@ -36,7 +36,7 @@ def test_public_plane_wave_solve_matches_known_solution(tmp_path, record_propert
         outer_rtol=1e-10,
         verbose=False,
     )
-    sim = HelmholtzSimulator(
+    sim = HelmholtzSolver(
         mesh_path=path, output_dir=tmp_path / "case", params=params
     )
     result = sim.simulate()

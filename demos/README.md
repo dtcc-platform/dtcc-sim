@@ -1,95 +1,79 @@
-# DTCC Sim Demos
+# Demos
 
-This directory contains demonstration scripts for the DTCC Sim urban simulation tools.
+Run from the repository root in the appropriate environment, for example:
 
-## Urban Heat Simulation Demos
-
-Three focused demos illustrate different aspects of the urban heat simulator:
-
-### 1. Cooling Scenario (`urban_heat_cooling.py`)
-
-Simulates night-time or winter cooling conditions.
-
-**Physical Setup:**
-- Buildings release stored heat (10°C)
-- Cold ground (0°C)
-- Low ambient temperature (5°C)
-
-**Usage:**
 ```bash
-python urban_heat_cooling.py
+conda activate fenicsx-env
+python demos/urban_heat_cooling.py
 ```
 
-**Output:** `demos/output/cooling.xdmf`
+Follow the [demo guidelines](../docs/demo-guidelines.md) when adding or revising
+examples. See [CONTRIBUTING.md](../CONTRIBUTING.md#demos) for verification and
+[installation](../docs/installation.md) for dependencies. Close plots and viewers
+to continue where provided. Existing scripts are not all compliant yet.
 
-### 2. Heatwave Scenario (`urban_heat_heatwave.py`)
+## Dataset examples
 
-Simulates summer heat wave conditions.
+| Demo | Purpose | Runtime |
+| --- | --- | --- |
+| [dataset_urban_heat.py](dataset_urban_heat.py) | Heat through the dataset API | Real FEniCSx; city data |
+| [dataset_urban_wind_stokes_simulation.py](dataset_urban_wind_stokes_simulation.py) | Stokes wind through the dataset API | Real FEniCSx; city data |
+| [dataset_air_quality_field.py](dataset_air_quality_field.py) | Air-quality field reconstruction through the dataset API | Real FEniCSx; live data |
+| [dataset_urban_noise.py](dataset_urban_noise.py) | City noise wave amplitude through the dataset API | Complex FEniCSx; city data |
+| [traffic.py](traffic.py) | Traffic assignment using road and population/employment data | Standard Python environment; live data |
 
-**Physical Setup:**
-- Hot building surfaces (30°C from solar heating)
-- Warm ground (25°C)
-- Elevated ambient temperature (20°C)
+## Solver examples
 
-**Usage:**
+| Demo | Purpose | Runtime |
+| --- | --- | --- |
+| [urban_heat_cooling.py](urban_heat_cooling.py) | Cooling with cold ambient conditions | Real FEniCSx; city data |
+| [urban_heat_heatwave.py](urban_heat_heatwave.py) | Heatwave with hot surfaces | Real FEniCSx; city data |
+| [urban_wind_simulation.py](urban_wind_simulation.py) | Urban Navier–Stokes flow | Real FEniCSx; city data |
+| [urban_wind_stokes_simulation.py](urban_wind_stokes_simulation.py) | Stationary urban Stokes flow | Real FEniCSx; city data |
+| [smooth_reconstruction.py](smooth_reconstruction.py) | Smooth fields from point observations | Real FEniCSx; city data |
+| [driven_cavity.py](driven_cavity.py) | Lid-driven cavity | Real FEniCSx; synthetic |
+| [channel_flow.py](channel_flow.py) | Poiseuille channel flow | Real FEniCSx; synthetic |
+| [bluff_body.py](bluff_body.py) | Flow around an obstruction | Real FEniCSx; synthetic |
+| [helmholtz_box.py](helmholtz_box.py) | Offline Gaussian source, direct solver API and amplitude preview | Complex FEniCSx; synthetic |
+
+## Requirements and limitations
+
+Geographic Gothenburg demos use a 200 × 200 m box centred on Poseidon
+(EPSG:3006: 319995.962899, 6399009.716755). Each script defines `center_x`,
+`center_y` and `L`, with bounds at centre ± `L / 2`. The air-quality demo keeps
+its Stockholm domain chosen for sensor coverage.
+
+All Gothenburg volume-mesh demos use a target mesh edge length of 12.5 m.
+Local geometry and quality constraints also affect actual element sizes.
+Traffic uses a road network rather than a volume mesh.
+
+Real solvers use `fenicsx-env`; Helmholtz uses `fenicsx-env-complex`. City and
+station workflows may download data and need access to their upstream services.
+Solver demos specify `output_dir="output/<demo-name>"`; the solver creates it.
+Heat and reconstruction write `solution.xdmf` and its HDF5 companion. Wind
+writes `solution_velocity.xdmf` and `solution_pressure.xdmf` with companions.
+Open these files in ParaView. Traffic exports `solution.dtcc` when given an
+output directory. Dataset requests also accept `output_dir`.
+
+The two wave examples run without arguments:
+
 ```bash
-python urban_heat_heatwave.py
+conda activate fenicsx-env-complex
+python demos/helmholtz_box.py
+python demos/dataset_urban_noise.py
 ```
 
-**Output:** `demos/output/heatwave.xdmf`
+Both use Core’s `.plot(field="helmholtz_amplitude")` for a 3D field preview
+and save `solution.vtu`
+in `output/helmholtz_box` or `output/urban_noise`. Repeated runs replace solver outputs
+in place and preserve unrelated files; the city example reuses `output/urban_noise-mesh-cache`.
+The city example also saves `city.vtu`: building and ground triangles from the
+solver mesh, excluding the domain top and sides. Open it alongside `solution.vtu`
+in ParaView for spatial context. Amplitude is in solver units, not sound-pressure
+level or dB.
 
-### 3. Dataset Integration (`urban_heat_dataset.py`)
-
-Demonstrates using the simulator via the dataset interface.
-
-**Usage:**
-```bash
-python urban_heat_dataset.py
-```
-
-**Output:** `demos/output/dataset.xdmf`
-
-## Physical Model
-
-The simulator solves the steady-state heat equation with relaxation:
-
-```
--∇·(κ∇T) + σ(T - T_ambient) = 0
-```
-
-where:
-- `T`: temperature field [°C]
-- `κ`: thermal diffusivity [m²/s]
-- `σ`: relaxation coefficient [1/s]
-- `T_ambient`: background temperature [°C]
-
-### Boundary Conditions
-
-Applied to different urban surfaces:
-- **Walls**: Building vertical surfaces
-- **Roofs**: Building tops
-- **Ground**: Terrain surface
-- **Open**: Far-field boundaries
-
-## Visualization
-
-View results using ParaView:
-```bash
-paraview demos/output/cooling.xdmf
-```
-
-## Key Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `kappa` | 1.0 | Thermal diffusivity [m²/s] |
-| `sigma` | 0.0 | Relaxation coefficient [1/s] |
-| `T_ambient` | 0.0 | Ambient temperature [°C] |
-| `wall_value` | 1.0 | Wall temperature [°C] |
-| `roof_value` | 1.0 | Roof temperature [°C] |
-| `ground_value` | 0.0 | Ground temperature [°C] |
-
-See `UrbanHeatParameters` for complete parameter list.
-
-For a small Helmholtz mesh/solver/export run with recorded expectations, see
-[the small example](HELMHOLTZ_SMALL.md).
+See the [box example](../docs/helmholtz-visual-demo.md) and
+[workflow guide](../docs/helmholtz-quickstart.md) for physical assumptions and
+advanced launchers. Reference configs and detached launch tooling live under
+`tools/`; numerical comparisons use the
+[city validation tool](../docs/helmholtz-city-validation.md).

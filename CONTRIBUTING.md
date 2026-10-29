@@ -3,6 +3,8 @@
 Questions, bug reports and pull requests are welcome. Include a small reproducer
 when reporting a bug and describe the user-visible behavior of a proposed change.
 
+See [DESIGN.md](DESIGN.md) for architecture and contracts.
+
 ## Development environment
 
 Follow the [installation instructions](README.md#installation), then run commands
@@ -19,6 +21,19 @@ the real-number and complex-number FEniCSx environments and local Core overrides
 | Upgrade a locked dependency | `uv lock --upgrade-package <package>` |
 
 Commit `uv.lock` together with dependency changes in `pyproject.toml`.
+
+## Demos
+
+Follow the [demo guidelines](docs/demo-guidelines.md); the
+[demo catalog](demos/README.md) lists purposes and requirements. Run from the
+repository root in the appropriate environment, for example
+`python demos/urban_heat_cooling.py`. Plots and viewers open where provided;
+close them to continue. The Helmholtz box and noise dataset demos need no arguments.
+
+Run `python -m pytest tests/test_helmholtz_demos.py` for wave-demo hygiene and
+execution checks in the complex environment. The city run is opt-in with
+`DTCC_RUN_DEMOS=1`; it needs live geodata. For solver verification, use the
+numerical tests below. Other Sim demos are not yet covered by hygiene checks.
 
 ## Tests
 

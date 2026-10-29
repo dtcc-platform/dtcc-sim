@@ -3,13 +3,14 @@
 import os
 
 from ._version import __version__
+from .helmholtz import HelmholtzSolver, HelmholtzParameters
 from .traffic import (
     TrafficAssignmentSimulator,
     TrafficAssignmentParameters,
 )
 from .datasets import (
-    HelmholtzSimulationArgs,
-    HelmholtzSimulationDataset,
+    UrbanNoiseSimulationArgs,
+    UrbanNoiseSimulationDataset,
     UrbanHeatSimulationArgs,
     UrbanHeatSimulationDataset,
     AirQualityFieldArgs,
@@ -22,9 +23,9 @@ from .datasets import (
 
 _fenics_exports = []
 try:
-    from .urban_heat import (
-        UrbanHeatSimulator,
-        UrbanHeatParameters,
+    from .heat import (
+        HeatSolver,
+        HeatParameters,
         BndCat,
         DirichletBCSpec,
         NeumannBCSpec,
@@ -34,9 +35,11 @@ try:
         SmoothReconstructionSimulator,
         SmoothReconstructionParameters,
     )
-    from .urban_wind import (
-        UrbanWindSimulator,
-        UrbanWindParameters,
+    from .flow import (
+        StokesSolver,
+        StokesParameters,
+        NavierStokesSolver,
+        NavierStokesParameters,
         BndCat as WindBndCat,
     )
 
@@ -44,25 +47,29 @@ try:
     # Note: FEniCSx backend messages use FEniCSx-native formatting.
     from .fenics import set_log_level, DEBUG, INFO, WARNING, ERROR
 
-    _fenicsx_log_name = os.getenv("DTCC_FENICSX_LOG_LEVEL", "INFO").strip().upper()
-    _fenicsx_log_level = {
+    _fenicsx_log_name = os.getenv("DTCC_FENICSX_LOG_LEVEL", "WARNING").strip().upper()
+    _fenicsx_log_levels = {
         "DEBUG": DEBUG,
         "INFO": INFO,
         "WARNING": WARNING,
         "ERROR": ERROR,
-    }.get(_fenicsx_log_name, INFO)
-    set_log_level(_fenicsx_log_level)
+    }
+    if _fenicsx_log_name not in _fenicsx_log_levels:
+        raise ValueError("DTCC_FENICSX_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR")
+    set_log_level(_fenicsx_log_levels[_fenicsx_log_name])
     _fenics_exports = [
-        "UrbanHeatSimulator",
-        "UrbanHeatParameters",
+        "HeatSolver",
+        "HeatParameters",
         "BndCat",
         "DirichletBCSpec",
         "NeumannBCSpec",
         "RobinBCSpec",
         "SmoothReconstructionSimulator",
         "SmoothReconstructionParameters",
-        "UrbanWindSimulator",
-        "UrbanWindParameters",
+        "StokesSolver",
+        "StokesParameters",
+        "NavierStokesSolver",
+        "NavierStokesParameters",
         "WindBndCat",
     ]
 except ModuleNotFoundError as exc:
@@ -71,10 +78,12 @@ except ModuleNotFoundError as exc:
 
 __all__ = [
     "__version__",
+    "HelmholtzSolver",
+    "HelmholtzParameters",
     "TrafficAssignmentSimulator",
     "TrafficAssignmentParameters",
-    "HelmholtzSimulationArgs",
-    "HelmholtzSimulationDataset",
+    "UrbanNoiseSimulationArgs",
+    "UrbanNoiseSimulationDataset",
     "UrbanHeatSimulationArgs",
     "UrbanHeatSimulationDataset",
     "AirQualityFieldArgs",

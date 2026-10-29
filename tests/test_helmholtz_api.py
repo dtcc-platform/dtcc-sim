@@ -8,7 +8,7 @@ import multiprocessing as mp
 import numpy as np
 import pytest
 
-from dtcc_sim.helmholtz import HelmholtzParameters, HelmholtzSimulator
+from dtcc_sim.helmholtz import HelmholtzParameters, HelmholtzSolver
 from dtcc_sim.helmholtz import simulator as api
 from dtcc_sim.helmholtz._backend.params import PARAMS, Params, bind_parameters
 
@@ -69,7 +69,7 @@ def test_description_does_not_import_backend_or_create_outputs(tmp_path, monkeyp
 
     monkeypatch.setattr(api, "_load_backend", forbidden)
     out = tmp_path / "case"
-    sim = HelmholtzSimulator(
+    sim = HelmholtzSolver(
         mesh_path=tmp_path / "not-yet-present.xdmf", output_dir=out
     )
     assert sim.describe()["parameters"]["workers"] == 1
@@ -82,7 +82,7 @@ def test_explicit_parameters_ignore_environment(
     monkeypatch.setenv("HELMHOLTZ_FREQUENCY_HZ", "999")
     monkeypatch.setenv("HELMHOLTZ_PATCH_WORKERS", "99")
     params = HelmholtzParameters(frequency_hz=5, workers=16, n_modes_per_patch=40)
-    result = HelmholtzSimulator(
+    result = HelmholtzSolver(
         mesh_path=mesh, output_dir=tmp_path / "case", parameters=params
     ).run()
     assert fake_backend[1] == ("prepare", 5, 16, 40, str(mesh))
@@ -122,7 +122,7 @@ def test_spawn_workers_receive_explicit_configuration():
 
 @pytest.mark.parametrize("changed", ["mesh", "hdf5", "parameters", "runtime"])
 def test_reject_stale_offline_data(mesh, tmp_path, fake_backend, monkeypatch, changed):
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.prepare()
     if changed == "mesh":
         mesh.write_text(mesh.read_text().replace("/Mesh", "/Other"))
@@ -137,15 +137,17 @@ def test_reject_stale_offline_data(mesh, tmp_path, fake_backend, monkeypatch, ch
     assert not any(call[0] == "solve" for call in fake_backend)
 
 
-def test_no_overwrite_of_existing_case(mesh, tmp_path, fake_backend):
+def test_run_replaces_solver_outputs_and_preserves_other_files(mesh, tmp_path, fake_backend):
     out = tmp_path / "case"
     out.mkdir()
-    original = out / "solution.npy"
-    original.write_bytes(b"keep original")
-    with pytest.raises(FileExistsError):
-        HelmholtzSimulator(mesh_path=mesh, output_dir=out).run()
-    assert original.read_bytes() == b"keep original"
-    assert not fake_backend
+    (out / "solution.npy").write_bytes(b"old solution")
+    (out / "keep.txt").write_text("unrelated")
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=out)
+    sim.run()
+    sim.run()
+    assert (out / "keep.txt").read_text() == "unrelated"
+    assert not (out / "solution.npy").exists()  # Fake backend writes no solution file.
+    assert len([call for call in fake_backend if call[0] == "solve"]) == 2
 
 
 def test_same_version_partitioner_build_change_rejects_offline_data(
@@ -159,7 +161,7 @@ def test_same_version_partitioner_build_change_rejects_offline_data(
     monkeypatch.setattr(
         api, "_runtime_versions", lambda: {"partitioner": dict(identity)}
     )
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.prepare()
     identity["metis_provider_sha256"] = "different-build-with-the-same-version"
     with pytest.raises(ValueError, match="does not match"):
@@ -167,15 +169,15 @@ def test_same_version_partitioner_build_change_rejects_offline_data(
     assert not any(call[0] == "solve" for call in fake_backend)
 
 
-def test_solving_completed_case_is_rejected(mesh, tmp_path, fake_backend):
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+def test_solving_completed_case_replaces_outputs(mesh, tmp_path, fake_backend):
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.run()
-    with pytest.raises(FileExistsError, match="already has solve outputs"):
-        sim.solve()
+    sim.solve()
+    assert len([call for call in fake_backend if call[0] == "solve"]) == 2
 
 
 def test_changed_preconditioner_is_rejected_before_solve(mesh, tmp_path, fake_backend):
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.prepare()
     sim.preconditioner_path.write_bytes(b"replaced offline data")
     with pytest.raises(ValueError, match="preconditioner checksum"):
@@ -187,7 +189,7 @@ def test_changed_preconditioner_is_rejected_before_solve(mesh, tmp_path, fake_ba
 def test_legacy_preparation_requires_fresh_case(mesh, tmp_path, fake_backend):
     import json
 
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.prepare()
     manifest = json.loads(sim.manifest_path.read_text())
     del manifest["preconditioner_sha256"]
@@ -202,7 +204,7 @@ def test_legacy_preparation_requires_fresh_case(mesh, tmp_path, fake_backend):
 def test_inputs_changed_during_solve_cannot_complete_case(
     mesh, tmp_path, fake_backend, monkeypatch, changed
 ):
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.prepare()
     configured = api._configured_backend
 
@@ -293,37 +295,36 @@ def test_prepare_rechecks_case_after_waiting_for_backend(
 
     @contextmanager
     def racing_backend(params, threads):
-        out.mkdir()
+        out.mkdir(exist_ok=True)
         (out / "keep.txt").write_text("other job")
         with configured(params, threads) as backend:
             yield backend
 
     monkeypatch.setattr(api, "_configured_backend", racing_backend)
-    with pytest.raises(FileExistsError, match="not empty"):
-        HelmholtzSimulator(mesh_path=mesh, output_dir=out).prepare()
+    HelmholtzSolver(mesh_path=mesh, output_dir=out).prepare()
     assert (out / "keep.txt").read_text() == "other job"
-    assert not (out / "preconditioner_data.npz").exists()
+    assert (out / "preconditioner_data.npz").exists()
     assert not (out / ".helmholtz.lock").exists()
 
 
-def test_solve_rechecks_outputs_after_waiting_for_backend(
-    mesh, tmp_path, fake_backend, monkeypatch
-):
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
-    sim.prepare()
+def test_run_keeps_case_locked_across_both_stages(mesh, tmp_path, fake_backend, monkeypatch):
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=tmp_path / "case")
     configured = api._configured_backend
+    checks = []
 
     @contextmanager
-    def racing_backend(params, threads):
-        (sim.output_dir / "solution.npy").write_bytes(b"other job")
+    def concurrent_backend(params, threads):
+        with pytest.raises(FileExistsError, match="locked"):
+            HelmholtzSolver(mesh_path=mesh, output_dir=sim.output_dir).prepare()
+        checks.append(True)
         with configured(params, threads) as backend:
             yield backend
 
-    monkeypatch.setattr(api, "_configured_backend", racing_backend)
-    with pytest.raises(FileExistsError, match="already has solve outputs"):
-        sim.solve()
-    assert (sim.output_dir / "solution.npy").read_bytes() == b"other job"
-    assert not any(call[0] == "solve" for call in fake_backend)
+    monkeypatch.setattr(api, "_configured_backend", concurrent_backend)
+    sim.run()
+    assert len(checks) == 2
+    assert not (sim.output_dir / ".helmholtz.lock").exists()
+
 
 
 def test_case_lock_rejects_concurrent_writer_and_releases_after_failure(tmp_path):
@@ -343,7 +344,7 @@ def test_weight_choice_recorded_and_cross_mode_cache_rejected(
     import json
 
     params = HelmholtzParameters(pou_mode=mode)
-    sim = HelmholtzSimulator(
+    sim = HelmholtzSolver(
         mesh_path=mesh, output_dir=tmp_path / mode, parameters=params
     )
     assert sim._params().pou_mode == mode
@@ -381,7 +382,7 @@ def test_weight_cli_option():
 def test_incompatible_solver_rejected_before_solve(
     mesh, tmp_path, fake_backend, monkeypatch, legacy
 ):
-    sim = HelmholtzSimulator(mesh_path=mesh, output_dir=tmp_path / "case")
+    sim = HelmholtzSolver(mesh_path=mesh, output_dir=tmp_path / "case")
     sim.prepare()
     import json
 
@@ -407,3 +408,44 @@ def test_backend_source_fingerprint_detects_change(tmp_path, monkeypatch):
     before = api._solver_identity()
     (root / "_backend/operator.py").write_text("changed")
     assert api._solver_identity() != before
+
+
+@pytest.mark.parametrize("level, expected", [("INFO", True), ("WARNING", False)])
+def test_convergence_summary_uses_logger(mesh, tmp_path, fake_backend, caplog, level, expected):
+    with caplog.at_level(level, logger="dtcc-sim"):
+        api._logger.addHandler(caplog.handler)
+        try:
+            solver = HelmholtzSolver(
+                mesh_path=mesh, output_dir=tmp_path / "case",
+                params=HelmholtzParameters(verbose=False),
+            )
+            solver.run()
+        finally:
+            api._logger.removeHandler(caplog.handler)
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("Preparing two-level preconditioner" in message for message in messages) is expected
+    assert any("Solving Helmholtz equation" in message for message in messages) is expected
+    assert any("Helmholtz solve converged after 3 iterations" in message for message in messages) is expected
+    assert any("true relative residual=1.000e-08" in message for message in messages) is expected
+    assert all(record.name == "dtcc-sim" for record in caplog.records)
+
+
+def test_nonconvergence_is_logged_as_error(mesh, tmp_path, fake_backend, monkeypatch, caplog):
+    result_type = api.HelmholtzResult
+    monkeypatch.setattr(
+        api, "HelmholtzResult",
+        lambda **kwargs: replace(result_type(**kwargs), converged=False),
+    )
+    with caplog.at_level("WARNING", logger="dtcc-sim"):
+        api._logger.addHandler(caplog.handler)
+        try:
+            solver = HelmholtzSolver(
+                mesh_path=mesh, output_dir=tmp_path / "case",
+                params=HelmholtzParameters(verbose=False),
+            )
+            assert not solver.run().converged
+        finally:
+            api._logger.removeHandler(caplog.handler)
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelname == "ERROR"
+    assert "FAILED to converge after 3 iterations" in caplog.records[0].getMessage()

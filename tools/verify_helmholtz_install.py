@@ -31,7 +31,7 @@ def main():
     from dtcc_core.io import load_volume_mesh
     from dtcc_core.datasets import load_model_package
     from dtcc_core.datasets.package import export_model_package
-    from dtcc_sim.helmholtz import HelmholtzResult,HelmholtzParameters,HelmholtzSimulator
+    from dtcc_sim.helmholtz import HelmholtzResult,HelmholtzParameters,HelmholtzSolver
     from dtcc_sim.helmholtz.simulator import _configured_backend
     from dtcc_sim.helmholtz.check_runtime import inspect_runtime
     readiness=inspect_runtime(workers=2,mesh_generation=True);assert readiness['ready']
@@ -43,11 +43,11 @@ def main():
             'domain_height':40.0,'min_building_detail':1.0,'mesh_options':{'flat_ground':True,'show_footprints':False},
             'strict_live':False,'mesh_cache_dir':R/'mesh-cache','output_dir':directory,
             'parameters':HelmholtzParameters(frequency_hz=5.0,rho=1.1,n_subdomains=2,overlap_layers=1,oversample_layers=1,workers=2,threads_per_worker=1,pou_mode=mode)}
-        mesh=datasets.helmholtz_simulation(**args)
+        mesh=datasets.urban_noise_simulation(**args)
         result=HelmholtzResult.load(directory)
         assert result.converged and result.relative_residual<=1e-5 and np.isfinite(result.solution).all()
         assert result.prepared_identity['parameters']['pou_mode']==mode
-        sim=HelmholtzSimulator(mesh_path=result.mesh_path,output_dir=directory,parameters=args['parameters'])
+        sim=HelmholtzSolver(mesh_path=result.mesh_path,output_dir=directory,parameters=args['parameters'])
         with _configured_backend(sim._params(),1):
             from dtcc_sim.helmholtz._backend.mesh import build_system
             assembled=build_system();matrix,rhs=assembled[-2:]

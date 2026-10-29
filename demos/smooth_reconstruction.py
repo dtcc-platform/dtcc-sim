@@ -36,12 +36,12 @@ locations and reconstruct a smooth 3D temperature field over a small urban area.
 import numpy as np
 import dtcc_sim
 
-# Define geographic bounds (200m x 200m area in Gothenburg)
-x0 = 319995.962899
-y0 = 6399009.716755
+# Poseidon in Gothenburg (EPSG:3006); 200 m × 200 m domain
+center_x = 319995.962899
+center_y = 6399009.716755
 L = 200.0
 
-bounds = (x0 - 0.5 * L, y0 - 0.5 * L, x0 + 0.5 * L, y0 + 0.5 * L)
+bounds = (center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
 print("=" * 70)
 print("Smooth Field Reconstruction Demo")
@@ -57,8 +57,8 @@ n_observations = 10
 # Generate random XY locations within the domain (slightly away from boundaries)
 margin = L * 0.1  # 10% margin
 point_coords = np.zeros((n_observations, 3))
-point_coords[:, 0] = x0 + (np.random.rand(n_observations) - 0.5) * (L - 2 * margin)
-point_coords[:, 1] = y0 + (np.random.rand(n_observations) - 0.5) * (L - 2 * margin)
+point_coords[:, 0] = center_x + (np.random.rand(n_observations) - 0.5) * (L - 2 * margin)
+point_coords[:, 1] = center_y + (np.random.rand(n_observations) - 0.5) * (L - 2 * margin)
 
 # For z-coordinates: use a reasonable height above terrain
 # Since we don't have terrain yet, we'll use typical urban terrain elevation ~30m
@@ -70,8 +70,8 @@ point_coords[:, 2] = (
 
 # Generate synthetic temperature values with spatial variation
 # Using a function that varies with position
-point_values = 20.0 + 5.0 * np.sin((point_coords[:, 0] - x0) / L * np.pi) * np.cos(
-    (point_coords[:, 1] - y0) / L * np.pi
+point_values = 20.0 + 5.0 * np.sin((point_coords[:, 0] - center_x) / L * np.pi) * np.cos(
+    (point_coords[:, 1] - center_y) / L * np.pi
 )
 # Add some random noise to make it realistic
 point_values += np.random.randn(n_observations) * 0.5
@@ -93,7 +93,7 @@ params = dtcc_sim.SmoothReconstructionParameters(
     alpha=1e-3,  # Background anchoring (small but nonzero)
     data_weight=100.0,  # Observation fidelity (higher = closer to data)
     background_value=20.0,  # Expected background temperature
-    mesh_max_mesh_size=50.0,  # Mesh resolution (meters)
+    mesh_max_mesh_size=12.5,  # Mesh resolution (meters)
     mesh_domain_height=80.0,  # Vertical extent (meters)
     z_offset=0.0,  # No vertical offset needed
 )
@@ -112,6 +112,7 @@ print("=" * 70)
 
 sim = dtcc_sim.SmoothReconstructionSimulator(
     bounds=bounds,
+    output_dir="output/smooth_reconstruction",
     point_coords=point_coords,
     point_values=point_values,
     field_name="temperature",
@@ -120,8 +121,8 @@ sim = dtcc_sim.SmoothReconstructionSimulator(
 )
 
 # Run simulation and save output
-output_path = "output/smooth_reconstruction.xdmf"
-field = sim.simulate(output_path=output_path)
+output_path = "output/smooth_reconstruction/solution.xdmf"
+field = sim.simulate()
 
 print("\n" + "=" * 70)
 print("Reconstruction Complete!")

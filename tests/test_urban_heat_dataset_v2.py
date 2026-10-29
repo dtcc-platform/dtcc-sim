@@ -15,7 +15,7 @@ dolfinx = pytest.importorskip(
     reason="urban heat dataset tests require dolfinx",
 )
 
-from dtcc_sim.urban_heat import UrbanHeatParameters, UrbanHeatSimulator
+from dtcc_sim.heat import HeatParameters, HeatSolver
 
 
 def _box_mesh_with_heat_markers():
@@ -73,11 +73,11 @@ def test_urban_heat_attaches_temperature_field_to_dtcc_mesh(monkeypatch):
         return dtcc_mesh
 
     monkeypatch.setattr(
-        "dtcc_sim.urban_heat._attach_scalar_field_to_volume_mesh",
+        "dtcc_sim.heat._attach_scalar_field_to_volume_mesh",
         fake_attach,
     )
 
-    sim = UrbanHeatSimulator(bounds=[0.0, 0.0, 1.0, 1.0])
+    sim = HeatSolver(bounds=[0.0, 0.0, 1.0, 1.0])
     sim.mesh = dolfinx_mesh
     sim.solution = solution
     sim.volume_mesh_dtcc = volume_mesh
@@ -98,7 +98,7 @@ def test_urban_heat_dataset_xdmf_serializes_fenics_solution(monkeypatch):
     solution = object()
 
     class FakeSimulator:
-        def __init__(self, *, bounds, params):
+        def __init__(self, *, bounds, params, output_dir=None):
             self.bounds = bounds
             self.params = params
             self.solution = solution
@@ -111,7 +111,7 @@ def test_urban_heat_dataset_xdmf_serializes_fenics_solution(monkeypatch):
         assert fmt == "xdmf"
         return b"xdmf"
 
-    monkeypatch.setattr("dtcc_sim.urban_heat.UrbanHeatSimulator", FakeSimulator)
+    monkeypatch.setattr("dtcc_sim.heat.HeatSolver", FakeSimulator)
     monkeypatch.setattr(dataset, "export_to_bytes", fake_export)
 
     payload = dataset.build(
@@ -127,7 +127,7 @@ def test_urban_heat_dataset_passes_boundary_parameters(monkeypatch):
     seen = {}
 
     class FakeSimulator:
-        def __init__(self, *, bounds, params):
+        def __init__(self, *, bounds, params, output_dir=None):
             seen["bounds"] = bounds
             seen["params"] = params
             self.solution = object()
@@ -135,7 +135,7 @@ def test_urban_heat_dataset_passes_boundary_parameters(monkeypatch):
         def simulate(self):
             return volume_mesh
 
-    monkeypatch.setattr("dtcc_sim.urban_heat.UrbanHeatSimulator", FakeSimulator)
+    monkeypatch.setattr("dtcc_sim.heat.HeatSolver", FakeSimulator)
 
     result = dataset.build(
         UrbanHeatSimulationArgs(
@@ -171,9 +171,9 @@ def test_urban_heat_dataset_advertises_native_volume_mesh():
 
 
 @pytest.mark.slow
-def test_urban_heat_tiny_box_dirichlet_solution_is_bounded():
+def test_urban_heat_tiny_box_dirichlet_solution_is_bounded(tmp_path):
     markers, mesh = _box_mesh_with_heat_markers()
-    params = UrbanHeatParameters(
+    params = HeatParameters(
         kappa=1.0,
         sigma=0.0,
         degree=1,
@@ -186,7 +186,8 @@ def test_urban_heat_tiny_box_dirichlet_solution_is_bounded():
         open_bc_type="dirichlet",
         open_value=0.0,
     )
-    sim = UrbanHeatSimulator(
+    sim = HeatSolver(
+        output_dir=tmp_path / "heat",
         mesh=mesh,
         markers=markers,
         params=params,
@@ -194,6 +195,9 @@ def test_urban_heat_tiny_box_dirichlet_solution_is_bounded():
     )
 
     solution = sim.simulate()
+    assert (tmp_path / "heat/solution.xdmf").is_file()
+    sim.simulate()
+    assert (tmp_path / "heat/solution.h5").is_file()
     values = np.real(np.asarray(solution.x.array))
 
     assert np.all(np.isfinite(values))

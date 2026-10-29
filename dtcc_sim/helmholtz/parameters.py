@@ -74,6 +74,7 @@ class HelmholtzParameters:
     dense_fallback_max_dim: int = 2500
     write_solution: bool = True
     write_gmres_history: bool = True
+    # Detailed backend diagnostics; stage and convergence summaries are always shown.
     verbose: bool = True
 
     def __post_init__(self):

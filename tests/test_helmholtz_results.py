@@ -62,18 +62,26 @@ def test_invalid_mapping_is_rejected(vertices, invalid):
     assert mesh.fields == []
 
 
-def test_existing_export_is_not_overwritten(tmp_path):
+def test_existing_export_is_replaced(tmp_path, monkeypatch):
+    from dtcc_sim.helmholtz import results
+
     path = tmp_path / "result.vtu"
-    path.write_bytes(b"keep original")
-    with pytest.raises(FileExistsError):
-        save_dtcc_result(SimpleNamespace(output_dir=tmp_path), path)
-    assert path.read_bytes() == b"keep original"
+    path.write_bytes(b"old result")
+    mesh = SimpleNamespace(save=lambda target: target.write_bytes(b"new result"))
+    monkeypatch.setattr(results, "result_to_dtcc", lambda *a, **kw: mesh)
+    save_dtcc_result(SimpleNamespace(output_dir=tmp_path, mesh_path=None), path)
+    assert path.read_bytes() == b"new result"
 
 
-def test_hdf5_companion_is_not_overwritten(tmp_path):
-    (tmp_path / "result.h5").write_bytes(b"keep original")
-    with pytest.raises(FileExistsError):
-        save_dtcc_result(SimpleNamespace(output_dir=tmp_path), tmp_path / "result.xdmf")
+def test_input_mesh_cannot_be_overwritten(tmp_path):
+    from dtcc_sim.helmholtz.results import _checked_export_path
+
+    path = tmp_path / "input.xdmf"
+    path.write_text('<Xdmf><DataItem Format="HDF">input.h5:/Mesh</DataItem></Xdmf>')
+    path.with_suffix(".h5").write_bytes(b"input data")
+    with pytest.raises(ValueError, match="input mesh"):
+        _checked_export_path(path, mesh_path=path)
+    assert path.with_suffix(".h5").read_bytes() == b"input data"
 
 
 def test_result_rejects_higher_degree_vertex_export(tmp_path):
@@ -155,22 +163,22 @@ def test_tagged_fields_survive_native_result_export(tmp_path, vertices, format):
     from dtcc_core.datasets.package import export_model_package
     from dtcc_core.io import load_volume_mesh
     from dtcc_sim.helmholtz.dataset import (
-        HelmholtzSimulationArgs,
-        HelmholtzSimulationDataset,
+        UrbanNoiseSimulationArgs,
+        UrbanNoiseSimulationDataset,
     )
 
     mesh = VolumeMesh(vertices=vertices, cells=np.array([[0, 1, 2, 3]], dtype=np.int64))
     mesh.boundary_markers = {(0, 1, 2): -2, (0, 1, 3): 0, (0, 2, 3): 17}
     values = np.array([3 + 4j, -2j, 1j, -1])
     attach_helmholtz_fields(mesh, vertices, values, unit="Pa")
-    args = HelmholtzSimulationArgs(
+    args = UrbanNoiseSimulationArgs(
         bounds=[0, 0, 1, 1],
         h=1,
         mesh_path=tmp_path / "input.xdmf",
         output_dir=tmp_path / "case",
         field_unit="Pa",
     )
-    mesh.dataset_context = HelmholtzSimulationDataset().create_context(args)
+    mesh.dataset_context = UrbanNoiseSimulationDataset().create_context(args)
     path = tmp_path / ("field." + format)
     if format == "dtccpkg":
         export_model_package(mesh, path, canonical=True)

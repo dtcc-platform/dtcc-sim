@@ -13,10 +13,14 @@ from .preconditioner import (
 )
 from .coarse_space import deserialize_E0
 
+from dtcc_core.common import get_python_logger
+
+_logger = get_python_logger("dtcc-sim")
+
 
 def tprint(msg: str) -> None:
     if PARAMS.verbose:
-        print(msg, flush=True)
+        _logger.info(msg)
 
 
 def _ensure_parent(path_str: str) -> None:
@@ -216,6 +220,15 @@ def solve() -> dict:
     if b_prec_norm == 0.0:
         tprint("[solve] WARNING: preconditioned RHS is exactly zero")
 
+    def monitor(residual):
+        history.append(float(residual))
+        iteration = len(history)
+        if iteration == 1 or iteration % 10 == 0:
+            _logger.info(
+                f"GMRES iteration {iteration}; "
+                f"relative preconditioned residual={residual:.3e}"
+            )
+
     if PARAMS.outer_solver == "gmres":
         x, info = sps.linalg.gmres(
             A_lin,
@@ -225,7 +238,7 @@ def solve() -> dict:
             maxiter=int(PARAMS.outer_max_it),
             rtol=float(PARAMS.outer_rtol),
             atol=float(PARAMS.outer_atol),
-            callback=lambda rk: history.append(float(rk)),
+            callback=monitor,
             callback_type="pr_norm",
         )
     elif PARAMS.outer_solver == "fgmres":
@@ -238,7 +251,7 @@ def solve() -> dict:
             maxiter=int(PARAMS.outer_max_it),
             rtol=float(PARAMS.outer_rtol),
             atol=float(PARAMS.outer_atol),
-            callback=lambda rk: history.append(float(rk)),
+            callback=monitor,
             callback_type="pr_norm",
         )
     else:

@@ -5,18 +5,19 @@ import dtcc_core.datasets as datasets
 import dtcc_sim.datasets  # noqa: F401
 
 # Center coordinates (Poseidon statue in Gothenburg)
-x0 = 319995.962899
-y0 = 6399009.716755
+center_x = 319995.962899
+center_y = 6399009.716755
 
 # Domain size
-L = 2000.0
+L = 200.0
 
 # Define bounds
-bounds = dtcc.Bounds(x0 - 0.5 * L, y0 - 0.5 * L, x0 + 0.5 * L, y0 + 0.5 * L)
+bounds = dtcc.Bounds(center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
 # Run traffic simulation
 roads = datasets.traffic_simulation(
     bounds=bounds,
+    output_dir="output/traffic",
     trips_per_employed=8.0,
     peak_hour_factor=0.30,
     background_flow_fraction=0.05,

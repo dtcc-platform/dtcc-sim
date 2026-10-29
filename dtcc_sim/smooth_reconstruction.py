@@ -25,6 +25,8 @@ mesh dofs to sensor points using barycentric coordinates.
 
 from __future__ import annotations
 
+from .output import _output_directory, _solution_path
+
 from typing import Any, Mapping, Optional, Tuple
 from pathlib import Path
 
@@ -32,6 +34,7 @@ import numpy as np
 import dolfinx
 from pydantic import BaseModel, Field
 
+from dtcc_sim.fenics import _mesh_from_dtcc
 from dtcc_sim.fenics import *  # FEniCSx wrapper
 
 
@@ -140,6 +143,7 @@ class SmoothReconstructionSimulator:
         params: Optional[SmoothReconstructionParameters] = None,
         petsc_options: Optional[Mapping[str, Any]] = None,
         point_labels: Optional[list[str]] = None,
+        output_dir: Optional[str] = None,
     ):
         """Initialize the smooth reconstruction simulator.
 
@@ -151,11 +155,13 @@ class SmoothReconstructionSimulator:
             point_values: N array of observation values
             field_name: Name for the reconstructed field (e.g., "NO2", "temperature")
             field_unit: Unit for the field (e.g., "µg/m³", "°C")
+            output_dir: Optional directory for solution exports; repeated runs replace them.
             params: Reconstruction parameters
             petsc_options: PETSc solver options (default: CG + boomeramg)
             point_labels: Observation names. When supplied, every finite-valued
                 observation must lie inside the mesh; errors identify each name.
         """
+        self.output_dir = _output_directory(output_dir)
         self.bounds = bounds
         self.mesh_path = mesh_path
         self.mesh = mesh
@@ -223,6 +229,12 @@ class SmoothReconstructionSimulator:
 
     def _load_if_needed(self) -> None:
         """Load or build mesh if not already available."""
+        from dtcc_core.model import VolumeMesh
+
+        if isinstance(self.mesh, VolumeMesh):
+            self.volume_mesh_dtcc = self.mesh
+            self.mesh, _ = _mesh_from_dtcc(self.mesh, require_markers=False)
+
         if self.mesh is not None:
             return
 
@@ -449,6 +461,9 @@ class SmoothReconstructionSimulator:
             field as a dolfinx Function.
         """
         # Load mesh and prepare point data
+        output_path = _solution_path(
+            self.output_dir, output_path, "solution.xdmf", input_mesh=self.mesh_path,
+        )
         self._load_if_needed()
         point_coords, point_values = self._prepare_point_data()
 
@@ -642,7 +657,7 @@ def _attach_scalar_field_to_volume_mesh(
 ) -> Any:
     """Attach a scalar dolfinx solution to a dtcc-core VolumeMesh."""
     from dtcc_core.model import Field as DtccField
-    from dtcc_sim.urban_wind import _evaluate_function_at_vertices, _reorder_by_coords
+    from dtcc_sim.flow import _evaluate_function_at_vertices, _reorder_by_coords
 
     values = _evaluate_function_at_vertices(dolfinx_mesh, solution).reshape(-1, 1)
     fem_verts = np.asarray(dolfinx_mesh.geometry.x, dtype=np.float64)

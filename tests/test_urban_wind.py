@@ -6,6 +6,7 @@ All tests are offline — no calls to remote APIs.
 
 from __future__ import annotations
 
+from dtcc_sim.flow import StokesParameters, StokesSolver
 import math
 import numpy as np
 import pytest
@@ -23,9 +24,9 @@ class TestInletOutletSelection:
     """Verify that the correct bbox faces are chosen for various wind directions."""
 
     def _select(self, wind_dir_deg: float):
-        from dtcc_sim.urban_wind import UrbanWindParameters, select_inlet_outlet
+        from dtcc_sim.flow import NavierStokesParameters, select_inlet_outlet
 
-        params = UrbanWindParameters(wind_speed=5.0, wind_dir_deg=wind_dir_deg)
+        params = NavierStokesParameters(wind_speed=5.0, wind_dir_deg=wind_dir_deg)
         return select_inlet_outlet(params)
 
     def test_wind_from_west(self):
@@ -58,9 +59,9 @@ class TestInletOutletSelection:
 
     def test_manual_override(self):
         """Manual override bypasses auto detection."""
-        from dtcc_sim.urban_wind import UrbanWindParameters, select_inlet_outlet
+        from dtcc_sim.flow import NavierStokesParameters, select_inlet_outlet
 
-        params = UrbanWindParameters(
+        params = NavierStokesParameters(
             wind_speed=5.0,
             wind_dir_deg=270.0,
             inlet_marker=-5,
@@ -80,27 +81,27 @@ class TestWindVector:
     """Verify meteorological → math conversion of wind direction."""
 
     def test_from_west(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters
+        from dtcc_sim.flow import NavierStokesParameters
 
-        p = UrbanWindParameters(wind_speed=1.0, wind_dir_deg=270.0)
+        p = NavierStokesParameters(wind_speed=1.0, wind_dir_deg=270.0)
         wx, wy = p.wind_vector_xy
         # Flow direction is east: (+1, 0)
         assert abs(wx - 1.0) < 1e-10
         assert abs(wy) < 1e-10
 
     def test_from_south(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters
+        from dtcc_sim.flow import NavierStokesParameters
 
-        p = UrbanWindParameters(wind_speed=1.0, wind_dir_deg=180.0)
+        p = NavierStokesParameters(wind_speed=1.0, wind_dir_deg=180.0)
         wx, wy = p.wind_vector_xy
         # Flow direction is north: (0, +1)
         assert abs(wx) < 1e-10
         assert abs(wy - 1.0) < 1e-10
 
     def test_from_north(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters
+        from dtcc_sim.flow import NavierStokesParameters
 
-        p = UrbanWindParameters(wind_speed=1.0, wind_dir_deg=0.0)
+        p = NavierStokesParameters(wind_speed=1.0, wind_dir_deg=0.0)
         wx, wy = p.wind_vector_xy
         # Flow direction is south: (0, -1)
         assert abs(wx) < 1e-10
@@ -116,12 +117,12 @@ class TestInletProfiles:
     """Verify the callable inlet expressions produce correct values."""
 
     def test_uniform(self):
-        from dtcc_sim.urban_wind import (
-            UrbanWindParameters,
+        from dtcc_sim.flow import (
+            NavierStokesParameters,
             make_inlet_velocity_expression,
         )
 
-        p = UrbanWindParameters(
+        p = NavierStokesParameters(
             wind_speed=5.0, wind_dir_deg=270.0, inlet_profile="uniform"
         )
         f = make_inlet_velocity_expression(p)
@@ -133,12 +134,12 @@ class TestInletProfiles:
         np.testing.assert_allclose(vals[2, :], 0.0, atol=1e-12)  # u_z
 
     def test_power_law(self):
-        from dtcc_sim.urban_wind import (
-            UrbanWindParameters,
+        from dtcc_sim.flow import (
+            NavierStokesParameters,
             make_inlet_velocity_expression,
         )
 
-        p = UrbanWindParameters(
+        p = NavierStokesParameters(
             wind_speed=10.0,
             wind_dir_deg=270.0,
             inlet_profile="power_law",
@@ -155,12 +156,12 @@ class TestInletProfiles:
         np.testing.assert_allclose(vals[0, 0], 0.0, atol=1e-10)
 
     def test_log_law(self):
-        from dtcc_sim.urban_wind import (
-            UrbanWindParameters,
+        from dtcc_sim.flow import (
+            NavierStokesParameters,
             make_inlet_velocity_expression,
         )
 
-        p = UrbanWindParameters(
+        p = NavierStokesParameters(
             wind_speed=10.0,
             wind_dir_deg=270.0,
             inlet_profile="log_law",
@@ -192,7 +193,7 @@ class _FakeVolumeMesh:
 
 
 def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypatch):
-    from dtcc_sim.urban_wind import _dolfinx_to_volume_mesh
+    from dtcc_sim.flow import _dolfinx_to_volume_mesh
 
     def fake_evaluate(_mesh, solution):
         if solution == "velocity":
@@ -200,11 +201,11 @@ def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypa
         return np.array([[10.0], [20.0]])
 
     monkeypatch.setattr(
-        "dtcc_sim.urban_wind._evaluate_function_at_vertices",
+        "dtcc_sim.flow._evaluate_function_at_vertices",
         fake_evaluate,
     )
     monkeypatch.setattr(
-        "dtcc_sim.urban_wind._reorder_by_coords",
+        "dtcc_sim.flow._reorder_by_coords",
         lambda _source_keys, values, _target_keys: values,
     )
 
@@ -230,7 +231,7 @@ def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypa
 
 def test_volume_mesh_output_validation_rejects_inconsistent_speed():
     from dtcc_core.model import Field
-    from dtcc_sim.urban_wind import _validate_wind_volume_fields
+    from dtcc_sim.flow import _validate_wind_volume_fields
 
     volume_mesh = _FakeVolumeMesh()
     volume_mesh.fields = [
@@ -260,7 +261,7 @@ def test_volume_mesh_output_validation_rejects_inconsistent_speed():
 
 def test_use_weather_requires_usable_wind_data(monkeypatch):
     import dtcc_core.datasets as datasets
-    from dtcc_sim.urban_wind import UrbanWindParameters, UrbanWindSimulator
+    from dtcc_sim.flow import NavierStokesParameters, NavierStokesSolver
 
     class EmptyWeather:
         def to_arrays(self, _field_name):
@@ -268,9 +269,9 @@ def test_use_weather_requires_usable_wind_data(monkeypatch):
 
     monkeypatch.setattr(datasets, "weather", lambda **_kwargs: EmptyWeather())
 
-    sim = UrbanWindSimulator(
+    sim = NavierStokesSolver(
         bounds=(0.0, 0.0, 1.0, 1.0),
-        params=UrbanWindParameters(use_weather=True),
+        params=NavierStokesParameters(use_weather=True),
     )
 
     with pytest.raises(RuntimeError, match="use_weather=True.*wind_speed"):
@@ -283,13 +284,13 @@ def test_use_weather_requires_usable_wind_data(monkeypatch):
 
 
 @pytest.fixture(scope="module")
-def box_sim_run():
+def box_sim_run(tmp_path_factory):
     """Run a minimal IPCS solve on a tiny box and return (result, simulator)."""
     import dolfinx.mesh
     from mpi4py import MPI
-    from dtcc_sim.urban_wind import (
-        UrbanWindSimulator,
-        UrbanWindParameters,
+    from dtcc_sim.flow import (
+        NavierStokesSolver,
+        NavierStokesParameters,
         BndCat,
     )
 
@@ -334,7 +335,7 @@ def box_sim_run():
         mesh, fdim, boundary_facets[order], markers_vals[order]
     )
 
-    params = UrbanWindParameters(
+    params = NavierStokesParameters(
         wind_speed=1.0,
         wind_dir_deg=270.0,  # from west → flow east
         dt=0.5,
@@ -347,8 +348,14 @@ def box_sim_run():
         inlet_profile="uniform",
     )
 
-    sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
+    output_dir = tmp_path_factory.mktemp("box_sim_run")
+    sim = NavierStokesSolver(mesh=mesh, markers=facet_tags, params=params, output_dir=output_dir)
     result = sim.simulate()
+    assert (output_dir / "solution_velocity.xdmf").is_file()
+    assert (output_dir / "solution_pressure.h5").is_file()
+    (output_dir / "keep.txt").write_text("unrelated")
+    sim.simulate()
+    assert (output_dir / "keep.txt").read_text() == "unrelated"
     return result, sim  # tuple (u, p) since no volume_mesh_dtcc
 
 
@@ -430,11 +437,11 @@ class TestSmokeIPCS:
 
 
 @pytest.fixture(scope="module")
-def box_stokes_result():
+def box_stokes_result(tmp_path_factory):
     """Run a minimal stationary Stokes solve on a tiny box and return (u, p)."""
     import dolfinx.mesh
     from mpi4py import MPI
-    from dtcc_sim.urban_wind import UrbanWindSimulator, UrbanWindParameters
+    from dtcc_sim.flow import NavierStokesSolver, NavierStokesParameters
 
     mesh = dolfinx.mesh.create_box(
         MPI.COMM_WORLD,
@@ -473,7 +480,7 @@ def box_stokes_result():
         mesh, fdim, boundary_facets[order], markers_vals[order]
     )
 
-    params = UrbanWindParameters(
+    params = StokesParameters(
         equations="stokes",
         wind_speed=1.0,
         wind_dir_deg=270.0,
@@ -485,8 +492,14 @@ def box_stokes_result():
         petsc_stokes={"ksp_type": "preonly", "pc_type": "lu"},
     )
 
-    sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
+    output_dir = tmp_path_factory.mktemp("box_stokes_result")
+    sim = StokesSolver(mesh=mesh, markers=facet_tags, params=params, output_dir=output_dir)
     result = sim.simulate()
+    assert (output_dir / "solution_velocity.xdmf").is_file()
+    assert (output_dir / "solution_pressure.h5").is_file()
+    (output_dir / "keep.txt").write_text("unrelated")
+    sim.simulate()
+    assert (output_dir / "keep.txt").read_text() == "unrelated"
     return result
 
 
@@ -495,7 +508,7 @@ def box_stokes_iterative_result():
     """Run the same tiny Stokes case with an iterative linear solver."""
     import dolfinx.mesh
     from mpi4py import MPI
-    from dtcc_sim.urban_wind import UrbanWindSimulator, UrbanWindParameters
+    from dtcc_sim.flow import NavierStokesSolver, NavierStokesParameters
 
     mesh = dolfinx.mesh.create_box(
         MPI.COMM_WORLD,
@@ -534,7 +547,7 @@ def box_stokes_iterative_result():
         mesh, fdim, boundary_facets[order], markers_vals[order]
     )
 
-    params = UrbanWindParameters(
+    params = StokesParameters(
         equations="stokes",
         wind_speed=1.0,
         wind_dir_deg=270.0,
@@ -551,7 +564,7 @@ def box_stokes_iterative_result():
         },
     )
 
-    sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
+    sim = StokesSolver(mesh=mesh, markers=facet_tags, params=params)
     result = sim.simulate()
     return result
 
@@ -600,9 +613,9 @@ def poiseuille_result():
     """
     import dolfinx.mesh
     from mpi4py import MPI
-    from dtcc_sim.urban_wind import (
-        UrbanWindSimulator,
-        UrbanWindParameters,
+    from dtcc_sim.flow import (
+        NavierStokesSolver,
+        NavierStokesParameters,
     )
 
     mesh = dolfinx.mesh.create_box(
@@ -642,7 +655,7 @@ def poiseuille_result():
         mesh, fdim, boundary_facets[order], markers_vals[order]
     )
 
-    params = UrbanWindParameters(
+    params = NavierStokesParameters(
         wind_speed=0.5,
         wind_dir_deg=270.0,
         nu_t=0.1,  # stabilise — Re_eff ≈ 20 on this coarse mesh
@@ -656,7 +669,7 @@ def poiseuille_result():
         inlet_profile="uniform",
     )
 
-    sim = UrbanWindSimulator(mesh=mesh, markers=facet_tags, params=params)
+    sim = NavierStokesSolver(mesh=mesh, markers=facet_tags, params=params)
     result = sim.simulate()
     return result
 
@@ -692,24 +705,24 @@ class TestPoiseuille:
 # ---------------------------------------------------------------------------
 
 
-class TestUrbanWindParameters:
+class TestNavierStokesParameters:
     def test_default_construction(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters
+        from dtcc_sim.flow import NavierStokesParameters
 
-        p = UrbanWindParameters()
+        p = NavierStokesParameters()
         assert p.nu > 0
         assert p.nu_eff == p.nu + p.nu_t
 
     def test_nu_eff(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters
+        from dtcc_sim.flow import NavierStokesParameters
 
-        p = UrbanWindParameters(nu=1e-5, nu_t=1e-3)
+        p = NavierStokesParameters(nu=1e-5, nu_t=1e-3)
         assert abs(p.nu_eff - 1.01e-3) < 1e-10
 
     def test_statistical_mode_parameters(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters
+        from dtcc_sim.flow import NavierStokesParameters
 
-        p = UrbanWindParameters(
+        p = NavierStokesParameters(
             simulation_mode="statistical_steady",
             stat_warmup_steps=10,
             stat_window=20,
@@ -723,17 +736,17 @@ class TestUrbanWindParameters:
         assert math.isclose(p.stat_divergence_tolerance, 2e-2)
 
     def test_stokes_equation_mode(self):
-        from dtcc_sim.urban_wind import UrbanWindParameters
+        from dtcc_sim.flow import NavierStokesParameters
 
-        p = UrbanWindParameters(equations="stokes")
+        p = StokesParameters(equations="stokes")
         assert p.equations == "stokes"
 
     def test_extra_parameters_forbidden(self):
         from pydantic import ValidationError
-        from dtcc_sim.urban_wind import UrbanWindParameters
+        from dtcc_sim.flow import NavierStokesParameters
 
         with pytest.raises(ValidationError):
-            UrbanWindParameters(unknown_parameter=123)
+            NavierStokesParameters(unknown_parameter=123)
 
 
 # ---------------------------------------------------------------------------
@@ -743,10 +756,10 @@ class TestUrbanWindParameters:
 
 def test_import_urban_wind():
     """Ensure the package imports without errors."""
-    from dtcc_sim import UrbanWindSimulator, UrbanWindParameters
+    from dtcc_sim import NavierStokesSolver, NavierStokesParameters
     from dtcc_sim.datasets import UrbanWindSimulationArgs, UrbanWindSimulationDataset
 
-    assert UrbanWindSimulator is not None
-    assert UrbanWindParameters is not None
+    assert NavierStokesSolver is not None
+    assert NavierStokesParameters is not None
     assert UrbanWindSimulationArgs is not None
     assert UrbanWindSimulationDataset is not None

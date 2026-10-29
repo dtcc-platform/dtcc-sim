@@ -164,3 +164,27 @@ For the optional recorded Linux x86-64 environment, see the
 [pinned installation procedure](helmholtz-reproducible-install.md). It includes
 the pinned Core revision and guarded packaging workaround, with an option to
 run focused checks and small real solves.
+
+## Solver output
+
+Pass `output_dir="output/<name>"` to a solver constructor or simulation dataset
+request. The API creates the directory internally and replaces its own outputs
+on repeated runs, preserving unrelated files. Use another directory to retain a
+previous run. Heat and reconstruction save `solution.xdmf`; wind saves separate
+`solution_velocity.xdmf` and `solution_pressure.xdmf` files; traffic saves
+`solution.dtcc`. Helmholtz and noise save `solution.vtu` plus numerical artifacts.
+XDMF exports include HDF5 companions. Generated noise meshes use a sibling
+`<output_dir>-mesh-cache` unless `mesh_cache_dir` is explicitly supplied.
+
+Omitting `output_dir` keeps other solvers' results in memory; Helmholtz requires
+it for numerical artifacts. An explicit `output_path` remains available for
+heat, wind and reconstruction when no output directory was specified. Helmholtz
+also accepts an explicit export path. Input meshes are never replaced, and
+concurrent Helmholtz writers to the same case are rejected. `output_dir` is
+local-only; service requests use `format` and service-managed result storage.
+
+Helmholtz logs setup, iteration progress and final convergence at INFO through
+the shared DTCC logger (`dtcc-sim`); nonconvergence is logged at ERROR.
+`verbose=True` adds detailed backend diagnostics. DOLFINx defaults to `WARNING`;
+set `DTCC_FENICSX_LOG_LEVEL=INFO` (or `DEBUG`) for backend tracing. Invalid log
+levels fail explicitly.

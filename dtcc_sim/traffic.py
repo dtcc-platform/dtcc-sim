@@ -7,6 +7,10 @@ Wardrop user-equilibrium assignment with BPR link costs using Frank-Wolfe.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from .output import _output_directory, _solution_path
+
 from copy import deepcopy
 from dataclasses import dataclass
 import heapq
@@ -197,7 +201,10 @@ class TrafficAssignmentSimulator:
         roads: RoadNetwork,
         zones: Any | None = None,
         params: TrafficAssignmentParameters | None = None,
+        *,
+        output_dir: str | None = None,
     ):
+        self.output_dir = _output_directory(output_dir)
         self.roads = roads
         self.zones = zones
         self.params = params or TrafficAssignmentParameters()
@@ -208,6 +215,7 @@ class TrafficAssignmentSimulator:
 
     def simulate(self) -> RoadNetwork:
         """Run the traffic assignment and return a RoadNetwork with edge results."""
+        output_path = _solution_path(self.output_dir, None, "solution.dtcc")
         graph = self._build_directed_graph(self.roads)
         zone_data = self._zone_data(self.zones)
         zone_vertices = self._connect_zones(zone_data["centroids"], graph)
@@ -309,6 +317,8 @@ class TrafficAssignmentSimulator:
                 "traffic_excluded",
             ],
         }
+        if output_path is not None:
+            Path(output_path).write_bytes(result.to_proto().SerializeToString())
         return result
 
     def _build_directed_graph(self, roads: RoadNetwork) -> _DirectedGraph:

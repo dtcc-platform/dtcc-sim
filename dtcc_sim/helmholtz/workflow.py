@@ -6,9 +6,10 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .meshing import CityMeshCache, CityMeshParameters
+from ..output import _output_directory
+from .meshing import CityMeshCache, CityMeshParameters, _save_city_surface
 from .simulator import (
-    HelmholtzSimulator, _mesh_input_hashes, _copy_parameters, _simulation_mesh,
+    HelmholtzSolver, _mesh_input_hashes, _copy_parameters, _simulation_mesh,
 )
 
 if TYPE_CHECKING:
@@ -78,7 +79,9 @@ class HelmholtzWorkflow:
         mesh_path=None,
         mesh_h=None,
     ):
-        self.output_dir = Path(output_dir).expanduser().resolve()
+        self.output_dir = _output_directory(output_dir)
+        if self.output_dir is None:
+            raise ValueError("Helmholtz requires output_dir for numerical artifacts")
         self.parameters = _copy_parameters(params, parameters)
         if (mesh_path is None) == (mesh_parameters is None):
             raise ValueError("Specify either mesh_path or mesh_parameters")
@@ -87,7 +90,8 @@ class HelmholtzWorkflow:
         ):
             raise TypeError("mesh_parameters must be CityMeshParameters")
         if mesh_parameters is not None and mesh_cache_dir is None:
-            raise ValueError("mesh_cache_dir is required for generated meshes")
+            # A sibling cache survives replacement of solver output files.
+            mesh_cache_dir = self.output_dir.with_name(self.output_dir.name + "-mesh-cache")
         if mesh_parameters is not None and mesh_h is not None:
             raise ValueError("Generated mesh h comes from mesh_parameters")
         if mesh_h is not None:
@@ -108,7 +112,7 @@ class HelmholtzWorkflow:
         self.result = None
         self.diagnostics = {}
         if self.mesh_path is not None:
-            HelmholtzSimulator(
+            HelmholtzSolver(
                 mesh_path=self.mesh_path,
                 output_dir=self.output_dir,
                 parameters=self.parameters,
@@ -163,21 +167,22 @@ class HelmholtzWorkflow:
                 "files": _mesh_input_hashes(path),
             }
         record["boundary_tags"] = _check_boundary_tags(path, self.parameters)
-        self.simulator = HelmholtzSimulator(
+        self.simulator = HelmholtzSolver(
             mesh_path=path, output_dir=self.output_dir, parameters=self.parameters
         )
         self.mesh_record = record
         return path
 
     def prepare(self):
-        if self.output_dir.exists() and any(self.output_dir.iterdir()):
-            raise FileExistsError(f"Output directory is not empty: {self.output_dir}")
         self.prepare_mesh()
         path = self.simulator.prepare()
+        self._write_mesh_provenance()
+        return path
+
+    def _write_mesh_provenance(self):
         (self.output_dir / "mesh_provenance.json").write_text(
             json.dumps(self.mesh_record, indent=2, sort_keys=True) + "\n"
         )
-        return path
 
     def solve(self):
         if self.simulator is None:
@@ -186,21 +191,28 @@ class HelmholtzWorkflow:
         return self.simulator.solve()
 
     def run(self):
-        self.prepare()
-        return self.solve()
+        self.prepare_mesh()
+        result = self.simulator.run()
+        self._write_mesh_provenance()
+        return result
 
     def simulate(self, *, output_path=None, unit="") -> "VolumeMesh":
         """Resolve the mesh, solve and return a DTCC VolumeMesh with solution fields."""
         if self.parameters.fe_degree != 1:
             raise ValueError("simulate() returns vertex fields and requires FE degree 1")
+        if output_path is None:
+            output_path = self.output_dir / "solution.vtu"
         if output_path is not None:
             from .results import _checked_export_path
 
-            output_path = _checked_export_path(output_path)
+            output_path = _checked_export_path(output_path, mesh_path=self.mesh_path)
         self.result = self.run()
         self.diagnostics = {
             "converged": self.result.converged,
             "iterations": self.result.iterations,
             "relative_residual": self.result.relative_residual,
         }
-        return _simulation_mesh(self.result, output_path=output_path, unit=unit)
+        mesh = _simulation_mesh(self.result, output_path=output_path, unit=unit)
+        if self.mesh_parameters is not None:
+            _save_city_surface(mesh, self.output_dir / "city.vtu")
+        return mesh

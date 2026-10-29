@@ -220,3 +220,6 @@ sandbox/output
 /meshes/
 /results/
 /run-logs/
+
+# Demo output
+/output/

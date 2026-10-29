@@ -183,3 +183,45 @@ def test_launcher_paths_are_relative_to_config_file(tmp_path, monkeypatch):
     )
     assert main(["--config", str(config)]) == 0
     assert not loaded.output_dir.exists()
+
+
+def test_generated_mesh_cache_defaults_beside_output(tmp_path, mesh_parameters):
+    instance = HelmholtzWorkflow(
+        output_dir=tmp_path / "result", mesh_parameters=mesh_parameters,
+    )
+    assert instance.cache.directory == tmp_path / "result-mesh-cache"
+    assert not instance.output_dir.exists() and not instance.cache.directory.exists()
+
+
+@pytest.mark.parametrize("mapping", [False, True])
+def test_city_surface_compacts_vertices_and_excludes_outer_faces(tmp_path, mapping):
+    import meshio
+    from dtcc_core.model import VolumeMesh
+
+    vertices = np.array([[9., 9., 9.], [0., 0., 0.], [1., 0., 0.],
+                         [0., 1., 0.], [0., 0., 1.], [8., 8., 8.]])
+    faces = np.array([[1, 2, 3], [1, 2, 4], [0, 1, 5]])
+    markers = np.array([-1, 0, -2])
+    mesh = VolumeMesh(vertices=vertices, cells=np.array([[1, 2, 3, 4]]),
+                      boundary_faces=faces, boundary_markers=markers)
+    if mapping:
+        mesh.boundary_markers = dict(zip(map(tuple, faces), markers))
+    path = tmp_path / "city.vtu"
+    meshing._save_city_surface(mesh, path)
+    city = meshio.read(path)
+    np.testing.assert_array_equal(city.points, vertices[1:5])
+    np.testing.assert_array_equal(city.cells_dict["triangle"], [[0, 1, 2], [0, 1, 3]])
+    np.testing.assert_array_equal(city.cell_data_dict["markers"]["triangle"], [-1, 0])
+    np.testing.assert_array_equal(mesh.vertices, vertices)
+    np.testing.assert_array_equal(mesh.boundary_faces, faces)
+
+
+def test_city_surface_requires_physical_boundary_tags(tmp_path):
+    from dtcc_core import BoxMesh
+
+    mesh = BoxMesh(1, 1, 1)
+    mesh.boundary_faces = np.empty((0, 3), dtype=int)
+    mesh.boundary_markers = np.empty(0, dtype=int)
+    with pytest.raises(ValueError, match="valid mesh vertices"):
+        meshing._save_city_surface(mesh, tmp_path / "city.vtu")
+    assert not (tmp_path / "city.vtu").exists()

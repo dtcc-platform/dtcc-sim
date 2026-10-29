@@ -221,3 +221,17 @@ def test_traffic_simulation_dataset_protobuf_format(monkeypatch):
 
     assert isinstance(payload, bytes)
     assert restored.attributes["flow"] == [100.0, 100.0]
+
+
+def test_output_directory_replaces_solution_and_preserves_unrelated_files(tmp_path):
+    directory = tmp_path / "traffic"
+    sim = TrafficAssignmentSimulator(roads=_roads(), zones=_zones(), output_dir=directory)
+    result = sim.simulate()
+    assert (directory / "solution.dtcc").is_file()
+    (directory / "keep.txt").write_text("unrelated")
+    (directory / "solution.dtcc").write_bytes(b"old result")
+    sim.simulate()
+    restored = RoadNetwork()
+    restored.from_proto((directory / "solution.dtcc").read_bytes())
+    np.testing.assert_array_equal(restored.edges, result.edges)
+    assert (directory / "keep.txt").read_text() == "unrelated"

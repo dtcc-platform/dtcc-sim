@@ -35,7 +35,7 @@ class _FakeVolumeMesh:
 
 
 def test_attach_scalar_field_to_volume_mesh_replaces_named_field(monkeypatch):
-    import dtcc_sim.urban_wind as urban_wind
+    import dtcc_sim.flow as urban_wind
 
     monkeypatch.setattr(
         urban_wind,
@@ -90,7 +90,7 @@ def test_prepare_point_data_filters_nonfinite_and_applies_z_offset():
     assert sim._dropped_nonfinite_observation_count == 1
 
 
-def test_tiny_reconstruction_records_diagnostics():
+def test_tiny_reconstruction_records_diagnostics(tmp_path):
     import dolfinx.mesh
     from mpi4py import MPI
 
@@ -102,6 +102,7 @@ def test_tiny_reconstruction_records_diagnostics():
     )
     sim = SmoothReconstructionSimulator(
         mesh=mesh,
+        output_dir=tmp_path / "reconstruction",
         point_coords=np.array([[0.2, 0.2, 0.2], [0.8, 0.8, 0.8]]),
         point_values=np.array([10.0, 20.0]),
         field_name="NO2",
@@ -115,6 +116,9 @@ def test_tiny_reconstruction_records_diagnostics():
     )
 
     solution = sim.simulate()
+    assert (tmp_path / "reconstruction/solution.xdmf").is_file()
+    sim.simulate()
+    assert (tmp_path / "reconstruction/solution.h5").is_file()
     values = np.real(np.asarray(solution.x.array))
 
     assert np.all(np.isfinite(values))

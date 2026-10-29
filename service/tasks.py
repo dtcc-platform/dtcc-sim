@@ -38,6 +38,8 @@ def create_dataset_task(dataset_name, dataset_instance):
     @celery_app.task(bind=True, name=f"dataset.{dataset_name}")
     def run(self, params):
         task_params = dict(params)
+        if task_params.get("output_dir") is not None:
+            raise ValueError("output_dir is local-only; use format for service results")
         # Extract format before calling the dataset so build() always returns
         # a Python object. This prevents export_to_bytes() from discarding
         # companion files (e.g., XDMF's .h5). Serialization happens in
@@ -54,7 +56,7 @@ _service_datasets = {}
 for name, ds in datasets.list().items():
     if (
         ds.__class__.__module__.startswith(MODULE_PREFIX)
-        and name != "helmholtz_simulation"
+        and name != "urban_noise_simulation"
     ):
         create_dataset_task(name, ds)
         _service_datasets[name] = ds

@@ -33,7 +33,7 @@ def main(argv=None):
     from dtcc_core import datasets
     from dtcc_core.datasets.package import export_model_package
     import dtcc_sim.datasets  # Registers the dataset.
-    mesh = datasets.helmholtz_simulation(**request)
+    mesh = datasets.urban_noise_simulation(**request)
     result = HelmholtzResult.load(output)
     if not result.converged or result.relative_residual > 1e-5:
         raise RuntimeError(f'Solve did not pass: residual {result.relative_residual}')

@@ -21,7 +21,7 @@ uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[helmholtz]"
 ## Python usage
 
 ```python
-from dtcc_sim.helmholtz import HelmholtzParameters, HelmholtzSimulator
+from dtcc_sim.helmholtz import HelmholtzParameters, HelmholtzSolver
 
 def main():
     parameters = HelmholtzParameters(
@@ -35,7 +35,7 @@ def main():
         n_modes_per_patch=40,  # None selects modes by the rho threshold.
     )
 
-    simulator = HelmholtzSimulator(
+    simulator = HelmholtzSolver(
         mesh_path="/path/to/volume_mesh_gbg.xdmf",
         output_dir="/path/to/new-case",
         params=parameters,
@@ -66,12 +66,12 @@ elements and raises for a nonconverged solve or invalid true residual.
 `prepare()` builds the offline data. `solve()` requires matching prepared data
 and returns `HelmholtzResult`: a complex solution array in FE DOF order,
 iteration count, true relative residual, convergence flag, and GMRES history.
-`run()` calls both stages. Output folders must be new or empty for preparation;
-completed solve outputs cannot be overwritten through this interface.
+`run()` calls both stages. Output folders are created internally; preparation replaces previous solver artifacts;
+rerunning replaces previous solver outputs while preserving unrelated files.
 
 Prepared data is checked against the XDMF and referenced HDF5 file contents,
 parameters, numerical-library versions and the solver source fingerprint. A
-different input, configuration, runtime or solver requires a fresh case. The interface does not import environment
+different input, configuration, runtime or solver requires preparing again. The interface does not import environment
 variables named `HELMHOLTZ_*`; use the parameter object instead.
 Numeric controls and coefficient-map values must be finite numbers; boolean
 controls require actual booleans. JSON coefficient-map keys may be integer
@@ -83,7 +83,7 @@ Preparation manifests use schema 3 and include the SHA-256 checksum of the
 saved preconditioner. Before and after the online solve, the interface checks
 that file, the mesh inputs, settings, runtime and solver implementation. Failed checks prevent a
 completed `diagnostics.json` from being written; partial artifacts require a
-fresh case directory. Checking the checksum reads the whole preconditioner
+prepared case. Checking the checksum reads the whole preconditioner
 file but does not rebuild it. Older preparation manifests without a checksum
 cannot be reused for a new solve; prepare a new case. Existing completed cases
 can still be loaded and exported without rerunning their numerical stages.
@@ -129,7 +129,7 @@ The choice is stored in `prepared.json` and the returned result's
 requires a fresh prepared case. Older prepared manifests without the setting
 also require fresh preparation; completed results can still be loaded/exported.
 
-Use [the thesis city profile](../demos/configs/helmholtz_thesis_city_h5.json)
+Use [the thesis city profile](../tools/configs/helmholtz_thesis_city_h5.json)
 for geometric hats with rho-threshold mode selection and the recovered
 40/60 initial ARPACK controls. Supply the exact original h=5 m mesh at the
 configured path; generating a new mesh at the same h does not reproduce the
@@ -270,9 +270,9 @@ A missing explicit file raises an error. To generate a missing mesh, provide
 
 ## Configuration launcher
 
-The example `demos/configs/helmholtz_city.json` exposes `h`, geometry, solver
+The example `tools/configs/helmholtz_city.json` exposes `h`, geometry, solver
 parameters, and resources together. Relative paths resolve against the JSON
-file's directory. Change the output directory for each new run.
+file's directory. Reuse the output directory to replace solver outputs, or choose another to retain them.
 
 The checked-in city example selects these settings:
 
@@ -300,16 +300,16 @@ historical h=5 mesh used for the saved solver comparisons.
 
 ```bash
 # Inspect the resolved settings without computing:
-python -m dtcc_sim.helmholtz.launch --config demos/configs/helmholtz_city.json
+python -m dtcc_sim.helmholtz.launch --config tools/configs/helmholtz_city.json
 
 # Only generate/select the mesh:
-python -m dtcc_sim.helmholtz.launch --config demos/configs/helmholtz_city.json --mesh-only
+python -m dtcc_sim.helmholtz.launch --config tools/configs/helmholtz_city.json --mesh-only
 
 # Full workflow:
-python -m dtcc_sim.helmholtz.launch --config demos/configs/helmholtz_city.json --run
+python -m dtcc_sim.helmholtz.launch --config tools/configs/helmholtz_city.json --run
 
 # Detached Linux server job, after activating the environment:
-bash demos/run_helmholtz_detached.sh demos/configs/helmholtz_city.json
+bash tools/run_helmholtz_detached.sh tools/configs/helmholtz_city.json
 ```
 
 The detached launcher survives SSH disconnection and stores `run.log`, `pid`,
@@ -343,13 +343,12 @@ XDMF/HDF5 export preserves fields and boundary markers. The pinned Core native
 writer also preserves tagged facets in `.dtcc` and `.dtccpkg`. Boundary faces
 and labels remain distinct from cell markers. Readers must support the optional
 VolumeMesh boundary arrays to load tagged native artifacts.
-Existing exports are never overwritten.
+Existing exports are replaced; input meshes are protected.
 
 The launcher can save fields after solving:
 
 ```bash
-python -m dtcc_sim.helmholtz.launch --config demos/configs/helmholtz_city.json --run --export vtu
-python demos/helmholtz_result.py --config demos/configs/helmholtz_city.json --run
+python -m dtcc_sim.helmholtz.launch --config tools/configs/helmholtz_city.json --run --export vtu
 ```
 
 The detached launcher includes VTU export automatically. For a completed case,
@@ -416,7 +415,7 @@ changing the source requires a new case and separate numerical validation.
 
 ## Registered DTCC dataset
 
-Importing `dtcc_sim.datasets` registers `datasets.helmholtz_simulation` alongside
+Importing `dtcc_sim.datasets` registers `datasets.urban_noise_simulation` alongside
 the other simulations. Inspecting its descriptor or validating arguments does
 not generate a mesh or run the solver:
 
@@ -424,11 +423,12 @@ not generate a mesh or run the solver:
 import dtcc_core.datasets as datasets
 import dtcc_sim.datasets
 
-print(datasets.helmholtz_simulation.describe())
+print(datasets.urban_noise_simulation.describe())
 ```
 
 Execution requires explicit `bounds` (four EPSG:3006 coordinates), `h`, and a
-new/empty `output_dir`. For generation, also supply `mesh_cache_dir`; alternatively
+`output_dir`. For generation, `mesh_cache_dir` is optional and defaults to a sibling
+`<output_dir>-mesh-cache`; alternatively
 supply `mesh_path` for an existing XDMF. With an explicit file, `h` is a user
 provided label and does not modify or measure the mesh. `domain_height`,
 `min_building_detail`, and `mesh_options` configure generated meshes.
@@ -447,7 +447,7 @@ request = dict(
                     rho=1.10, n_modes_per_patch=40),
 )
 # Calling the dataset performs the full workflow; uncomment only to execute:
-# mesh = datasets.helmholtz_simulation(**request)
+# mesh = datasets.urban_noise_simulation(**request)
 ```
 
 The Python result is a `VolumeMesh` with `helmholtz_real`,
@@ -472,10 +472,10 @@ outside this contribution. Other simulation datasets keep their existing routes.
 The dataset rejects daemonic execution with multiple patch workers before
 starting a workflow.
 
-A planning-only demo is available:
+The dataset CLI can preview a request without executing:
 
 ```bash
-python demos/dataset_helmholtz.py --bounds 319745.96 6398759.71 320245.96 6399259.71 \
+python -m dtcc_sim.helmholtz.dataset_cli --bounds 319745.96 6398759.71 320245.96 6399259.71 \
   --h 5 --output results/helmholtz/new-case --mesh-cache meshes/helmholtz \
   --frequency 5 --workers 16 --rho 1.10 --overlap 1 --oversampling 3 --modes 40
 ```
@@ -493,13 +493,14 @@ implicitly select 16 workers. The city JSON example explicitly selects its
 
 | Entry point | Mesh information | Execution | Intended use |
 | --- | --- | --- | --- |
-| `HelmholtzSimulator` / `python -m dtcc_sim.helmholtz` | Existing XDMF file; no nominal h inference | Explicit `prepare`, `solve`, `run`, or CLI `--run` | Low-level numerical adapter |
+| `HelmholtzSolver` / `python -m dtcc_sim.helmholtz` | Existing XDMF file; no nominal h inference | Explicit `prepare`, `solve`, `run`, or CLI `--run` | Low-level numerical adapter |
 | `HelmholtzWorkflow` / `python -m dtcc_sim.helmholtz.launch` | Complete generation request including h, or existing file with optional declared `mesh_h` | Explicit stage methods, `--mesh-only`, or `--run` | Reproducible configured workflow |
-| `datasets.helmholtz_simulation` | Explicit bounds, h, output folder, and mesh cache or mesh file | Calling the dataset executes it; `describe()` and validation are offline | Standard DTCC dataset interface |
+| `datasets.urban_noise_simulation` | Explicit bounds, h, output folder, and mesh cache or mesh file | Calling the dataset executes it; `describe()` and validation are offline | Standard DTCC dataset interface |
 
 The configurable mesh/workflow launchers plan without executing unless `--run`
-or `--mesh-only` is supplied. The standalone visual box demo executes when
-called with its required new `--output` directory. `--mesh-only` generates/loads the mesh but does not solve. Direct
+or `--mesh-only` is supplied. The box and noise dataset demos execute without
+arguments and replace outputs in their configured directories. `--mesh-only` generates or loads
+the mesh without solving. Direct
 Python stage methods and dataset calls are executable APIs, not planning calls.
 Relative JSON paths resolve beside the JSON file; Python/dataset paths resolve
 against the caller's working directory.
@@ -508,7 +509,7 @@ Offline and online stages take an exclusive `.helmholtz.lock` in the case
 folder. A competing or interrupted writer is refused, and outputs are rechecked
 after acquiring the lock. Normal exceptions release the lock. After a killed
 process, check that its recorded PID is no longer running before removing the
-lock; partial artifacts still require a fresh case directory.
+lock; rerunning replaces partial solver artifacts.
 
 `point_source` retains the backend's finite-width Gaussian behavior; it is not a
 Dirac delta source. Alternative forcing and boundary configurations have not

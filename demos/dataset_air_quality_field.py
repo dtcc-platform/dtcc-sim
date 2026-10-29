@@ -37,11 +37,7 @@ If no sensors are found, you'll need to experiment with different locations:
 - Different phenomena may have different sensor coverage (NO2, PM10, O3, etc.)
 """
 
-from pathlib import Path
 import dtcc_sim
-
-# Create output directory
-Path("output").mkdir(exist_ok=True)
 
 print("=" * 70)
 print("Air Quality Field Reconstruction Demo")
@@ -74,6 +70,7 @@ print("        - Different phenomenon (NO2, PM10, O3, etc.)")
 # We'll try NO2 (nitrogen dioxide) which is commonly monitored in urban areas
 dataset_args = dtcc_sim.AirQualityFieldArgs(
     bounds=bounds,
+    output_dir="output/dataset_air_quality_field",
     phenomenon="NO2",  # Nitrogen dioxide
     lambda_smooth=1.0,  # Moderate smoothing
     alpha=1e-3,  # Small anchoring weight
@@ -123,9 +120,7 @@ try:
         print(f"  Mean: {field.values.mean():.2f} {field.unit}")
         print(f"  Std Dev: {field.values.std():.2f} {field.unit}")
 
-        # Save to file
-        output_path = "output/air_quality_field.xdmf"
-        volume_mesh.save(output_path)
+        output_path = "output/dataset_air_quality_field/solution.xdmf"
         print(f"\nOutput saved to: {output_path}")
         print(f"  Open in ParaView to visualize the {field.name} concentration field")
     else:
