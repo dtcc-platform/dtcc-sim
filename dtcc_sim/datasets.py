@@ -6,10 +6,15 @@ the dtcc-core dataset system. When dtcc_sim is imported, these datasets
 automatically register themselves with dtcc_core.datasets.
 """
 
+from .meshing import CityMeshSettings
+from .timing import phase as timing_phase, timed_run
+
 from typing import Optional, Literal
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from dtcc_core.datasets import DatasetDescriptor, DatasetBaseArgs
+
+from ._flow.parameters import _FlowParameters
 
 from .traffic import TrafficAssignmentSimulator, TrafficAssignmentParameters
 from .helmholtz.dataset import (
@@ -21,13 +26,12 @@ from .helmholtz.dataset import (
 BoundaryConditionType = Literal["dirichlet", "neumann", "robin"]
 WindWeatherAggregation = Literal["nearest", "mean", "median"]
 WindEquationSet = Literal["navier_stokes", "stokes"]
-WindSimulationMode = Literal["steady", "statistical_steady"]
 WindWallModel = Literal["noslip", "friction"]
 WindInletProfile = Literal["uniform", "power_law", "log_law"]
 WindSideTopBoundary = Literal["open", "slip"]
 
 
-class UrbanHeatSimulationArgs(DatasetBaseArgs):
+class UrbanHeatSimulationArgs(DatasetBaseArgs, CityMeshSettings):
     """Arguments for urban heat simulation dataset."""
 
     output_dir: Optional[str] = Field(
@@ -86,10 +90,6 @@ class UrbanHeatSimulationArgs(DatasetBaseArgs):
         ge=0,
     )
     open_flux: float = Field(0.0, description="Open-boundary Neumann heat flux")
-
-    # Mesh parameters
-    mesh_max_mesh_size: float = Field(25.0, description="Max mesh size in meters")
-    mesh_domain_height: float = Field(80.0, description="Domain height in meters")
 
     format: Optional[Literal["xdmf", "dtcc"]] = Field(None, description="Output format")
 
@@ -285,6 +285,7 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
         "Outputs inherit upstream city-volume-mesh source and geometry limitations.",
     ]
 
+    @timed_run
     def build(self, args):
         from .heat import HeatSolver, HeatParameters
 
@@ -312,22 +313,32 @@ class UrbanHeatSimulationDataset(DatasetDescriptor):
             open_flux=args.open_flux,
             mesh_max_mesh_size=args.mesh_max_mesh_size,
             mesh_domain_height=args.mesh_domain_height,
+            mesh_min_building_detail=args.mesh_min_building_detail,
+            mesh_lod=args.mesh_lod,
+            mesh_lod2_method=args.mesh_lod2_method,
+            mesh_flat_ground=args.mesh_flat_ground,
+            mesh_repair_boundary_corners=args.mesh_repair_boundary_corners,
+            mesh_cache_dir=args.mesh_cache_dir,
+            mesh_raster_cell_size=args.mesh_raster_cell_size,
+            mesh_raster_radius=args.mesh_raster_radius,
         )
         sim = HeatSolver(bounds=bounds, params=params, output_dir=args.output_dir)
         result = sim.simulate()
-        if args.format == "dtcc":
-            return self.export_to_bytes(result, args.format)
-        if args.format:
-            if sim.solution is None:
-                raise RuntimeError(
-                    "urban_heat_simulation did not produce a FEniCS solution "
-                    f"for format={args.format!r} serialization."
-                )
-            return self.export_to_bytes(sim.solution, args.format)
+        with timing_phase("export"):
+            if args.format == "dtcc":
+                return self.export_to_bytes(result, args.format)
+        with timing_phase("export"):
+            if args.format:
+                if sim.solution is None:
+                    raise RuntimeError(
+                        "urban_heat_simulation did not produce a FEniCS solution "
+                        f"for format={args.format!r} serialization."
+                    )
+                return self.export_to_bytes(sim.solution, args.format)
         return result
 
 
-class AirQualityFieldArgs(DatasetBaseArgs):
+class AirQualityFieldArgs(DatasetBaseArgs, CityMeshSettings):
     """Arguments for air quality field reconstruction dataset."""
 
     output_dir: Optional[str] = Field(
@@ -362,20 +373,6 @@ class AirQualityFieldArgs(DatasetBaseArgs):
         description="Polynomial degree (currently only 1 supported)",
         ge=1,
         le=1,
-    )
-
-    # Mesh parameters
-    mesh_max_mesh_size: float = Field(
-        25.0, description="Max mesh size in meters", gt=0
-    )
-    mesh_domain_height: float = Field(
-        80.0, description="Domain height in meters", gt=0
-    )
-    mesh_raster_cell_size: float = Field(
-        2.0, description="Terrain raster cell size", gt=0
-    )
-    mesh_raster_radius: float = Field(
-        3.0, description="Terrain raster interpolation radius", gt=0
     )
 
     # Air quality dataset parameters
@@ -666,21 +663,23 @@ class AirQualityFieldDataset(DatasetDescriptor):
         "Outputs inherit upstream air_quality and city_volume_mesh limitations.",
     ]
 
+    @timed_run
     def build(self, args):
         import dtcc_core.datasets as datasets
 
         bounds = self.parse_bounds(args.bounds)
 
         # Fetch air quality sensor data
-        sensors = datasets.air_quality(
-            bounds=bounds,
-            phenomenon=args.phenomenon,
-            crs=args.airquality_crs,
-            timeout_s=args.airquality_timeout_s,
-            max_stations=args.airquality_max_stations,
-            drop_missing=args.airquality_drop_missing,
-            base_url=args.airquality_base_url,
-        )
+        with timing_phase("data_acquisition"):
+            sensors = datasets.air_quality(
+                bounds=bounds,
+                phenomenon=args.phenomenon,
+                crs=args.airquality_crs,
+                timeout_s=args.airquality_timeout_s,
+                max_stations=args.airquality_max_stations,
+                drop_missing=args.airquality_drop_missing,
+                base_url=args.airquality_base_url,
+            )
 
         # Extract point coordinates and values
         point_coords, point_values = sensors.to_arrays(field_name=args.phenomenon)
@@ -732,6 +731,12 @@ class AirQualityFieldDataset(DatasetDescriptor):
             background_value=args.background_value,
             mesh_max_mesh_size=args.mesh_max_mesh_size,
             mesh_domain_height=args.mesh_domain_height,
+            mesh_min_building_detail=args.mesh_min_building_detail,
+            mesh_lod=args.mesh_lod,
+            mesh_lod2_method=args.mesh_lod2_method,
+            mesh_flat_ground=args.mesh_flat_ground,
+            mesh_repair_boundary_corners=args.mesh_repair_boundary_corners,
+            mesh_cache_dir=args.mesh_cache_dir,
             mesh_raster_cell_size=args.mesh_raster_cell_size,
             mesh_raster_radius=args.mesh_raster_radius,
             z_offset=args.z_offset,
@@ -764,15 +769,17 @@ class AirQualityFieldDataset(DatasetDescriptor):
 
         volume_mesh = sim.simulate()
 
-        if args.format == "dtcc":
-            return self.export_to_bytes(volume_mesh, args.format)
-        if args.format:
-            if sim.solution is None:
-                raise RuntimeError(
-                    "air_quality_field did not produce a FEniCS solution "
-                    f"for format={args.format!r} serialization."
-                )
-            return self.export_to_bytes(sim.solution, args.format)
+        with timing_phase("export"):
+            if args.format == "dtcc":
+                return self.export_to_bytes(volume_mesh, args.format)
+        with timing_phase("export"):
+            if args.format:
+                if sim.solution is None:
+                    raise RuntimeError(
+                        "air_quality_field did not produce a FEniCS solution "
+                        f"for format={args.format!r} serialization."
+                    )
+                return self.export_to_bytes(sim.solution, args.format)
         return volume_mesh
 
     @staticmethod
@@ -1145,16 +1152,18 @@ class TrafficSimulationDataset(DatasetDescriptor):
         ),
     ]
 
+    @timed_run
     def build(self, args):
         import dtcc_core.datasets as datasets
 
         bounds = self.parse_bounds(args.bounds)
-        roads = datasets.roads(bounds=bounds)
-        deso = datasets.deso(
-            bounds=bounds,
-            statistics=["population", "cars", "employment"],
-            statistics_year=args.statistics_year,
-        )
+        with timing_phase("data_acquisition"):
+            roads = datasets.roads(bounds=bounds)
+            deso = datasets.deso(
+                bounds=bounds,
+                statistics=["population", "cars", "employment"],
+                statistics_year=args.statistics_year,
+            )
         params = TrafficAssignmentParameters(
             trips_per_employed=args.trips_per_employed,
             peak_hour_factor=args.peak_hour_factor,
@@ -1182,8 +1191,9 @@ class TrafficSimulationDataset(DatasetDescriptor):
         result = sim.simulate()
         result.attributes["simulation_diagnostics"] = sim.diagnostics
 
-        if args.format == "dtcc":
-            return result.to_proto().SerializeToString()
+        with timing_phase("export"):
+            if args.format == "dtcc":
+                return result.to_proto().SerializeToString()
         return result
 
 
@@ -1204,109 +1214,41 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-class UrbanWindSimulationArgs(DatasetBaseArgs):
-    """Arguments for urban wind simulation dataset."""
+class UrbanWindSimulationArgs(DatasetBaseArgs, _FlowParameters):
+    """Stationary urban airflow inputs and output selection."""
 
     output_dir: Optional[str] = Field(
         None, min_length=1, pattern=r"\S",
-        description="Directory for solver outputs; repeated runs replace previous solver files",
+        description="Solver output directory; owned files are replaced after acceptance",
     )
-
-    # Wind
-    use_weather: bool = Field(
-        False,
-        description="Fetch reference wind speed and direction from SMHI weather data.",
-    )
-    weather_aggregation: WindWeatherAggregation = Field(
-        "nearest",
-        description="Weather aggregation: nearest, mean, or median.",
-    )
-    wind_speed: float = Field(5.0, description="Reference wind speed [m/s]", ge=0)
-    wind_dir_deg: float = Field(
-        270.0,
-        description="Wind direction (met convention: FROM, 0=N 90=E 180=S 270=W)",
-    )
-
-    # Mesh
-    mesh_max_mesh_size: float = Field(25.0, description="Max mesh size [m]")
-    mesh_domain_height: float = Field(80.0, description="Domain height [m]")
-
-    # Solver
-    rho: float = Field(1.2, description="Air density [kg/m3]", gt=0)
-    nu: float = Field(1.5e-5, description="Kinematic viscosity [m2/s]", gt=0)
-    nu_t: float = Field(
-        0.0,
-        description="Eddy viscosity placeholder [m2/s]; default is laminar.",
-        ge=0,
-    )
-    equations: WindEquationSet = Field(
-        "navier_stokes",
-        description="Equation set: 'navier_stokes' (IPCS) or 'stokes' (stationary)",
-    )
-    simulation_mode: WindSimulationMode = Field(
-        "steady",
-        description="Stopping mode: steady or statistical_steady.",
-    )
-    dt: float = Field(0.2, description="Pseudo-time step [s]", gt=0)
-    max_steps: int = Field(2000, description="Maximum number of time steps", gt=0)
-    steady_tolerance: float = Field(
-        1e-4,
-        description="Relative velocity-change tolerance for steady mode.",
-        ge=0,
-    )
-    divergence_tolerance: float = Field(
-        5e-3,
-        description="L2(div u) tolerance for steady-mode stopping.",
-        ge=0,
-    )
-    flux_imbalance_tolerance: float = Field(
-        5e-2,
-        description="Net open-boundary flux imbalance tolerance.",
-        ge=0,
-    )
-    min_steps: int = Field(50, description="Minimum steps before early stop", ge=0)
-    steady_window: int = Field(
-        5,
-        description="Consecutive converged steps required before stopping.",
-        ge=1,
-    )
-
-    # BC model
-    side_top_boundary: WindSideTopBoundary = Field(
-        "open",
-        description="Side/top boundary model: open or slip.",
-    )
-    wall_model: WindWallModel = Field(
-        "noslip", description="Wall model: 'noslip' or 'friction'"
-    )
-    beta_wall: float = Field(0.5, description="Friction coefficient (friction model)")
-    inlet_profile: WindInletProfile = Field(
-        "uniform", description="Inlet profile: 'uniform', 'power_law', 'log_law'"
-    )
-    inlet_ramp_steps: int = Field(
-        0,
-        description="Initial pseudo-time steps used to ramp inlet velocity.",
-        ge=0,
-    )
-    z0: float = Field(0.5, description="Roughness length [m] for log-law", gt=0)
-    u_ref_height: float = Field(
-        10.0, description="Reference measurement height [m]", gt=0
-    )
-    power_law_alpha: float = Field(0.2, description="Power-law exponent", gt=0)
-    closed_cavity: bool = Field(
-        False,
-        description="Use a pressure null-space instead of an outlet boundary.",
-    )
-
+    equations: WindEquationSet = Field("navier_stokes", description="Stationary Navier–Stokes or linear Stokes")
+    nonlinear_rtol: Optional[float] = Field(None, gt=0, lt=1, description="SNES relative tolerance; default 1e-9")
+    nonlinear_atol: Optional[float] = Field(None, gt=0, description="SNES absolute tolerance; default 1e-10")
+    nonlinear_max_it: Optional[int] = Field(None, gt=0, description="SNES iteration limit; default 40")
+    backflow_beta: Optional[float] = Field(None, ge=0)
+    petsc_options: Optional[dict] = None
+    petsc_stokes: Optional[dict] = Field(None, description="Explicit PETSc options for Stokes")
     format: Optional[Literal["dtcc"]] = Field(None, description="Output format")
+
+    @model_validator(mode="before")
+    @classmethod
+    def equation_options(cls, data):
+        if isinstance(data, dict):
+            if data.get("equations", "navier_stokes") == "stokes":
+                invalid = {key for key in ("nonlinear_rtol", "nonlinear_atol", "nonlinear_max_it", "backflow_beta", "petsc_options") if data.get(key) is not None}
+                if invalid:
+                    raise ValueError(f"Stokes does not accept {', '.join(sorted(invalid))}; use petsc_stokes for linear settings")
+            elif data.get("petsc_stokes") is not None:
+                raise ValueError("petsc_stokes requires equations='stokes'; use petsc_options for Navier–Stokes")
+        return data
 
 
 class UrbanWindSimulationDataset(DatasetDescriptor):
     """Urban wind CFD simulation as a dataset.
 
     Solves the incompressible Navier-Stokes equations on a DTCC city volume mesh
-    using the IPCS fractional-step method.  The solver marches in pseudo-time
-    until a steady state is reached and returns a dtcc-core ``VolumeMesh`` with
+    using a stationary mixed Taylor–Hood formulation and returns a
+    dtcc-core ``VolumeMesh`` only after numerical acceptance, with
     attached ``velocity``, ``pressure``, and ``speed`` fields.
 
     Example:
@@ -1324,8 +1266,8 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
     title = "Urban Wind Simulation"
     description = (
         "Incompressible urban wind simulation using FEniCSx. The default "
-        "solves pseudo-time Navier-Stokes with an IPCS ABCN fractional-step "
-        "scheme; a stationary mixed Stokes mode is also available. Output "
+        "solves stationary mixed Navier-Stokes with Newton iteration; "
+        "linear Stokes is available through explicit equation selection. Output "
         "pressure is kinematic pressure p/rho in m^2/s^2. Returns a DTCC "
         "VolumeMesh with velocity, pressure, and speed Fields."
     )
@@ -1406,7 +1348,7 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             "Validate wind forcing, inlet profile, wall model, convergence "
             "settings, mesh settings, and output format"
         ),
-        "Generate a DTCC city volume mesh from requested bounds when needed",
+        "Generate a DTCC city volume mesh from requested bounds with repair_boundary_corners=True when needed",
         "Load the mesh and boundary markers into FEniCSx",
         (
             "Optionally fetch weather wind speed and direction; fail if "
@@ -1418,8 +1360,8 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             "outlet, side, and top categories"
         ),
         "Build the selected uniform, power-law, or log-law inlet velocity profile",
-        "Solve Navier-Stokes with IPCS pseudo-time stepping or stationary Stokes",
-        "Record convergence, divergence, flux-imbalance, CFL, and field diagnostics",
+        "Solve stationary mixed Navier-Stokes or explicitly selected linear Stokes",
+        "Check nonlinear convergence, independent residual, divergence, boundary flux and fields",
         (
             "Attach velocity, kinematic pressure, and speed Fields or "
             "serialize protobuf output"
@@ -1433,10 +1375,9 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         {
             "heading": "What is solved",
             "body": (
-                "The default model solves incompressible Navier-Stokes in "
-                "pseudo-time until the configured convergence checks pass or "
-                "max_steps is reached. Stationary Stokes mode omits the "
-                "convective term."
+                "The default model solves stationary incompressible Navier-Stokes "
+                "at full inlet forcing and convection. It exports only fields "
+                "passing residual and mass checks. Linear Stokes omits convection."
             ),
         },
         {
@@ -1516,50 +1457,28 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         "Outputs inherit upstream city-volume-mesh source and geometry limitations.",
     ]
 
+    @timed_run
     def build(self, args):
-        from .flow import (NavierStokesSolver, NavierStokesParameters, StokesSolver, StokesParameters)
+        from .navierstokes import NavierStokesSolver, NavierStokesParameters
+        from .stokes import StokesSolver, StokesParameters
 
         bounds = self.parse_bounds(args.bounds)
         parameter_type = StokesParameters if args.equations == "stokes" else NavierStokesParameters
         solver_type = StokesSolver if args.equations == "stokes" else NavierStokesSolver
-        params = parameter_type(
-            rho=args.rho,
-            nu=args.nu,
-            nu_t=args.nu_t,
-            equations=args.equations,
-            simulation_mode=args.simulation_mode,
-            use_weather=args.use_weather,
-            weather_aggregation=args.weather_aggregation,
-            wind_speed=args.wind_speed,
-            wind_dir_deg=args.wind_dir_deg,
-            mesh_max_mesh_size=args.mesh_max_mesh_size,
-            mesh_domain_height=args.mesh_domain_height,
-            dt=args.dt,
-            max_steps=args.max_steps,
-            steady_tolerance=args.steady_tolerance,
-            divergence_tolerance=args.divergence_tolerance,
-            flux_imbalance_tolerance=args.flux_imbalance_tolerance,
-            min_steps=args.min_steps,
-            steady_window=args.steady_window,
-            side_top_boundary=args.side_top_boundary,
-            wall_model=args.wall_model,
-            beta_wall=args.beta_wall,
-            inlet_profile=args.inlet_profile,
-            inlet_ramp_steps=args.inlet_ramp_steps,
-            z0=args.z0,
-            u_ref_height=args.u_ref_height,
-            power_law_alpha=args.power_law_alpha,
-            closed_cavity=args.closed_cavity,
-        )
+        params = parameter_type.model_validate({
+            name: getattr(args, name) for name in parameter_type.model_fields
+            if getattr(args, name) is not None
+        })
         sim = solver_type(bounds=bounds, params=params, output_dir=args.output_dir)
         result = sim.simulate()
 
-        if args.format:
-            if not hasattr(result, "save"):
-                raise RuntimeError(
-                    "urban_wind_simulation expected a DTCC VolumeMesh for "
-                    f"format={args.format!r} serialization, but the solver "
-                    f"returned {type(result).__name__}."
-                )
-            return self.export_to_bytes(result, args.format)
+        with timing_phase("export"):
+            if args.format:
+                if not hasattr(result, "save"):
+                    raise RuntimeError(
+                        "urban_wind_simulation expected a DTCC VolumeMesh for "
+                        f"format={args.format!r} serialization, but the solver "
+                        f"returned {type(result).__name__}."
+                    )
+                return self.export_to_bytes(result, args.format)
         return result

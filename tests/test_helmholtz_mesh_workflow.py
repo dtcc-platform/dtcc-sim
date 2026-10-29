@@ -12,7 +12,8 @@ from dtcc_sim.helmholtz import (
     HelmholtzParameters,
     HelmholtzWorkflow,
 )
-from dtcc_sim.helmholtz import meshing, workflow
+from dtcc_sim import meshing
+from dtcc_sim.helmholtz import workflow
 
 
 @pytest.fixture

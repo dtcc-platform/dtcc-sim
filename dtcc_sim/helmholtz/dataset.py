@@ -1,5 +1,6 @@
 """Noise dataset descriptor backed by the Helmholtz mesh-and-solver workflow."""
 
+from ..timing import phase as timing_phase, timed_run
 from copy import deepcopy
 from pathlib import Path
 import tempfile
@@ -9,8 +10,8 @@ import math
 from pydantic import Field, PrivateAttr, field_validator, model_validator
 from dtcc_core.datasets import DatasetBaseArgs, DatasetDescriptor
 
-from ..output import _output_directory
-from .meshing import CityMeshParameters, _save_city_surface
+from ..output import _output_directory, _export_city_surface
+from .meshing import CityMeshParameters
 from .parameters import HelmholtzParameters
 from .._version import __version__
 
@@ -228,6 +229,7 @@ class UrbanNoiseSimulationDataset(DatasetDescriptor):
         context.presentation.view_hints = hints
         return context
 
+    @timed_run
     def build(self, args):
         from .workflow import HelmholtzWorkflow
 
@@ -240,7 +242,7 @@ class UrbanNoiseSimulationDataset(DatasetDescriptor):
                 "Parallel Helmholtz requires a non-daemonic worker; use a Celery solo pool or workers=1"
             )
         mesh_args = (
-            {"mesh_path": args.mesh_path, "mesh_h": args.h}
+            {"mesh_path": args.mesh_path, "mesh_h": args.h, "mesh_crs": args.mesh_crs}
             if args.mesh_path is not None
             else {
                 "mesh_parameters": args.city_parameters(),
@@ -270,20 +272,27 @@ class UrbanNoiseSimulationDataset(DatasetDescriptor):
             "prepared_identity": deepcopy(result.prepared_identity),
             "mesh_provenance": deepcopy(workflow.mesh_record),
         }
-        mesh = result.to_dtcc(unit=args.field_unit)
-        # Attach before serialization as well as the base class's public-call hook.
-        mesh.dataset_context = self.create_context(args)
-        args.output_dir.mkdir(parents=True, exist_ok=True)
-        mesh.save(args.output_dir / "solution.vtu")
-        if args.mesh_path is None:
-            _save_city_surface(mesh, args.output_dir / "city.vtu")
-        if args.format == "dtccpkg":
-            from dtcc_core.datasets.package import export_model_package
+        if getattr(result, "coordinate_frame", None) is not None:
+            args._run_metadata["coordinate_frame"] = deepcopy(result.coordinate_frame)
+        with timing_phase("postprocessing"):
+            mesh = result.to_dtcc(unit=args.field_unit)
+        with timing_phase("export"):
+            # Attach before serialization as well as the base class's public-call hook.
+            mesh.dataset_context = self.create_context(args)
+            args.output_dir.mkdir(parents=True, exist_ok=True)
+            mesh.save(args.output_dir / "solution.vtu")
+            frame = getattr(result, "coordinate_frame", None)
+            if frame is not None:
+                from ..coordinates import write_coordinate_frame
+                write_coordinate_frame(args.output_dir / "solution.vtu", frame)
+            _export_city_surface(args.output_dir / "solution.vtu", native_mesh=mesh, frame=frame)
+            if args.format == "dtccpkg":
+                from dtcc_core.datasets.package import export_model_package
 
-            with tempfile.TemporaryDirectory() as temporary:
-                path = Path(temporary) / "helmholtz.dtccpkg"
-                export_model_package(mesh, path, canonical=True)
-                return path.read_bytes()
-        if args.format:
-            return self.export_to_bytes(mesh, args.format)
+                with tempfile.TemporaryDirectory() as temporary:
+                    path = Path(temporary) / "helmholtz.dtccpkg"
+                    export_model_package(mesh, path, canonical=True)
+                    return path.read_bytes()
+            if args.format:
+                return self.export_to_bytes(mesh, args.format)
         return mesh

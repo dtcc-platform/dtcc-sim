@@ -31,6 +31,7 @@ class Params:
     unit_square_cell_type: Literal["triangle", "quadrilateral"] = "triangle"
 
     mesh_path: str = ""
+    mesh_crs: str | None = None
     mesh_name: str = "mesh"
     facet_tag_name: str = "boundary_markers"
     cell_tag_name: str = "cell_tags"

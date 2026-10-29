@@ -9,15 +9,18 @@ FIELD_NAMES = ("helmholtz_real", "helmholtz_imaginary", "helmholtz_amplitude")
 
 
 def attach_helmholtz_fields(
-    mesh, dof_coordinates, solution, *, unit="", tolerance=1.0e-8
+    mesh, dof_coordinates, solution, *, unit="", tolerance=1.0e-8,
+    coordinate_frame=None,
 ):
-    """Attach P1 solution values using a checked bijection of absolute coordinates."""
+    """Attach P1 values through a checked bijection in the declared frame."""
     import numpy as np
     from scipy.spatial import cKDTree
     from dtcc_core.model import Field
 
     source = np.asarray(dof_coordinates, dtype=np.float64)
     target = np.asarray(mesh.vertices, dtype=np.float64)
+    if coordinate_frame is not None:
+        target = coordinate_frame.to_local(target)
     values = np.asarray(solution)
     if source.ndim != 2 or source.shape[1] != 3 or target.shape != source.shape:
         raise ValueError(
@@ -87,7 +90,7 @@ def result_to_dtcc(result, *, unit=""):
     from dolfinx import fem, io, mesh as dmesh
     import dtcc_core.io  # noqa: F401 - Registers VolumeMesh.save.
     from dtcc_core.model import VolumeMesh
-    from .simulator import _mesh_input_hashes, _runtime_versions
+    from .solver import _mesh_input_hashes, _runtime_versions
 
     if MPI.COMM_WORLD.size != 1:
         raise RuntimeError("DTCC Helmholtz export requires one MPI rank")
@@ -131,9 +134,26 @@ def result_to_dtcc(result, *, unit=""):
             else:
                 dtcc_mesh.markers = np.zeros(len(dtcc_mesh.cells), dtype=np.int32)
                 dtcc_mesh.markers[tags.indices] = tags.values
-    space = fem.functionspace(mesh, ("Lagrange", 1))
-    coordinates = space.tabulate_dof_coordinates()
-    return attach_helmholtz_fields(dtcc_mesh, coordinates, result.solution, unit=unit)
+    from ..coordinates import local_mesh_coordinates
+
+    crs = manifest.get("mesh_crs")
+    if crs:
+        dtcc_mesh.transform.srs = crs
+    with local_mesh_coordinates(mesh, crs=crs) as frame:
+        if result.coordinate_frame is not None and frame.as_dict() != result.coordinate_frame:
+            raise ValueError("Result coordinate frame does not match its input mesh")
+        space = fem.functionspace(mesh, ("Lagrange", 1))
+        coordinates = space.tabulate_dof_coordinates()
+        result_mesh = attach_helmholtz_fields(
+            dtcc_mesh, coordinates, result.solution, unit=unit, coordinate_frame=frame,
+        )
+        result_mesh.simulation_diagnostics = {
+            "converged": result.converged,
+            "iterations": result.iterations,
+            "relative_residual": result.relative_residual,
+            "coordinate_frame": frame.as_dict(),
+        }
+        return result_mesh
 
 
 def _checked_export_path(path, *, mesh_path=None):
@@ -150,7 +170,7 @@ def _checked_export_path(path, *, mesh_path=None):
             )
         )
     if mesh_path is not None:
-        from .simulator import _mesh_input_hashes
+        from .solver import _mesh_input_hashes
 
         inputs = {Path(name) for name in _mesh_input_hashes(mesh_path)}
         if inputs.intersection(outputs):
@@ -165,13 +185,18 @@ def save_dtcc_result(result, path=None, *, unit=""):
     _checked_export_path(path, mesh_path=result.mesh_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     mesh.save(path)
+    from ..coordinates import write_coordinate_frame
+
+    frame = getattr(mesh, "simulation_diagnostics", {}).get("coordinate_frame")
+    if frame is not None:
+        write_coordinate_frame(path, frame)
     return path
 
 
 def load_result(output_dir):
     """Read the complex array, diagnostics, and mesh provenance of a saved case."""
     import numpy as np
-    from .simulator import HelmholtzResult
+    from .solver import HelmholtzResult
 
     directory = Path(output_dir).expanduser().resolve()
     manifest = json.loads((directory / "prepared.json").read_text())

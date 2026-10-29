@@ -14,6 +14,7 @@ from dolfinx.fem import petsc as fem_petsc
 import ufl
 
 from .params import PARAMS
+from ...coordinates import MeshCoordinateFrame, localize_mesh
 
 from dtcc_core.common import get_python_logger
 
@@ -115,6 +116,7 @@ def load_mesh() -> tuple[dmesh.Mesh, Any | None, Any | None]:
         raise ValueError(f"Unsupported mesh_source: {PARAMS.mesh_source!r}")
 
     mesh = out.mesh
+    localize_mesh(mesh, crs=PARAMS.mesh_crs)
     tdim = mesh.topology.dim
     fdim = tdim - 1
     mesh.topology.create_entities(fdim)
@@ -321,6 +323,8 @@ def supervisor_source_point(mesh: dmesh.Mesh) -> np.ndarray:
     zmin = mins[2] if mesh.geometry.dim >= 3 else 0.0
     zmax = maxs[2] if mesh.geometry.dim >= 3 else 0.0
     z0 = PARAMS.source_z_weight_min * zmin + PARAMS.source_z_weight_max * zmax
+    frame = _coordinate_frame(mesh)
+    z0 += (PARAMS.source_z_weight_min + PARAMS.source_z_weight_max - 1) * frame.origin[2]
 
     if mesh.geometry.dim >= 3:
         return np.array([center_xy[0], center_xy[1], z0], dtype=np.float64)
@@ -329,20 +333,17 @@ def supervisor_source_point(mesh: dmesh.Mesh) -> np.ndarray:
 
 def source_point(mesh: dmesh.Mesh) -> np.ndarray:
     if PARAMS.source_location_mode == "manual":
-        if mesh.geometry.dim >= 3:
-            return np.array(
-                [float(PARAMS.source_x), float(PARAMS.source_y), float(PARAMS.source_z)],
-                dtype=np.float64,
-            )
-        return np.array(
-            [float(PARAMS.source_x), float(PARAMS.source_y)],
-            dtype=np.float64,
-        )
+        point = np.array([PARAMS.source_x, PARAMS.source_y, PARAMS.source_z], dtype=np.float64)
+        return _coordinate_frame(mesh).to_local(point[:mesh.geometry.dim])
 
     if PARAMS.source_location_mode == "mesh_bounds":
         return supervisor_source_point(mesh)
 
     raise ValueError(f"Unsupported source_location_mode: {PARAMS.source_location_mode!r}")
+
+
+def _coordinate_frame(mesh):
+    return getattr(mesh, "_dtcc_coordinate_frame", MeshCoordinateFrame((0., 0., 0.)))
 
 
 def _warn_if_source_outside(mesh: dmesh.Mesh, point: np.ndarray) -> None:
@@ -357,7 +358,7 @@ def _warn_if_source_outside(mesh: dmesh.Mesh, point: np.ndarray) -> None:
     inside = mesh.comm.allreduce(bool(len(cells.links(0))), op=MPI.LOR)
     if not inside:
         warnings.warn(
-            f"Gaussian source centre {point.tolist()} is outside the computational mesh "
+            f"Gaussian source centre {_coordinate_frame(mesh).to_input(point).tolist()} is outside the computational mesh "
             f"(source_location_mode={PARAMS.source_location_mode!r}). "
             "The source position is unchanged; the finite-width Gaussian may still "
             "overlap the domain. Check source placement when interpreting this run.",
@@ -397,7 +398,14 @@ def _plane_wave_expression(mesh):
     x = ufl.SpatialCoordinate(mesh)
     d = _plane_wave_direction(mesh)
     phase = sum(float(d[j]) * x[j] for j in range(mesh.geometry.dim))
-    return ufl.exp(1j * float(PARAMS.k()) * phase)
+    return ufl.exp(1j * (float(PARAMS.k()) * phase + _plane_wave_phase_offset(mesh)))
+
+
+def _plane_wave_phase_offset(mesh):
+    direction = np.asarray(_plane_wave_direction(mesh), dtype=np.longdouble)
+    origin = np.asarray(_coordinate_frame(mesh).origin[:mesh.geometry.dim], dtype=np.longdouble)
+    phase = np.longdouble(PARAMS.k()) * np.dot(direction, origin)
+    return float(np.remainder(phase, 2 * np.longdouble(np.pi)))
 
 
 def build_rhs(mesh: dmesh.Mesh, V: fem.FunctionSpace, facet_tags: Any | None, bcs=None) -> PETSc.Vec:
@@ -464,7 +472,8 @@ def build_dirichlet_bcs_if_needed(
                 if PARAMS.rhs_mode == "plane_wave_exact":
                     direction = _plane_wave_direction(mesh)
                     k = float(PARAMS.k())
-                    value.interpolate(lambda x: np.exp(1j * k * (direction @ x[:len(direction)])))
+                    phase = _plane_wave_phase_offset(mesh)
+                    value.interpolate(lambda x: np.exp(1j * (k * (direction @ x[:len(direction)]) + phase)))
                 else:
                     value.x.array[:] = 0.0
                 bcs.append(fem.dirichletbc(value, dofs))
@@ -491,12 +500,12 @@ def build_system():
         tprint(f"[mesh] FE space dofs N = {n}")
         tprint(f"[mesh] coefficient_mode = {PARAMS.coefficient_mode}")
         tprint(f"[mesh] rhs_mode = {PARAMS.rhs_mode}")
-        tprint(f"[mesh] bounds min = {mins}")
-        tprint(f"[mesh] bounds max = {maxs}")
+        tprint(f"[mesh] input bounds min = {_coordinate_frame(mesh).to_input(mins)}")
+        tprint(f"[mesh] input bounds max = {_coordinate_frame(mesh).to_input(maxs)}")
         if PARAMS.rhs_mode == "plane_wave_exact":
             tprint(f"[mesh] plane wave direction = {_plane_wave_direction(mesh)}")
         else:
-            tprint(f"[mesh] source x0 = {source_point(mesh)}")
+            tprint(f"[mesh] source x0 = {_coordinate_frame(mesh).to_input(source_point(mesh))}")
         tprint(f"[mesh] k          = {float(PARAMS.k()):.6e}")
 
     return mesh, facet_tags, cell_tags, V, Acoef, Vcoef, beta, A, b

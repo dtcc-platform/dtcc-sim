@@ -70,7 +70,8 @@ def test_simulate_returns_dtcc_mesh_fields_and_keeps_diagnostics(
     destination = tmp_path / "result.vtu"
     assert sim.simulate(unit="Pa", output_path=destination) is returned
     assert sim.result is result
-    assert sim.diagnostics == {
+    assert sim.diagnostics["run_timings"]["status"] == "completed"
+    assert {key: value for key, value in sim.diagnostics.items() if key != "run_timings"} == {
         "converged": True,
         "iterations": 8,
         "relative_residual": 1e-8,

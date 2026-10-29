@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from ...timing import phase as timing_phase, timed
 from pathlib import Path
+import json
 import numpy as np
 from petsc4py import PETSc
 from scipy import sparse as sps
@@ -114,6 +116,7 @@ def _relative_residual(A_global: PETSc.Mat, x: np.ndarray, b: np.ndarray) -> flo
     return float(np.linalg.norm(r) / denom)
 
 
+@timed("export")
 def _write_gmres_history(history: list[float]) -> None:
     if not PARAMS.write_gmres_history:
         return
@@ -123,6 +126,7 @@ def _write_gmres_history(history: list[float]) -> None:
             f.write(f"{r:.16e}\n")
 
 
+@timed("export")
 def _write_solution(mesh, V, x: np.ndarray) -> None:
     if not PARAMS.write_solution:
         return
@@ -137,8 +141,12 @@ def _write_solution(mesh, V, x: np.ndarray) -> None:
 
         _ensure_parent(PARAMS.solution_xdmf_path)
         with io.XDMFFile(mesh.comm, str(Path(PARAMS.solution_xdmf_path)), "w") as xdmf:
-            xdmf.write_mesh(mesh)
-            xdmf.write_function(uh)
+            from ...coordinates import input_mesh_coordinates, write_coordinate_frame
+
+            with input_mesh_coordinates(mesh):
+                xdmf.write_mesh(mesh)
+                xdmf.write_function(uh)
+        write_coordinate_frame(PARAMS.solution_xdmf_path, mesh._dtcc_coordinate_frame, comm=mesh.comm)
     except Exception as e:
         tprint(f"[solve] WARNING: failed to write XDMF solution: {type(e).__name__}: {e}")
 
@@ -164,7 +172,11 @@ def solve() -> dict:
         tprint("[solve] one_level_only=True -> disabling coarse level")
         E0 = np.zeros((N_saved, 0), dtype=np.complex128)
 
-    mesh, facet_tags, cell_tags, V, Acoef, Vcoef, beta, A_global, b_global = build_system()
+    with timing_phase("assembly"):
+        mesh, facet_tags, cell_tags, V, Acoef, Vcoef, beta, A_global, b_global = build_system()
+    saved_frame = json.loads(str(payload["coordinate_frame_json"][0]))
+    if saved_frame != mesh._dtcc_coordinate_frame.as_dict():
+        raise ValueError("Offline and online coordinate frames differ; prepare again")
     N_now = int(V.dofmap.index_map.size_local)
 
     if N_saved != N_now:
@@ -174,14 +186,15 @@ def solve() -> dict:
 
     tprint(f"[load_offline_data] N_saved={N_saved}, E0_loaded={E0.shape}")
 
-    precond = build_two_level_preconditioner(
-        A_global=A_global,
-        decomposition=decomp_payload,
-        pou_data=pou_data,
-        E0=E0,
-        local_patch_ops_payload=local_ops_payload,
-    )
-    pc = HybridPreconditionerPC(precond=precond, A_global=A_global)
+    with timing_phase("preconditioner_setup"):
+        precond = build_two_level_preconditioner(
+            A_global=A_global,
+            decomposition=decomp_payload,
+            pou_data=pou_data,
+            E0=E0,
+            local_patch_ops_payload=local_ops_payload,
+        )
+        pc = HybridPreconditionerPC(precond=precond, A_global=A_global)
 
     n = N_now
     A_mv = _build_linear_operator(A_global)
@@ -229,35 +242,37 @@ def solve() -> dict:
                 f"relative preconditioned residual={residual:.3e}"
             )
 
-    if PARAMS.outer_solver == "gmres":
-        x, info = sps.linalg.gmres(
-            A_lin,
-            b_prec,
-            x0=x0,
-            restart=int(PARAMS.outer_restart),
-            maxiter=int(PARAMS.outer_max_it),
-            rtol=float(PARAMS.outer_rtol),
-            atol=float(PARAMS.outer_atol),
-            callback=monitor,
-            callback_type="pr_norm",
-        )
-    elif PARAMS.outer_solver == "fgmres":
-        tprint("[solve] WARNING: outer_solver='fgmres' requested, using scipy gmres fallback")
-        x, info = sps.linalg.gmres(
-            A_lin,
-            b_prec,
-            x0=x0,
-            restart=int(PARAMS.outer_restart),
-            maxiter=int(PARAMS.outer_max_it),
-            rtol=float(PARAMS.outer_rtol),
-            atol=float(PARAMS.outer_atol),
-            callback=monitor,
-            callback_type="pr_norm",
-        )
-    else:
-        raise ValueError(f"Unsupported outer_solver={PARAMS.outer_solver!r}")
+    with timing_phase("linear_solve"):
+        if PARAMS.outer_solver == "gmres":
+            x, info = sps.linalg.gmres(
+                A_lin,
+                b_prec,
+                x0=x0,
+                restart=int(PARAMS.outer_restart),
+                maxiter=int(PARAMS.outer_max_it),
+                rtol=float(PARAMS.outer_rtol),
+                atol=float(PARAMS.outer_atol),
+                callback=monitor,
+                callback_type="pr_norm",
+            )
+        elif PARAMS.outer_solver == "fgmres":
+            tprint("[solve] WARNING: outer_solver='fgmres' requested, using scipy gmres fallback")
+            x, info = sps.linalg.gmres(
+                A_lin,
+                b_prec,
+                x0=x0,
+                restart=int(PARAMS.outer_restart),
+                maxiter=int(PARAMS.outer_max_it),
+                rtol=float(PARAMS.outer_rtol),
+                atol=float(PARAMS.outer_atol),
+                callback=monitor,
+                callback_type="pr_norm",
+            )
+        else:
+            raise ValueError(f"Unsupported outer_solver={PARAMS.outer_solver!r}")
 
-    relres = _relative_residual(A_global, x, b)
+    with timing_phase("validation"):
+        relres = _relative_residual(A_global, x, b)
     reason = 2 if info == 0 else -1
     its = len(history) if len(history) > 0 else (0 if info == 0 else int(PARAMS.outer_max_it))
 
@@ -275,4 +290,5 @@ def solve() -> dict:
         tprint("[solve] skipping XDMF/HDF5 output")
 
     return {"solution": x, "iterations": its, "relative_residual": relres,
+            "coordinate_frame": mesh._dtcc_coordinate_frame.as_dict(),
             "converged": reason == 2, "gmres_history": tuple(history)}

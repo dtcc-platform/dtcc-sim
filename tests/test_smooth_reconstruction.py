@@ -35,7 +35,7 @@ class _FakeVolumeMesh:
 
 
 def test_attach_scalar_field_to_volume_mesh_replaces_named_field(monkeypatch):
-    import dtcc_sim.flow as urban_wind
+    from dtcc_sim._flow import solver as urban_wind
 
     monkeypatch.setattr(
         urban_wind,

@@ -6,7 +6,6 @@ All tests are offline — no calls to remote APIs.
 
 from __future__ import annotations
 
-from dtcc_sim.flow import StokesParameters, StokesSolver
 import math
 import numpy as np
 import pytest
@@ -14,6 +13,7 @@ import pytest
 pytestmark = [pytest.mark.simulation, pytest.mark.fenics]
 
 pytest.importorskip("dolfinx", reason="urban wind tests require dolfinx")
+from dtcc_sim import NavierStokesParameters
 
 # ---------------------------------------------------------------------------
 # 1) Inlet / outlet face selection
@@ -24,7 +24,8 @@ class TestInletOutletSelection:
     """Verify that the correct bbox faces are chosen for various wind directions."""
 
     def _select(self, wind_dir_deg: float):
-        from dtcc_sim.flow import NavierStokesParameters, select_inlet_outlet
+        from dtcc_sim import NavierStokesParameters
+        from dtcc_sim._flow.solver import select_inlet_outlet
 
         params = NavierStokesParameters(wind_speed=5.0, wind_dir_deg=wind_dir_deg)
         return select_inlet_outlet(params)
@@ -59,7 +60,8 @@ class TestInletOutletSelection:
 
     def test_manual_override(self):
         """Manual override bypasses auto detection."""
-        from dtcc_sim.flow import NavierStokesParameters, select_inlet_outlet
+        from dtcc_sim import NavierStokesParameters
+        from dtcc_sim._flow.solver import select_inlet_outlet
 
         params = NavierStokesParameters(
             wind_speed=5.0,
@@ -81,7 +83,7 @@ class TestWindVector:
     """Verify meteorological → math conversion of wind direction."""
 
     def test_from_west(self):
-        from dtcc_sim.flow import NavierStokesParameters
+        from dtcc_sim import NavierStokesParameters
 
         p = NavierStokesParameters(wind_speed=1.0, wind_dir_deg=270.0)
         wx, wy = p.wind_vector_xy
@@ -90,7 +92,7 @@ class TestWindVector:
         assert abs(wy) < 1e-10
 
     def test_from_south(self):
-        from dtcc_sim.flow import NavierStokesParameters
+        from dtcc_sim import NavierStokesParameters
 
         p = NavierStokesParameters(wind_speed=1.0, wind_dir_deg=180.0)
         wx, wy = p.wind_vector_xy
@@ -99,7 +101,7 @@ class TestWindVector:
         assert abs(wy - 1.0) < 1e-10
 
     def test_from_north(self):
-        from dtcc_sim.flow import NavierStokesParameters
+        from dtcc_sim import NavierStokesParameters
 
         p = NavierStokesParameters(wind_speed=1.0, wind_dir_deg=0.0)
         wx, wy = p.wind_vector_xy
@@ -117,8 +119,7 @@ class TestInletProfiles:
     """Verify the callable inlet expressions produce correct values."""
 
     def test_uniform(self):
-        from dtcc_sim.flow import (
-            NavierStokesParameters,
+        from dtcc_sim._flow.solver import (
             make_inlet_velocity_expression,
         )
 
@@ -134,8 +135,7 @@ class TestInletProfiles:
         np.testing.assert_allclose(vals[2, :], 0.0, atol=1e-12)  # u_z
 
     def test_power_law(self):
-        from dtcc_sim.flow import (
-            NavierStokesParameters,
+        from dtcc_sim._flow.solver import (
             make_inlet_velocity_expression,
         )
 
@@ -156,8 +156,7 @@ class TestInletProfiles:
         np.testing.assert_allclose(vals[0, 0], 0.0, atol=1e-10)
 
     def test_log_law(self):
-        from dtcc_sim.flow import (
-            NavierStokesParameters,
+        from dtcc_sim._flow.solver import (
             make_inlet_velocity_expression,
         )
 
@@ -193,7 +192,7 @@ class _FakeVolumeMesh:
 
 
 def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypatch):
-    from dtcc_sim.flow import _dolfinx_to_volume_mesh
+    from dtcc_sim._flow.solver import _dolfinx_to_volume_mesh
 
     def fake_evaluate(_mesh, solution):
         if solution == "velocity":
@@ -201,11 +200,11 @@ def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypa
         return np.array([[10.0], [20.0]])
 
     monkeypatch.setattr(
-        "dtcc_sim.flow._evaluate_function_at_vertices",
+        "dtcc_sim._flow.solver._evaluate_function_at_vertices",
         fake_evaluate,
     )
     monkeypatch.setattr(
-        "dtcc_sim.flow._reorder_by_coords",
+        "dtcc_sim._flow.solver._reorder_by_coords",
         lambda _source_keys, values, _target_keys: values,
     )
 
@@ -231,7 +230,7 @@ def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypa
 
 def test_volume_mesh_output_validation_rejects_inconsistent_speed():
     from dtcc_core.model import Field
-    from dtcc_sim.flow import _validate_wind_volume_fields
+    from dtcc_sim._flow.solver import _validate_wind_volume_fields
 
     volume_mesh = _FakeVolumeMesh()
     volume_mesh.fields = [
@@ -261,7 +260,7 @@ def test_volume_mesh_output_validation_rejects_inconsistent_speed():
 
 def test_use_weather_requires_usable_wind_data(monkeypatch):
     import dtcc_core.datasets as datasets
-    from dtcc_sim.flow import NavierStokesParameters, NavierStokesSolver
+    from dtcc_sim import NavierStokesParameters, NavierStokesSolver
 
     class EmptyWeather:
         def to_arrays(self, _field_name):
@@ -278,488 +277,18 @@ def test_use_weather_requires_usable_wind_data(monkeypatch):
         sim._maybe_fetch_weather()
 
 
-# ---------------------------------------------------------------------------
-# 5) Smoke test — IPCS solver on a unit box (no buildings, synthetic markers)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def box_sim_run(tmp_path_factory):
-    """Run a minimal IPCS solve on a tiny box and return (result, simulator)."""
-    import dolfinx.mesh
-    from mpi4py import MPI
-    from dtcc_sim.flow import (
-        NavierStokesSolver,
-        NavierStokesParameters,
-        BndCat,
-    )
-
-    # Create a coarse box mesh  [0,2]x[0,1]x[0,1]
-    mesh = dolfinx.mesh.create_box(
-        MPI.COMM_WORLD,
-        [[0.0, 0.0, 0.0], [2.0, 1.0, 1.0]],
-        [4, 2, 2],
-        dolfinx.mesh.CellType.tetrahedron,
-    )
-
-    # Build synthetic facet markers matching the convention:
-    #  -3=xmin, -4=xmax, -5=ymin, -6=ymax, -2=top, -1=ground (z=0)
-    # No buildings (all bbox).
-    fdim = mesh.topology.dim - 1
-    mesh.topology.create_entities(fdim)
-    mesh.topology.create_connectivity(fdim, mesh.topology.dim)
-
-    from dolfinx.mesh import exterior_facet_indices
-
-    boundary_facets = exterior_facet_indices(mesh.topology)
-    midpoints = dolfinx.mesh.compute_midpoints(mesh, fdim, boundary_facets)
-    markers_vals = np.full(len(boundary_facets), -7, dtype=np.int32)  # default
-    tol = 1e-10
-    for i, mp in enumerate(midpoints):
-        x, y, z = mp
-        if abs(x) < tol:
-            markers_vals[i] = -3  # xmin
-        elif abs(x - 2.0) < tol:
-            markers_vals[i] = -4  # xmax
-        elif abs(y) < tol:
-            markers_vals[i] = -5  # ymin
-        elif abs(y - 1.0) < tol:
-            markers_vals[i] = -6  # ymax
-        elif abs(z) < tol:
-            markers_vals[i] = -1  # ground
-        elif abs(z - 1.0) < tol:
-            markers_vals[i] = -2  # top
-
-    order = np.argsort(boundary_facets)
-    facet_tags = dolfinx.mesh.meshtags(
-        mesh, fdim, boundary_facets[order], markers_vals[order]
-    )
-
-    params = NavierStokesParameters(
-        wind_speed=1.0,
-        wind_dir_deg=270.0,  # from west → flow east
-        dt=0.5,
-        max_steps=20,
-        min_steps=5,
-        steady_tolerance=1e-3,
-        velocity_degree=2,
-        pressure_degree=1,
-        wall_model="noslip",
-        inlet_profile="uniform",
-    )
-
-    output_dir = tmp_path_factory.mktemp("box_sim_run")
-    sim = NavierStokesSolver(mesh=mesh, markers=facet_tags, params=params, output_dir=output_dir)
-    result = sim.simulate()
-    assert (output_dir / "solution_velocity.xdmf").is_file()
-    assert (output_dir / "solution_pressure.h5").is_file()
-    (output_dir / "keep.txt").write_text("unrelated")
-    sim.simulate()
-    assert (output_dir / "keep.txt").read_text() == "unrelated"
-    return result, sim  # tuple (u, p) since no volume_mesh_dtcc
-
-
-@pytest.fixture(scope="module")
-def box_sim_result(box_sim_run):
-    """Return the IPCS output tuple from the shared tiny-box run."""
-    result, _sim = box_sim_run
-    return result
-
-
-@pytest.fixture(scope="module")
-def box_simulator(box_sim_run):
-    """Return the simulator from the shared tiny-box run."""
-    _result, sim = box_sim_run
-    return sim
-
-
-class TestSmokeIPCS:
-    """Basic sanity checks on the IPCS solver output."""
-
-    pytestmark = pytest.mark.slow
-
-    def test_returns_tuple(self, box_sim_result):
-        u, p = box_sim_result
-        assert u is not None
-        assert p is not None
-
-    def test_velocity_finite(self, box_sim_result):
-        u, _ = box_sim_result
-        assert np.all(np.isfinite(u.x.array)), "Velocity contains non-finite values"
-
-    def test_pressure_finite(self, box_sim_result):
-        _, p = box_sim_result
-        assert np.all(np.isfinite(p.x.array)), "Pressure contains non-finite values"
-
-    def test_velocity_nonzero(self, box_sim_result):
-        u, _ = box_sim_result
-        assert np.max(np.abs(u.x.array)) > 0.0, "Velocity is all zero"
-
-    def test_divergence_small(self, box_sim_result):
-        """Check that div(u) is reasonably small (incompressibility)."""
-        u, _ = box_sim_result
-        V = u.function_space
-        mesh = V.mesh
-        import ufl
-        from mpi4py import MPI
-        from dolfinx.fem import form as _fem_form, assemble_scalar
-        from dolfinx.fem import petsc as _fem_petsc
-
-        div_u_sq = ufl.div(u) ** 2 * ufl.dx
-        div_norm_sq = assemble_scalar(_fem_form(div_u_sq))
-        div_norm = np.sqrt(abs(float(mesh.comm.allreduce(div_norm_sq, op=MPI.SUM))))
-        # For a coarse mesh with very few steps, divergence can be large;
-        # this is just a "not NaN / not astronomical" sanity check.
-        assert div_norm < 200.0, f"Divergence norm too large: {div_norm}"
-
-    def test_records_convergence_and_field_diagnostics(self, box_simulator):
-        diagnostics = box_simulator.diagnostics
-
-        assert diagnostics["equations"] == "navier_stokes"
-        assert diagnostics["scheme"] == "IPCS_ABCN"
-        assert diagnostics["stop_reason"] in {"steady_criteria", "max_steps"}
-        assert diagnostics["steps"] > 0
-        assert diagnostics["fields"]["velocity"]["unit"] == "m/s"
-        assert diagnostics["fields"]["velocity"]["dim"] == 3
-        assert diagnostics["fields"]["pressure"]["unit"] == "m^2/s^2"
-        assert diagnostics["fields"]["pressure"]["dim"] == 1
-        assert diagnostics["fields"]["speed"]["unit"] == "m/s"
-        assert diagnostics["boundary_category_counts"]["inlet"] > 0
-        assert diagnostics["boundary_category_counts"]["outlet"] > 0
-        assert diagnostics["convergence"]["divergence_rms"] is not None
-        assert diagnostics["convergence"]["flux_imbalance"] is not None
-        assert diagnostics["linear_solves"]["velocity"]["iterations"] >= 0
-
-
-# ---------------------------------------------------------------------------
-# 6) Smoke test — stationary Stokes solve on a unit box
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def box_stokes_result(tmp_path_factory):
-    """Run a minimal stationary Stokes solve on a tiny box and return (u, p)."""
-    import dolfinx.mesh
-    from mpi4py import MPI
-    from dtcc_sim.flow import NavierStokesSolver, NavierStokesParameters
-
-    mesh = dolfinx.mesh.create_box(
-        MPI.COMM_WORLD,
-        [[0.0, 0.0, 0.0], [2.0, 1.0, 1.0]],
-        [4, 2, 2],
-        dolfinx.mesh.CellType.tetrahedron,
-    )
-
-    fdim = mesh.topology.dim - 1
-    mesh.topology.create_entities(fdim)
-    mesh.topology.create_connectivity(fdim, mesh.topology.dim)
-
-    from dolfinx.mesh import exterior_facet_indices
-
-    boundary_facets = exterior_facet_indices(mesh.topology)
-    midpoints = dolfinx.mesh.compute_midpoints(mesh, fdim, boundary_facets)
-    markers_vals = np.full(len(boundary_facets), -7, dtype=np.int32)
-    tol = 1e-10
-    for i, mp in enumerate(midpoints):
-        x, y, z = mp
-        if abs(x) < tol:
-            markers_vals[i] = -3
-        elif abs(x - 2.0) < tol:
-            markers_vals[i] = -4
-        elif abs(y) < tol:
-            markers_vals[i] = -5
-        elif abs(y - 1.0) < tol:
-            markers_vals[i] = -6
-        elif abs(z) < tol:
-            markers_vals[i] = -1
-        elif abs(z - 1.0) < tol:
-            markers_vals[i] = -2
-
-    order = np.argsort(boundary_facets)
-    facet_tags = dolfinx.mesh.meshtags(
-        mesh, fdim, boundary_facets[order], markers_vals[order]
-    )
-
-    params = StokesParameters(
-        equations="stokes",
-        wind_speed=1.0,
-        wind_dir_deg=270.0,
-        velocity_degree=2,
-        pressure_degree=1,
-        wall_model="noslip",
-        side_top_boundary="slip",
-        inlet_profile="uniform",
-        petsc_stokes={"ksp_type": "preonly", "pc_type": "lu"},
-    )
-
-    output_dir = tmp_path_factory.mktemp("box_stokes_result")
-    sim = StokesSolver(mesh=mesh, markers=facet_tags, params=params, output_dir=output_dir)
-    result = sim.simulate()
-    assert (output_dir / "solution_velocity.xdmf").is_file()
-    assert (output_dir / "solution_pressure.h5").is_file()
-    (output_dir / "keep.txt").write_text("unrelated")
-    sim.simulate()
-    assert (output_dir / "keep.txt").read_text() == "unrelated"
-    return result
-
-
-@pytest.fixture(scope="module")
-def box_stokes_iterative_result():
-    """Run the same tiny Stokes case with an iterative linear solver."""
-    import dolfinx.mesh
-    from mpi4py import MPI
-    from dtcc_sim.flow import NavierStokesSolver, NavierStokesParameters
-
-    mesh = dolfinx.mesh.create_box(
-        MPI.COMM_WORLD,
-        [[0.0, 0.0, 0.0], [2.0, 1.0, 1.0]],
-        [4, 2, 2],
-        dolfinx.mesh.CellType.tetrahedron,
-    )
-
-    fdim = mesh.topology.dim - 1
-    mesh.topology.create_entities(fdim)
-    mesh.topology.create_connectivity(fdim, mesh.topology.dim)
-
-    from dolfinx.mesh import exterior_facet_indices
-
-    boundary_facets = exterior_facet_indices(mesh.topology)
-    midpoints = dolfinx.mesh.compute_midpoints(mesh, fdim, boundary_facets)
-    markers_vals = np.full(len(boundary_facets), -7, dtype=np.int32)
-    tol = 1e-10
-    for i, mp in enumerate(midpoints):
-        x, y, z = mp
-        if abs(x) < tol:
-            markers_vals[i] = -3
-        elif abs(x - 2.0) < tol:
-            markers_vals[i] = -4
-        elif abs(y) < tol:
-            markers_vals[i] = -5
-        elif abs(y - 1.0) < tol:
-            markers_vals[i] = -6
-        elif abs(z) < tol:
-            markers_vals[i] = -1
-        elif abs(z - 1.0) < tol:
-            markers_vals[i] = -2
-
-    order = np.argsort(boundary_facets)
-    facet_tags = dolfinx.mesh.meshtags(
-        mesh, fdim, boundary_facets[order], markers_vals[order]
-    )
-
-    params = StokesParameters(
-        equations="stokes",
-        wind_speed=1.0,
-        wind_dir_deg=270.0,
-        velocity_degree=2,
-        pressure_degree=1,
-        wall_model="noslip",
-        side_top_boundary="slip",
-        inlet_profile="uniform",
-        petsc_stokes={
-            "ksp_type": "gmres",
-            "ksp_rtol": 1e-8,
-            "ksp_max_it": 400,
-            "pc_type": "jacobi",
-        },
-    )
-
-    sim = StokesSolver(mesh=mesh, markers=facet_tags, params=params)
-    result = sim.simulate()
-    return result
-
-
-class TestSmokeStokes:
-    """Basic sanity checks on stationary Stokes output."""
-
-    pytestmark = pytest.mark.slow
-
-    def test_returns_tuple(self, box_stokes_result):
-        u, p = box_stokes_result
-        assert u is not None
-        assert p is not None
-
-    def test_velocity_finite(self, box_stokes_result):
-        u, _ = box_stokes_result
-        assert np.all(np.isfinite(u.x.array)), "Velocity contains non-finite values"
-
-    def test_pressure_finite(self, box_stokes_result):
-        _, p = box_stokes_result
-        assert np.all(np.isfinite(p.x.array)), "Pressure contains non-finite values"
-
-    def test_velocity_nonzero(self, box_stokes_result):
-        u, _ = box_stokes_result
-        assert np.max(np.abs(u.x.array)) > 0.0, "Velocity is all zero"
-
-    def test_iterative_solver_smoke(self, box_stokes_iterative_result):
-        u, p = box_stokes_iterative_result
-        assert np.all(np.isfinite(u.x.array)), "Iterative Stokes velocity has non-finite values"
-        assert np.all(np.isfinite(p.x.array)), "Iterative Stokes pressure has non-finite values"
-        assert np.max(np.abs(u.x.array)) > 0.0, "Iterative Stokes velocity is all zero"
-
-
-# ---------------------------------------------------------------------------
-# 7) Poiseuille channel flow validation
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def poiseuille_result():
-    """Run a Poiseuille-like channel flow on a long box.
-
-    Parabolic inlet u_x(y,z) ∝ y(1-y) * z(1-z), no-slip walls,
-    p=0 at outlet.  We use uniform inlet for simplicity (Poiseuille
-    profile develops naturally) and just check the solution is well-behaved.
-    """
-    import dolfinx.mesh
-    from mpi4py import MPI
-    from dtcc_sim.flow import (
-        NavierStokesSolver,
-        NavierStokesParameters,
-    )
-
-    mesh = dolfinx.mesh.create_box(
-        MPI.COMM_WORLD,
-        [[0.0, 0.0, 0.0], [4.0, 1.0, 1.0]],
-        [8, 3, 3],
-        dolfinx.mesh.CellType.tetrahedron,
-    )
-
-    fdim = mesh.topology.dim - 1
-    mesh.topology.create_entities(fdim)
-    mesh.topology.create_connectivity(fdim, mesh.topology.dim)
-
-    from dolfinx.mesh import exterior_facet_indices
-
-    boundary_facets = exterior_facet_indices(mesh.topology)
-    midpoints = dolfinx.mesh.compute_midpoints(mesh, fdim, boundary_facets)
-    markers_vals = np.full(len(boundary_facets), -7, dtype=np.int32)
-    tol = 1e-10
-    for i, mp in enumerate(midpoints):
-        x, y, z = mp
-        if abs(x) < tol:
-            markers_vals[i] = -3
-        elif abs(x - 4.0) < tol:
-            markers_vals[i] = -4
-        elif abs(y) < tol:
-            markers_vals[i] = -5
-        elif abs(y - 1.0) < tol:
-            markers_vals[i] = -6
-        elif abs(z) < tol:
-            markers_vals[i] = -1
-        elif abs(z - 1.0) < tol:
-            markers_vals[i] = -2
-
-    order = np.argsort(boundary_facets)
-    facet_tags = dolfinx.mesh.meshtags(
-        mesh, fdim, boundary_facets[order], markers_vals[order]
-    )
-
-    params = NavierStokesParameters(
-        wind_speed=0.5,
-        wind_dir_deg=270.0,
-        nu_t=0.1,  # stabilise — Re_eff ≈ 20 on this coarse mesh
-        dt=0.5,
-        max_steps=40,
-        min_steps=10,
-        steady_tolerance=1e-3,
-        velocity_degree=2,
-        pressure_degree=1,
-        wall_model="noslip",
-        inlet_profile="uniform",
-    )
-
-    sim = NavierStokesSolver(mesh=mesh, markers=facet_tags, params=params)
-    result = sim.simulate()
-    return result
-
-
-class TestPoiseuille:
-    """Check basic physical plausibility of channel flow."""
-
-    pytestmark = pytest.mark.slow
-
-    def test_finite(self, poiseuille_result):
-        u, p = poiseuille_result
-        assert np.all(np.isfinite(u.x.array))
-        assert np.all(np.isfinite(p.x.array))
-
-    def test_predominant_x_velocity(self, poiseuille_result):
-        """In a channel aligned with x, u_x should dominate."""
-        u, _ = poiseuille_result
-        V = u.function_space
-        ndof = V.dofmap.index_map.size_local
-        bs = V.dofmap.index_map_bs
-        arr = u.x.array[: ndof * bs].reshape(ndof, bs)
-        ux_max = np.max(np.abs(arr[:, 0]))
-        uy_max = np.max(np.abs(arr[:, 1]))
-        uz_max = np.max(np.abs(arr[:, 2]))
-        # x-velocity should be dominant
-        assert ux_max > 0.1 * 0.5, "u_x too small for channel flow"
-        assert uy_max < ux_max, "u_y should not exceed u_x in x-aligned channel"
-        assert uz_max < ux_max, "u_z should not exceed u_x in x-aligned channel"
-
-
-# ---------------------------------------------------------------------------
-# 8) Parameters model validation
-# ---------------------------------------------------------------------------
-
-
-class TestNavierStokesParameters:
-    def test_default_construction(self):
-        from dtcc_sim.flow import NavierStokesParameters
-
-        p = NavierStokesParameters()
-        assert p.nu > 0
-        assert p.nu_eff == p.nu + p.nu_t
-
-    def test_nu_eff(self):
-        from dtcc_sim.flow import NavierStokesParameters
-
-        p = NavierStokesParameters(nu=1e-5, nu_t=1e-3)
-        assert abs(p.nu_eff - 1.01e-3) < 1e-10
-
-    def test_statistical_mode_parameters(self):
-        from dtcc_sim.flow import NavierStokesParameters
-
-        p = NavierStokesParameters(
-            simulation_mode="statistical_steady",
-            stat_warmup_steps=10,
-            stat_window=20,
-            stat_tolerance=5e-3,
-            stat_divergence_tolerance=2e-2,
-        )
-        assert p.simulation_mode == "statistical_steady"
-        assert p.stat_warmup_steps == 10
-        assert p.stat_window == 20
-        assert math.isclose(p.stat_tolerance, 5e-3)
-        assert math.isclose(p.stat_divergence_tolerance, 2e-2)
-
-    def test_stokes_equation_mode(self):
-        from dtcc_sim.flow import NavierStokesParameters
-
-        p = StokesParameters(equations="stokes")
-        assert p.equations == "stokes"
-
-    def test_extra_parameters_forbidden(self):
-        from pydantic import ValidationError
-        from dtcc_sim.flow import NavierStokesParameters
-
-        with pytest.raises(ValidationError):
-            NavierStokesParameters(unknown_parameter=123)
-
-
-# ---------------------------------------------------------------------------
-# 9) Import smoke test
-# ---------------------------------------------------------------------------
-
-
-def test_import_urban_wind():
-    """Ensure the package imports without errors."""
-    from dtcc_sim import NavierStokesSolver, NavierStokesParameters
-    from dtcc_sim.datasets import UrbanWindSimulationArgs, UrbanWindSimulationDataset
-
-    assert NavierStokesSolver is not None
-    assert NavierStokesParameters is not None
-    assert UrbanWindSimulationArgs is not None
-    assert UrbanWindSimulationDataset is not None
+@pytest.mark.parametrize("option,value", [("dt", .1), ("max_steps", 10), ("simulation_mode", "statistical_steady"), ("petsc_pressure", {})])
+def test_stationary_parameters_reject_obsolete_options(option, value):
+    from dtcc_sim import NavierStokesParameters
+    with pytest.raises(ValueError, match="Stationary flow configuration"):
+        NavierStokesParameters(**{option: value})
+
+
+def test_stationary_parameter_defaults_and_validation():
+    from dtcc_sim import NavierStokesParameters
+    p = NavierStokesParameters(nu=1e-5, nu_t=1e-3)
+    assert p.nu_eff == 1e-5 + 1e-3
+    assert p.velocity_degree == 2 and p.pressure_degree == 1
+    for values in [{"nu": float("nan")}, {"velocity_degree": 1}, {"nonlinear_max_it": 0}]:
+        with pytest.raises(ValueError):
+            NavierStokesParameters(**values)

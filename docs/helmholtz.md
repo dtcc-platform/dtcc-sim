@@ -79,7 +79,7 @@ strings. Boundary tag selections require unique integer markers. These checks
 run before numerical preparation and do not alter accepted coefficient values
 or boundary selections.
 
-Preparation manifests use schema 3 and include the SHA-256 checksum of the
+Preparation manifests use schema 4 and include the SHA-256 checksum of the
 saved preconditioner. Before and after the online solve, the interface checks
 that file, the mesh inputs, settings, runtime and solver implementation. Failed checks prevent a
 completed `diagnostics.json` from being written; partial artifacts require a
@@ -87,6 +87,22 @@ prepared case. Checking the checksum reads the whole preconditioner
 file but does not rebuild it. Older preparation manifests without a checksum
 cannot be reused for a new solve; prepare a new case. Existing completed cases
 can still be loaded and exported without rerunning their numerical stages.
+
+Numerical geometry, decomposition, assembly and field mapping use Float64
+coordinates relative to the input mesh minimum. Manual source positions use
+input/map coordinates; their local positions are derived internally. Plane-wave
+forcing and prescribed boundary values retain the phase of the input-coordinate
+wave. Bounds-based source rules retain their physical location, including
+weighted heights whose coefficients do not sum to one.
+
+The local-to-input translation and declared CRS are stored in the preparation
+manifest, preconditioner and diagnostics. Pass `mesh_crs` for a supplied XDMF when
+its CRS is known; native mesh CRS is retained and generated city meshes use
+EPSG:3006. Unknown CRS stays unspecified. Returned models and XDMF/VTU geometry
+use the original input frame. Export temporarily exposes the saved input
+coordinates and restores the private numerical mesh afterward.
+Exports also write `<stem>.coordinates.json` beside the result, so the frame
+metadata accompanies a result saved outside the prepared-case directory.
 
 Runtime identity includes the PyMetis version and SHA-256 fingerprints of its
 native extension and the METIS implementation it loads. Different builds of

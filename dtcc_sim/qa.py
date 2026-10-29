@@ -66,7 +66,7 @@ VALIDATION_CASES: tuple[SimulationValidationCase, ...] = (
         status="implemented",
         scope=(
             "wind direction/profile math, VolumeMesh field contract checks, "
-            "solver diagnostics, and small IPCS/Stokes smoke tests"
+            "solver diagnostics, and stationary mixed-flow reference and failure tests"
         ),
         test_reference="tests/test_urban_wind.py",
         notes=(

@@ -1,7 +1,7 @@
 """Helmholtz simulation with explicit or DTCC-generated meshes."""
 
 from .parameters import HelmholtzParameters
-from .simulator import HelmholtzResult, HelmholtzSolver
+from .solver import HelmholtzResult, HelmholtzSolver
 from .meshing import CityMeshParameters, CityMeshCache
 from .workflow import HelmholtzWorkflow
 

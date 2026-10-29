@@ -1,37 +1,13 @@
-#!/usr/bin/env python3
-"""
-Urban Heat Simulation: Heatwave Scenario
-=========================================
+"""Stationary urban heatwave with hot surfaces and 20 °C ambient air."""
 
-This demo simulates a summer heat wave in an urban environment.
+from dtcc_sim import HeatParameters, HeatSolver
 
-Physical Setup:
-- Buildings have elevated surface temperatures (30°C from solar heating)
-- Ground is heated by solar radiation (25°C)
-- Ambient air temperature is 20°C
-- Higher thermal diffusivity models enhanced urban airflow
-
-The simulation solves the steady-state heat equation:
-    -∇·(κ∇T) + σ(T - T_ambient) = 0
-
-This scenario is useful for studying:
-- Urban heat island effect
-- Summer thermal comfort
-- Peak cooling loads
-- Heat stress in urban areas
-"""
-
-import dtcc_sim
-
-# Poseidon in Gothenburg (EPSG:3006); 200 m × 200 m domain
 center_x = 319995.962899
 center_y = 6399009.716755
 L = 200.0
-
 bounds = (center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
-# Configure heat wave scenario
-params = dtcc_sim.HeatParameters(
+params = HeatParameters(
     kappa=2.0,  # Higher thermal diffusivity (enhanced mixing)
     sigma=0.1,  # Relaxation to ambient air
     T_ambient=20.0,  # Ambient temperature
@@ -47,9 +23,11 @@ params = dtcc_sim.HeatParameters(
     ground_bc_type="robin",
     open_bc_type="dirichlet",
     mesh_max_mesh_size=12.5,
-    mesh_domain_height=60.0,
+    mesh_lod="lod2", mesh_cache_dir="output/city-mesh-cache",
+    mesh_domain_height=80.0,
 )
 
-# Create simulator and run
-sim = dtcc_sim.HeatSolver(bounds=bounds, params=params, output_dir="output/urban_heat_heatwave")
-T = sim.simulate()
+solver = HeatSolver(bounds=bounds, params=params, output_dir="output/urban_heat_heatwave")
+result = solver.simulate()
+result.info()
+result.plot(field="temperature")

@@ -8,9 +8,11 @@ to enable classic (pretty) FEniCS programming, in contrast to the verbose
 
 from __future__ import annotations
 
+from .timing import phase as timing_phase
 import itertools
 import inspect
 import os
+from .coordinates import local_mesh_coordinates as _local_mesh_coordinates
 from typing import (
     Any,
     Callable,
@@ -766,17 +768,19 @@ def solve(
     # LinearProblem-managed solvers; older releases reject the keyword. Inspect
     # first to avoid constructing a partially initialized LinearProblem that can
     # warn during garbage collection.
-    if "petsc_options_prefix" in inspect.signature(LinearProblem).parameters:
-        prefix = f"dtcc_sim_linear_problem_{next(_LINEAR_PROBLEM_COUNTER)}_"
-        problem = LinearProblem(
-            a,
-            L_form,
-            petsc_options_prefix=prefix,
-            **problem_kwargs,
-        )
-    else:
-        problem = LinearProblem(a, L_form, **problem_kwargs)
-    uh = problem.solve()
+    with timing_phase("form_compilation_and_setup"):
+        if "petsc_options_prefix" in inspect.signature(LinearProblem).parameters:
+            prefix = f"dtcc_sim_linear_problem_{next(_LINEAR_PROBLEM_COUNTER)}_"
+            problem = LinearProblem(
+                a,
+                L_form,
+                petsc_options_prefix=prefix,
+                **problem_kwargs,
+            )
+        else:
+            problem = LinearProblem(a, L_form, **problem_kwargs)
+    with timing_phase("assembly_and_linear_solve"):
+        uh = problem.solve()
     return uh
 
 

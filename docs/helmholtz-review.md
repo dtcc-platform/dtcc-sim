@@ -9,7 +9,7 @@ a registered dataset and checked P1 result exports. Start with the
 ## Read the implementation in this order
 
 1. [Parameters](../dtcc_sim/helmholtz/parameters.py) and
-   [simulator](../dtcc_sim/helmholtz/simulator.py): explicit controls, separate
+   [solver](../dtcc_sim/helmholtz/solver.py): explicit controls, separate
    preparation/solve, case locks and input/preconditioner/runtime identities.
 2. [Mesh workflow](../dtcc_sim/helmholtz/workflow.py) and
    [cache](../dtcc_sim/helmholtz/meshing.py): explicit h, full generation request,

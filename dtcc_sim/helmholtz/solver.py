@@ -1,18 +1,19 @@
 """Python entry point for the two-level Helmholtz solver."""
 
+from ..timing import phase as timing_phase, timed, timed_run
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import asdict, dataclass
-import hashlib
+from dataclasses import asdict, dataclass, field
 import json
 import math
 import os
 from pathlib import Path
 from threading import RLock
 from typing import Any, TYPE_CHECKING
-import xml.etree.ElementTree as ET
 
-from ..output import _output_directory
+from ..output import _output_directory, _export_city_surface
+from ..meshing import _mesh_input_hashes, _sha256
+from ..coordinates import input_crs, write_coordinate_frame
 from .parameters import HelmholtzParameters
 from ._backend.params import Params, bind_parameters
 
@@ -29,11 +30,12 @@ _backend_lock = RLock()
 def _solver_identity():
     """Fingerprint the shipped solver sources used to create offline data."""
     root = Path(__file__).parent
-    paths = [root / "parameters.py", root / "simulator.py"]
+    paths = [root / "parameters.py", root / "solver.py"]
     paths.extend(sorted((root / "_backend").rglob("*.py")))
     return {
         "compatibility_revision": 1,
         "sources": {str(path.relative_to(root)): _sha256(path) for path in paths},
+        "coordinate_frame_source": _sha256(root.parent / "coordinates.py"),
     }
 
 
@@ -46,6 +48,7 @@ def _copy_parameters(params=None, parameters=None):
     return deepcopy(selected if selected is not None else HelmholtzParameters())
 
 
+@timed("postprocessing")
 def _simulation_mesh(result, *, output_path=None, unit=""):
     if not result.converged:
         raise RuntimeError("Helmholtz solve did not converge; inspect diagnostics")
@@ -55,9 +58,14 @@ def _simulation_mesh(result, *, output_path=None, unit=""):
     if output_path is not None:
         from .results import _checked_export_path
 
-        path = _checked_export_path(output_path, mesh_path=result.mesh_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        mesh.save(path)
+        with timing_phase("export"):
+            path = _checked_export_path(output_path, mesh_path=result.mesh_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            mesh.save(path)
+            frame = getattr(mesh, "simulation_diagnostics", {}).get("coordinate_frame")
+            if frame is not None:
+                write_coordinate_frame(path, frame)
+            _export_city_surface(path, native_mesh=mesh, frame=frame)
     return mesh
 
 
@@ -75,6 +83,9 @@ class HelmholtzResult:
     fe_degree: int = 1
     mesh_name: str = "mesh"
     prepared_identity: dict[str, Any] | None = None
+    coordinate_frame: dict[str, Any] | None = None
+
+    run_timings: dict = field(default_factory=dict, compare=False)
 
     @classmethod
     def load(cls, output_dir):
@@ -185,35 +196,6 @@ def _configured_backend(params, threads):
             yield backend
 
 
-def _sha256(path):
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def _mesh_input_hashes(mesh_path, *, relative=False):
-    mesh_path = Path(mesh_path).resolve()
-    paths = {mesh_path}
-    for item in ET.parse(mesh_path).iter():
-        if (
-            item.tag.rsplit("}", 1)[-1] == "DataItem"
-            and item.get("Format", "").upper() == "HDF"
-        ):
-            reference = (item.text or "").strip().split(":", 1)[0]
-            if not reference:
-                raise ValueError("Empty HDF5 reference in the XDMF mesh")
-            paths.add((mesh_path.parent / reference).resolve())
-    for path in paths:
-        if not path.is_file():
-            raise FileNotFoundError(path)
-    return {
-        str(path.relative_to(mesh_path.parent) if relative else path): _sha256(path)
-        for path in sorted(paths)
-    }
-
-
 @contextmanager
 def _case_lease(directory):
     """Exclude concurrent writers; a killed process leaves a lock for inspection."""
@@ -243,13 +225,14 @@ class HelmholtzSolver:
     parameters is a backwards-compatible alias.
     """
 
-    def __init__(self, *, output_dir, mesh_path=None, mesh=None, params=None, parameters=None):
+    def __init__(self, *, output_dir, mesh_path=None, mesh=None, params=None, parameters=None, mesh_crs=None):
         if (mesh_path is None) == (mesh is None):
             raise ValueError("Specify either mesh_path or mesh")
         self.output_dir = _output_directory(output_dir)
         if self.output_dir is None:
             raise ValueError("Helmholtz requires output_dir for numerical artifacts")
         self.mesh = mesh
+        self.mesh_crs = input_crs(mesh, declared=mesh_crs)
         if mesh is not None:
             from dtcc_core.model import VolumeMesh
 
@@ -293,6 +276,7 @@ class HelmholtzSolver:
         """Return input settings and planned artifacts without running either stage."""
         return {
             "mesh_path": str(self.mesh_path),
+            "mesh_crs": self.mesh_crs,
             "output_dir": str(self.output_dir),
             "parameters": asdict(self.parameters),
             "artifacts": {
@@ -309,6 +293,7 @@ class HelmholtzSolver:
         return Params(
             **values,
             mesh_path=str(self.mesh_path),
+            mesh_crs=self.mesh_crs,
             data_dir=str(self.output_dir),
             output_dir=str(self.output_dir),
             log_dir=str(self.output_dir),
@@ -320,7 +305,8 @@ class HelmholtzSolver:
 
     def _identity(self):
         identity = {
-            "schema": 3,
+            "schema": 4,
+            "mesh_crs": self.mesh_crs,
             "solver": _solver_identity(),
             "parameters": asdict(self.parameters),
             "inputs": _mesh_input_hashes(self.mesh_path),
@@ -331,6 +317,7 @@ class HelmholtzSolver:
     def _verify_prepared_data(self, prepared_identity):
         identity = dict(prepared_identity)
         checksum = identity.pop("preconditioner_sha256", None)
+        frame = identity.pop("coordinate_frame", None)
         if checksum is None:
             raise ValueError(
                 "Offline data has no integrity checksum; call prepare() again"
@@ -345,13 +332,22 @@ class HelmholtzSolver:
                 "Saved preconditioner checksum does not match prepared data; "
                 "call prepare() again"
             )
+        if frame is not None:
+            import numpy as np
 
+            with np.load(self.preconditioner_path, allow_pickle=False) as payload:
+                saved_frame = json.loads(str(payload["coordinate_frame_json"][0]))
+            if frame != saved_frame:
+                raise ValueError("Offline coordinate frame changed; call prepare() again")
+
+    @timed_run
     def prepare(self):
         """Prepare offline data, replacing previous solver outputs."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with _case_lease(self.output_dir):
             return self._prepare()
 
+    @timed("offline_preparation")
     def _prepare(self):
         """Build offline data, replacing this solver's previous case artifacts."""
         _logger.info("Preparing two-level preconditioner for Helmholtz equation")
@@ -365,6 +361,7 @@ class HelmholtzSolver:
                 "prepared.json", "prepared.json.tmp", "preconditioner_data.npz",
                 "solution.npy", "solution.xdmf", "solution.h5", "gmres_history.txt",
                 "diagnostics.json", "mesh_provenance.json", "solution.vtu", "city.vtu",
+                "solution.coordinates.json", "city.coordinates.json",
             ):
                 (self.output_dir / name).unlink(missing_ok=True)
             payload = offline.build_and_save_preconditioner_data()
@@ -373,12 +370,15 @@ class HelmholtzSolver:
             if identity != self._identity():
                 raise RuntimeError("Mesh inputs changed during offline setup")
             identity["preconditioner_sha256"] = _sha256(self.preconditioner_path)
+            if "coordinate_frame_json" in payload:
+                identity["coordinate_frame"] = json.loads(str(payload["coordinate_frame_json"][0]))
             temporary = self.manifest_path.with_suffix(".json.tmp")
             temporary.write_text(json.dumps(identity, indent=2, sort_keys=True) + "\n")
             temporary.replace(self.manifest_path)
             del payload
         return self.preconditioner_path
 
+    @timed_run
     def solve(self):
         """Solve with matching offline data, replacing previous solver outputs."""
         if not self.output_dir.is_dir():
@@ -386,6 +386,7 @@ class HelmholtzSolver:
         with _case_lease(self.output_dir):
             return self._solve()
 
+    @timed("online_solver")
     def _solve(self):
         """Solve using offline data whose input/configuration manifest still matches."""
         if not self.manifest_path.is_file() or not self.preconditioner_path.is_file():
@@ -398,6 +399,7 @@ class HelmholtzSolver:
             "solution.h5",
             "gmres_history.txt",
             "diagnostics.json",
+            "solution.coordinates.json",
         )
         with _configured_backend(
             self._params(), self.parameters.threads_per_worker
@@ -411,6 +413,8 @@ class HelmholtzSolver:
                 f"(GMRES rtol={self.parameters.outer_rtol:.1e})"
             )
             raw = online.solve()
+            if raw.get("coordinate_frame") != prepared_identity.get("coordinate_frame"):
+                raise RuntimeError("Online coordinate frame does not match offline preparation")
             self._verify_prepared_data(prepared_identity)
             result = HelmholtzResult(
                 **raw,
@@ -426,9 +430,12 @@ class HelmholtzSolver:
                 "relative_residual": result.relative_residual,
                 "gmres_history": result.gmres_history,
             }
-            (self.output_dir / "diagnostics.json").write_text(
-                json.dumps(diagnostics, indent=2) + "\n"
-            )
+            if result.coordinate_frame is not None:
+                diagnostics["coordinate_frame"] = result.coordinate_frame
+            with timing_phase("export"):
+                (self.output_dir / "diagnostics.json").write_text(
+                    json.dumps(diagnostics, indent=2) + "\n"
+                )
         status = "converged" if result.converged else "FAILED to converge"
         log_result = _logger.info if result.converged else _logger.error
         log_result(
@@ -437,6 +444,7 @@ class HelmholtzSolver:
         )
         return result
 
+    @timed_run
     def run(self):
         """Perform offline setup followed by the online solve."""
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -444,6 +452,7 @@ class HelmholtzSolver:
             self._prepare()
             return self._solve()
 
+    @timed_run
     def simulate(self, *, output_path=None, unit="") -> "VolumeMesh":
         """Run and return a DTCC VolumeMesh with real, imaginary and amplitude fields.
 
@@ -465,4 +474,7 @@ class HelmholtzSolver:
             "iterations": self.result.iterations,
             "relative_residual": self.result.relative_residual,
         }
+        frame = getattr(self.result, "coordinate_frame", None)
+        if frame is not None:
+            self.diagnostics["coordinate_frame"] = frame
         return _simulation_mesh(self.result, output_path=output_path, unit=unit)

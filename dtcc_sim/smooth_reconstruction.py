@@ -25,7 +25,10 @@ mesh dofs to sensor points using barycentric coordinates.
 
 from __future__ import annotations
 
-from .output import _output_directory, _solution_path
+from .meshing import CityMeshSettings, prepare_city_mesh, publish_mesh_provenance
+from .timing import phase as timing_phase, timed, timed_run
+from .coordinates import input_crs, local_mesh_coordinates, write_coordinate_frame
+from .output import _output_directory, _solution_path, _export_city_surface
 
 from typing import Any, Mapping, Optional, Tuple
 from pathlib import Path
@@ -57,7 +60,7 @@ DEFAULT_PETSC_OPTIONS: Mapping[str, Any] = {
 # -----------------------------------------------------------------------------
 
 
-class SmoothReconstructionParameters(BaseModel):
+class SmoothReconstructionParameters(CityMeshSettings):
     """Parameters for smooth field reconstruction from point observations.
 
     This uses Pydantic BaseModel for validation and compatibility with
@@ -81,14 +84,6 @@ class SmoothReconstructionParameters(BaseModel):
     # Background
     background_value: Optional[float] = Field(
         None, description="Background field value (None = use mean of observations)"
-    )
-
-    # Volume mesh parameters (for when built from bounds)
-    mesh_max_mesh_size: float = Field(25.0, description="Maximum mesh size in meters")
-    mesh_domain_height: float = Field(80.0, description="Domain height in meters")
-    mesh_raster_cell_size: float = Field(2.0, description="Terrain raster cell size")
-    mesh_raster_radius: float = Field(
-        3.0, description="Terrain raster interpolation radius"
     )
 
     # Robustness options
@@ -144,6 +139,7 @@ class SmoothReconstructionSimulator:
         petsc_options: Optional[Mapping[str, Any]] = None,
         point_labels: Optional[list[str]] = None,
         output_dir: Optional[str] = None,
+        mesh_crs: Optional[str] = None,
     ):
         """Initialize the smooth reconstruction simulator.
 
@@ -165,6 +161,7 @@ class SmoothReconstructionSimulator:
         self.bounds = bounds
         self.mesh_path = mesh_path
         self.mesh = mesh
+        self.mesh_crs = input_crs(mesh, generated=bounds is not None, declared=mesh_crs)
         self.point_coords = point_coords
         self.point_values = point_values
         self.point_labels = point_labels
@@ -190,22 +187,8 @@ class SmoothReconstructionSimulator:
         """Build volume mesh from bounds using dtcc_core.datasets.city_volume_mesh."""
         info("SmoothReconstruction: Building volume mesh from bounds...")
 
-        try:
-            import dtcc_core.datasets as datasets
-        except ImportError:
-            raise ImportError(
-                "dtcc_core is required to build mesh from bounds. "
-                "Install it or provide mesh_path/mesh directly."
-            )
-
         # Build volume mesh using the dataset
-        volume_mesh = datasets.city_volume_mesh(
-            bounds=self.bounds,
-            max_mesh_size=self.params.mesh_max_mesh_size,
-            domain_height=self.params.mesh_domain_height,
-            raster_cell_size=self.params.mesh_raster_cell_size,
-            raster_radius=self.params.mesh_raster_radius,
-        )
+        volume_mesh, self.mesh_record = prepare_city_mesh(self.bounds, self.params)
 
         # Store for later use in output
         self.volume_mesh_dtcc = volume_mesh
@@ -227,6 +210,7 @@ class SmoothReconstructionSimulator:
         h5_path = Path(tmp_path).with_suffix(".h5")
         h5_path.unlink(missing_ok=True)
 
+    @timed("mesh_preparation")
     def _load_if_needed(self) -> None:
         """Load or build mesh if not already available."""
         from dtcc_core.model import VolumeMesh
@@ -248,6 +232,7 @@ class SmoothReconstructionSimulator:
                 "SmoothReconstructionSimulator: provide bounds=..., mesh_path=..., or mesh=..."
             )
 
+    @timed("observation_preparation")
     def _prepare_point_data(self) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare and validate point observation data.
 
@@ -303,6 +288,7 @@ class SmoothReconstructionSimulator:
 
         return points, values
 
+    @timed("validation")
     def _record_diagnostics(
         self,
         *,
@@ -363,6 +349,7 @@ class SmoothReconstructionSimulator:
             "residual_status": "PETSc KSP residual norm recorded after linear solve",
         }
 
+    @timed("point_location")
     def _locate_points(
         self, mesh: dolfinx.mesh.Mesh, points: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -449,6 +436,7 @@ class SmoothReconstructionSimulator:
 
         return weights
 
+    @timed_run
     def simulate(self, *, output_path: Optional[str] = None) -> Any:
         """Run the smooth field reconstruction.
 
@@ -466,14 +454,35 @@ class SmoothReconstructionSimulator:
         )
         self._load_if_needed()
         point_coords, point_values = self._prepare_point_data()
+        crs = input_crs(self.volume_mesh_dtcc, generated=self.bounds is not None, declared=self.mesh_crs)
+        with local_mesh_coordinates(self.mesh, crs=crs) as frame:
+            self.coordinate_frame = frame
+            result = self._solve_local_reconstruction(
+                frame.to_local(point_coords), point_values, frame,
+            )
+        with timing_phase("export"):
+            if output_path is not None:
+                info(f"Saving reconstructed field to {output_path}")
+                self.solution.save(output_path)
+                write_coordinate_frame(output_path, self.coordinate_frame, comm=self.mesh.comm)
+                _export_city_surface(
+                    output_path, native_mesh=self.volume_mesh_dtcc, mesh=self.mesh,
+                    markers=getattr(self, "markers", None), mesh_path=self.mesh_path,
+                    frame=self.coordinate_frame,
+                )
+            publish_mesh_provenance(self, result, output_path)
+        return result
 
+    @timed("solver")
+    def _solve_local_reconstruction(self, point_coords, point_values, frame):
+        """Locate observations, assemble and reconstruct in local coordinates."""
         info("SmoothReconstruction: Locating observation points in mesh...")
         cells, mask = self._locate_points(self.mesh, point_coords)
         if self.point_labels is not None and not mask.all():
             outside = "; ".join(
                 f"{label} at ({point[0]}, {point[1]}, {point[2]})"
                 for label, point in zip(
-                    self._prepared_point_labels[~mask], point_coords[~mask]
+                    self._prepared_point_labels[~mask], frame.to_input(point_coords[~mask])
                 )
             )
             raise RuntimeError(
@@ -494,126 +503,128 @@ class SmoothReconstructionSimulator:
 
         info("SmoothReconstruction: Setting up finite element problem...")
 
-        # Create function space (P1 only)
-        V = dolfinx.fem.functionspace(self.mesh, ("Lagrange", 1))
+        with timing_phase("assembly"):
+            # Create function space (P1 only)
+            V = dolfinx.fem.functionspace(self.mesh, ("Lagrange", 1))
 
-        # Define trial and test functions
-        u = TrialFunction(V)
-        v = TestFunction(V)
+            # Define trial and test functions
+            u = TrialFunction(V)
+            v = TestFunction(V)
 
-        # Define measures
-        dx = Measure("dx", domain=self.mesh)
+            # Define measures
+            dx = Measure("dx", domain=self.mesh)
 
-        # Assemble stiffness matrix K = ∫ ∇u·∇v dx
-        info("SmoothReconstruction: Assembling stiffness matrix...")
-        K_form = inner(grad(u), grad(v)) * dx
-        K = assemble_matrix(K_form)
-        K.assemble()
+            # Assemble stiffness matrix K = ∫ ∇u·∇v dx
+            info("SmoothReconstruction: Assembling stiffness matrix...")
+            K_form = inner(grad(u), grad(v)) * dx
+            K = assemble_matrix(K_form)
+            K.assemble()
 
-        # Assemble mass matrix M = ∫ u v dx
-        info("SmoothReconstruction: Assembling mass matrix...")
-        M_form = inner(u, v) * dx
-        M = assemble_matrix(M_form)
-        M.assemble()
+            # Assemble mass matrix M = ∫ u v dx
+            info("SmoothReconstruction: Assembling mass matrix...")
+            M_form = inner(u, v) * dx
+            M = assemble_matrix(M_form)
+            M.assemble()
 
-        # Determine background value
-        u_bg = (
-            self.params.background_value
-            if self.params.background_value is not None
-            else float(np.mean(point_values))
-        )
-        info(f"SmoothReconstruction: Background value u_bg = {u_bg:.4f}")
-
-        # Initialize A = λ*K + α*M
-        A = K.copy()
-        A.scale(self.params.lambda_smooth)
-        A.axpy(self.params.alpha, M)
-        A.assemble()
-
-        # Initialize b = α * M * u_bg
-        from petsc4py import PETSc
-
-        u_bg_func = dolfinx.fem.Function(V)
-        u_bg_func.x.array[:] = u_bg
-        u_bg_func.x.scatter_forward()
-
-        # Compute b = α * M * u_bg using matrix-vector product
-        b = M.createVecRight()
-        M.mult(u_bg_func.x.petsc_vec, b)
-        b.scale(self.params.alpha)
-
-        info(
-            f"SmoothReconstruction: Adding {len(valid_values)} point observation penalties..."
-        )
-
-        # Add point observation penalties to A and b
-        num_added = 0
-        for i, (point, value, cell) in enumerate(
-            zip(valid_points, valid_values, valid_cells)
-        ):
-            # Get cell vertex coordinates
-            cell_vertices = self.mesh.geometry.dofmap[cell]
-            X = self.mesh.geometry.x[cell_vertices]  # Shape: (4, 3) for tet
-
-            # Compute barycentric weights
-            phi = self._barycentric_weights_tet(X, point, self.params.point_search_tol)
-
-            if phi is None:
-                continue  # Point outside tet (shouldn't happen, but skip if it does)
-
-            # Get dofs for this cell
-            dofs = V.dofmap.list[cell]
-
-            # Update A: A[dof_j, dof_k] += w * phi[j] * phi[k]
-            w = self.params.data_weight
-            for j in range(len(dofs)):
-                for k in range(len(dofs)):
-                    A.setValue(dofs[j], dofs[k], w * phi[j] * phi[k], addv=True)
-
-            # Update b: b[dof_j] += w * value * phi[j]
-            for j in range(len(dofs)):
-                b.setValue(dofs[j], w * value * phi[j], addv=True)
-
-            num_added += 1
-
-        # Assemble A and b with accumulated values
-        from petsc4py import PETSc
-
-        A.assemble()
-        b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-        b.assemble()
-
-        info(f"SmoothReconstruction: Successfully added {num_added} point constraints")
-        if num_added == 0:
-            raise RuntimeError(
-                "SmoothReconstruction: no point constraints were assembled. "
-                "Check point locations and mesh quality."
+            # Determine background value
+            u_bg = (
+                self.params.background_value
+                if self.params.background_value is not None
+                else float(np.mean(point_values))
             )
+            info(f"SmoothReconstruction: Background value u_bg = {u_bg:.4f}")
+
+            # Initialize A = λ*K + α*M
+            A = K.copy()
+            A.scale(self.params.lambda_smooth)
+            A.axpy(self.params.alpha, M)
+            A.assemble()
+
+            # Initialize b = α * M * u_bg
+            from petsc4py import PETSc
+
+            u_bg_func = dolfinx.fem.Function(V)
+            u_bg_func.x.array[:] = u_bg
+            u_bg_func.x.scatter_forward()
+
+            # Compute b = α * M * u_bg using matrix-vector product
+            b = M.createVecRight()
+            M.mult(u_bg_func.x.petsc_vec, b)
+            b.scale(self.params.alpha)
+
+            info(
+                f"SmoothReconstruction: Adding {len(valid_values)} point observation penalties..."
+            )
+
+            # Add point observation penalties to A and b
+            num_added = 0
+            for i, (point, value, cell) in enumerate(
+                zip(valid_points, valid_values, valid_cells)
+            ):
+                # Get cell vertex coordinates
+                cell_vertices = self.mesh.geometry.dofmap[cell]
+                X = self.mesh.geometry.x[cell_vertices]  # Shape: (4, 3) for tet
+
+                # Compute barycentric weights
+                phi = self._barycentric_weights_tet(X, point, self.params.point_search_tol)
+
+                if phi is None:
+                    continue  # Point outside tet (shouldn't happen, but skip if it does)
+
+                # Get dofs for this cell
+                dofs = V.dofmap.list[cell]
+
+                # Update A: A[dof_j, dof_k] += w * phi[j] * phi[k]
+                w = self.params.data_weight
+                for j in range(len(dofs)):
+                    for k in range(len(dofs)):
+                        A.setValue(dofs[j], dofs[k], w * phi[j] * phi[k], addv=True)
+
+                # Update b: b[dof_j] += w * value * phi[j]
+                for j in range(len(dofs)):
+                    b.setValue(dofs[j], w * value * phi[j], addv=True)
+
+                num_added += 1
+
+            # Assemble A and b with accumulated values
+            from petsc4py import PETSc
+
+            A.assemble()
+            b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
+            b.assemble()
+
+            info(f"SmoothReconstruction: Successfully added {num_added} point constraints")
+            if num_added == 0:
+                raise RuntimeError(
+                    "SmoothReconstruction: no point constraints were assembled. "
+                    "Check point locations and mesh quality."
+                )
 
         # Solve the linear system
         info("SmoothReconstruction: Solving linear system...")
         from petsc4py import PETSc
 
-        ksp = PETSc.KSP().create(self.mesh.comm)
-        ksp.setOperators(A)
-        ksp.setFromOptions()
-        opts = PETSc.Options()
-        for k, v in self.petsc_options.items():
-            if v is None:
-                opts[k] = None
-            else:
-                opts[k] = v
-        ksp.setFromOptions()
+        with timing_phase("linear_solve"):
+            ksp = PETSc.KSP().create(self.mesh.comm)
+            ksp.setOperators(A)
+            ksp.setFromOptions()
+            opts = PETSc.Options()
+            for k, v in self.petsc_options.items():
+                if v is None:
+                    opts[k] = None
+                else:
+                    opts[k] = v
+            ksp.setFromOptions()
 
-        uh = dolfinx.fem.Function(V)
-        ksp.solve(b, uh.x.petsc_vec)
-        uh.x.scatter_forward()
-        if ksp.getConvergedReason() < 0:
-            raise RuntimeError(
-                "SmoothReconstruction: linear solve failed "
-                f"(reason={ksp.getConvergedReason()}, "
-                f"its={ksp.getIterationNumber()})."
-            )
+            uh = dolfinx.fem.Function(V)
+            ksp.solve(b, uh.x.petsc_vec)
+            uh.x.scatter_forward()
+            if ksp.getConvergedReason() < 0:
+                raise RuntimeError(
+                    "SmoothReconstruction: linear solve failed "
+                    f"(reason={ksp.getConvergedReason()}, "
+                    f"its={ksp.getIterationNumber()})."
+                )
 
         info("SmoothReconstruction: Solution complete")
 
@@ -628,10 +639,7 @@ class SmoothReconstructionSimulator:
             ksp=ksp,
         )
 
-        # Output
-        if output_path is not None:
-            info(f"SmoothReconstruction: Saving solution to {output_path}")
-            self.solution.save(output_path)
+        self.diagnostics["coordinate_frame"] = frame.as_dict()
 
         if self.volume_mesh_dtcc is not None:
             result = _attach_scalar_field_to_volume_mesh(
@@ -657,7 +665,7 @@ def _attach_scalar_field_to_volume_mesh(
 ) -> Any:
     """Attach a scalar dolfinx solution to a dtcc-core VolumeMesh."""
     from dtcc_core.model import Field as DtccField
-    from dtcc_sim.flow import _evaluate_function_at_vertices, _reorder_by_coords
+    from dtcc_sim._flow.solver import _evaluate_function_at_vertices, _reorder_by_coords
 
     values = _evaluate_function_at_vertices(dolfinx_mesh, solution).reshape(-1, 1)
     fem_verts = np.asarray(dolfinx_mesh.geometry.x, dtype=np.float64)

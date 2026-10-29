@@ -5,6 +5,9 @@ when reporting a bug and describe the user-visible behavior of a proposed change
 
 See [DESIGN.md](DESIGN.md) for architecture and contracts.
 
+Name development branches `dev/<short-description>`, unless there is a specific
+reason to use another convention.
+
 ## Development environment
 
 Follow the [installation instructions](README.md#installation), then run commands
@@ -32,8 +35,13 @@ close them to continue. The Helmholtz box and noise dataset demos need no argume
 
 Run `python -m pytest tests/test_helmholtz_demos.py` for wave-demo hygiene and
 execution checks in the complex environment. The city run is opt-in with
-`DTCC_RUN_DEMOS=1`; it needs live geodata. For solver verification, use the
-numerical tests below. Other Sim demos are not yet covered by hygiene checks.
+`DTCC_RUN_DEMOS=1`; it needs live geodata. `tests/test_demo_catalog.py` checks
+the demo inventory and structure. In the real environment,
+`tests/test_flow_demos.py` exercises synthetic wind examples; its city checks
+require `DTCC_WIND_CITY_MESH` pointing to a tagged city XDMF mesh and
+`--run-expensive`. `DTCC_RUN_DEMOS=1 python -m pytest tests/test_dataset_demos.py`
+exercises heat, reconstruction, air-quality and traffic examples with live data.
+For solver verification, use the numerical tests below.
 
 ## Tests
 
