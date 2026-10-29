@@ -8,6 +8,7 @@ Use equation names for numerical APIs and application names for datasets:
 | `NavierStokesSolver` | `NavierStokesParameters` | `urban_wind_simulation` |
 | `StokesSolver` | `StokesParameters` | `urban_wind_simulation(equations="stokes")` |
 | `HeatSolver` | `HeatParameters` | `urban_heat_simulation` |
+| `CeciliaSolver` (experimental) | `ShallowWaterParameters` | `urban_flood_simulation` |
 
 Equation packages keep solver implementations in `solver.py` and configuration
 in `parameters.py`:
@@ -18,6 +19,7 @@ in `parameters.py`:
 | Navier–Stokes | `dtcc_sim.navierstokes.solver` | `dtcc_sim.navierstokes.parameters` |
 | Stokes | `dtcc_sim.stokes.solver` | `dtcc_sim.stokes.parameters` |
 | Heat | `dtcc_sim.heat.solver` | `dtcc_sim.heat.parameters` |
+| Shallow water | `dtcc_sim.shallow_water.solver` | `dtcc_sim.shallow_water.parameters` |
 
 Import public classes from `dtcc_sim` or the equation package. The private
 `_flow` package supplies the common Stokes/Navier–Stokes formulation.
@@ -65,6 +67,9 @@ with successful solver output.
 
 Core also provides `RectangleMesh(nx, ny)`, a triangular `Mesh` on the unit
 square. It is a surface mesh, not a tetrahedral input for these 3D solvers.
+The experimental [shallow-water solver](shallow-water.md) takes this triangular
+Mesh directly and returns conservative face fields. It uses an isolated real-PETSc
+worker, configured with `DTCC_SWE_PYTHON` when different from the DTCC caller.
 See the [installation guide](installation.md#solver-output) for outputs and
 [demo catalog](../demos/README.md) for complete examples.
 

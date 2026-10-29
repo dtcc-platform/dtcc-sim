@@ -10,6 +10,7 @@ SimulationQAStatus = Literal["present", "missing", "planned", "implemented"]
 
 SIMULATION_DATASET_NAMES: tuple[str, ...] = (
     "urban_noise_simulation",
+    "urban_flood_simulation",
     "urban_heat_simulation",
     "urban_wind_simulation",
     "air_quality_field",
@@ -40,6 +41,12 @@ class SimulationValidationCase:
 
 
 VALIDATION_CASES: tuple[SimulationValidationCase, ...] = (
+    SimulationValidationCase(
+        family="shallow_water", dataset="urban_flood_simulation", status="implemented",
+        scope="native mesh and package contracts, real-worker conservation, local-coordinate invariance, lake balance and repeated demos",
+        test_reference="tests/test_shallow_water.py; tests/test_shallow_water_dataset.py; tests/test_shallow_water_demos.py",
+        notes="Real worker tests require DTCC_SWE_PYTHON; live city demo is opt-in. These checks do not establish physical flood forecast accuracy.",
+    ),
     SimulationValidationCase(
         family="helmholtz", dataset="urban_noise_simulation", status="implemented",
         scope="offline descriptor, validation, parameter plumbing, serialization, and convergence handling",
@@ -120,6 +127,8 @@ def simulation_dataset_example_arguments(name):
     arguments = {"bounds": (0.0, 0.0, 1.0, 1.0)}
     if name == "urban_noise_simulation":
         arguments.update(h=5.0, output_dir="results/helmholtz-qa", mesh_cache_dir="meshes/helmholtz-qa")
+    if name == "urban_flood_simulation":
+        arguments.update(output_dir="results/shallow-water-qa")
     return arguments
 
 

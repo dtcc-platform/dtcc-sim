@@ -21,6 +21,7 @@ to continue where provided.
 | [dataset_urban_wind_stokes.py](dataset_urban_wind_stokes.py) | Stokes wind through the dataset API | Real FEniCSx; city data |
 | [dataset_air_quality_field.py](dataset_air_quality_field.py) | Air-quality field reconstruction through the dataset API | Real FEniCSx; live data |
 | [dataset_urban_noise.py](dataset_urban_noise.py) | City noise wave amplitude through the dataset API | Complex FEniCSx; city data |
+| [dataset_urban_flood.py](dataset_urban_flood.py) | Experimental shallow-water pulse on flat city geometry | DTCC environment with real FEniCSx worker; live city data |
 | [dataset_traffic.py](dataset_traffic.py) | Traffic assignment using road and population/employment data | Standard Python environment; live data |
 
 ## Solver examples
@@ -36,8 +37,19 @@ to continue where provided.
 | [channel_flow.py](channel_flow.py) | Exact planar Poiseuille flow | Real FEniCSx; synthetic |
 | [bluff_body.py](bluff_body.py) | Stationary low-Reynolds-number obstruction flow | Real FEniCSx; synthetic |
 | [helmholtz_box.py](helmholtz_box.py) | Offline Gaussian source, direct solver API and amplitude preview | Complex FEniCSx; synthetic |
+| [shallow_water_pulse.py](shallow_water_pulse.py) | Experimental wetting/drying pulse on a closed unit square | DTCC environment with real FEniCSx worker; offline |
 
 ## Requirements and limitations
+
+The shallow-water examples use the retained experimental reference. Set
+`DTCC_SWE_PYTHON` to a real-PETSc DOLFINx 0.10 Python when the DTCC caller uses
+a different runtime; otherwise the caller's Python is used. They need no
+arguments. The library replaces `solution.dtcc`, `solution.vtu` and coordinate
+sidecars on repeated calls, preserves unrelated files, and retains raw runs
+under `.shallow_water_runs`. The city example uses Core's `city_flat_mesh`,
+not the tetrahedral volume cache. It has a flat bed, reflecting boundaries,
+and an idealized pulse, not rainfall or a calibrated flood event. See
+[shallow-water scope and usage](../docs/shallow-water.md).
 
 For urban wind through the dataset API, run:
 

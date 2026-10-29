@@ -1,0 +1,221 @@
+{
+  "installed_package": "isolated wheel installation",
+  "vertices": 996,
+  "faces": 1861,
+  "marker_regions": [
+    -2,
+    -1,
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "coordinate_frame": {
+    "local_to_input_translation": [
+      319895.97,
+      6398909.72,
+      0.0
+    ],
+    "input_crs": "EPSG:3006",
+    "computation_coordinates": "local",
+    "output_coordinates": "input"
+  },
+  "native_round_trip_exact": true,
+  "runs": [
+    {
+      "relative_mass_error": 0.0,
+      "rejected_attempts": 0,
+      "max_state_change": 0.008827545537563078,
+      "equilibrium_pressure": true,
+      "scalar_type": "float64",
+      "region_mass": [
+        {
+          "marker": -1,
+          "initial_mass": 117.21616234649467,
+          "final_mass": 117.21616234649468
+        },
+        {
+          "marker": 0,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 1,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 2,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 3,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 4,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 5,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 6,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 7,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 8,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 9,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 10,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 11,
+          "initial_mass": 0.02815067596705707,
+          "final_mass": 0.028150675967057094
+        }
+      ]
+    },
+    {
+      "relative_mass_error": 0.0,
+      "rejected_attempts": 0,
+      "max_state_change": 0.008827545537563078,
+      "equilibrium_pressure": true,
+      "scalar_type": "float64",
+      "region_mass": [
+        {
+          "marker": -1,
+          "initial_mass": 117.21616234649467,
+          "final_mass": 117.21616234649468
+        },
+        {
+          "marker": 0,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 1,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 2,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 3,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 4,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 5,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 6,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 7,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 8,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 9,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 10,
+          "initial_mass": 0.0,
+          "final_mass": 0.0
+        },
+        {
+          "marker": 11,
+          "initial_mass": 0.02815067596705707,
+          "final_mass": 0.028150675967057094
+        }
+      ]
+    }
+  ],
+  "snapshot_times": [
+    0.0,
+    0.12900730854846082,
+    0.2514445650206249,
+    0.3785387985972761,
+    0.5
+  ],
+  "fields": [
+    {
+      "name": "water_depth",
+      "unit": "m",
+      "minimum": 0.0,
+      "maximum": 0.14773056742190113
+    },
+    {
+      "name": "water_momentum",
+      "unit": "m2/s",
+      "minimum": -0.006391174855213893,
+      "maximum": 0.0059584148054324495
+    },
+    {
+      "name": "water_velocity",
+      "unit": "m/s",
+      "minimum": -0.046477102042643034,
+      "maximum": 0.04833184259928601
+    },
+    {
+      "name": "bed_elevation",
+      "unit": "m",
+      "minimum": 0.0,
+      "maximum": 0.0
+    },
+    {
+      "name": "water_surface_elevation",
+      "unit": "m",
+      "minimum": 0.0,
+      "maximum": 0.14773056742190113
+    }
+  ]
+}

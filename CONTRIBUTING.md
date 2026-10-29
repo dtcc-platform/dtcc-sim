@@ -83,6 +83,12 @@ uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,helmholtz,helmholt
 python -m pytest tests/test_helmholtz_manufactured.py tests/test_helmholtz_numerical.py
 ```
 
+Shallow-water tests launch a separate real-PETSc FEniCSx worker. Set
+`DTCC_SWE_PYTHON` to that environment's Python and run
+`python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py tests/test_shallow_water_demos.py`.
+The city demo additionally requires `DTCC_RUN_DEMOS=1` and `--run-expensive`.
+See the [shallow-water runtime setup](docs/shallow-water.md).
+
 Passing tests with mocked solvers does not validate the numerical solvers.
 The [dataset QA matrix](docs/datasets/qa-matrix.md) describes validation scope.
 Expensive tests require an explicit opt-in, even when selected:
