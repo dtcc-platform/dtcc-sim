@@ -76,6 +76,7 @@ Authors (in order of appearance):
 
 * [Anders Logg](http://anders.logg.org)
 * [Vasilis Naserentin](https://www.chalmers.se/en/Staff/Pages/vasnas.aspx)
+* [Marina Sahakyan](https://github.com/splinter1640)
 
 ## License
 
