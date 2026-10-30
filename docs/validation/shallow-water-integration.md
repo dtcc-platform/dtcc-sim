@@ -16,7 +16,7 @@ in an isolated target directory without replacing the shared environment.
 Every retained worker file matched `reference.json`; both distributions
 contained the manifest and MIT license.
 
-The following selection passed all **64 tests** against the installed wheel,
+The initial selection passed all **64 tests** against the installed wheel,
 with `DTCC_SWE_PYTHON` identifying the real-valued worker:
 
 ```sh
@@ -46,8 +46,6 @@ python -m pytest tests/test_demo_catalog.py -q
 ```
 
 All 19 demo catalog checks passed. Dataset QA and import checks also passed.
-Mac archive metadata initially polluted the staging demo inventory; removing
-those transfer artifacts resolved the catalog failures without source changes.
 
 The city demo used live `city_flat_mesh` geometry around Poseidon in Gothenburg:
 996 vertices, 1,861 triangles, and 12 building markers. Both negative ground
@@ -70,12 +68,73 @@ An independent installed-wheel output audit confirmed:
 The [machine-readable city audit](shallow-water-city.json) records the frame,
 fields, snapshot times and regional masses.
 
+## Installed-wheel revalidation on 2026-10-30
+
+The saved final wheel was checked again without changing the numerical worker.
+All 65 installed package files matched the wheel, and all 11 retained worker
+files matched the pinned source manifest. The wheel SHA256 was
+`3940ccff82cb7b3819b59f618b0f9fb384d9ceb76ed495a48dd2d70e036ddd2b`.
+The caller used Python 3.12.15; the separate worker used Python 3.11,
+DOLFINx 0.10.0 and real PETSc 3.24.5.
+
+The three shallow-water test modules passed **12 tests**, with **one skipped**
+in 83.94 seconds. The skipped test was the opt-in live-data city demo. All
+real-worker API, native-file dataset and offline pulse-demo checks were enabled.
+An import assertion verified that tests used the installed wheel rather than
+the source checkout. To repeat this selection, place the installed wheel and
+compatible Core on `PYTHONPATH`, set `DTCC_SWE_PYTHON` to the real-valued worker,
+and run from the source checkout:
+
+```sh
+python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py \
+  tests/test_shallow_water_demos.py --import-mode=importlib -o pythonpath= \
+  -p no:cacheprovider -q
+```
+
+These checks cover failure isolation, repeatable runs, input-coordinate and CRS
+preservation, conservation, sloping-bed still water, native field round-trips,
+dataset/package context and an offline demo run twice. The earlier broader
+regression selection and live-city runs above are separate historical evidence;
+they were not repeated by this selection.
+
+A separate fresh run used a saved native city mesh with a synthetic sloping bed:
+829 vertices, 1,527 triangles, a compact pulse, and a final time of 0.05 seconds.
+It completed five accepted steps with no rejected attempts. Independent checks
+of all three snapshots confirmed:
+
+- Exact input vertices, face order and markers, with CRS preserved.
+- Exported depth, momentum and bed matching raw DG cell means.
+- DTCC and VTU field round-trips and consistent derived velocity/surface fields.
+- Water conservation in 13 reflecting regions with 194 building/ground interfaces.
+- Maximum regional volume drift of `7.11e-14` and global relative mass error
+  of `6.04e-16`.
+
+The [compact revalidation audit](shallow-water-revalidation.json) records these
+results. This saved-input check did not repeat live geometry acquisition.
+Raw snapshots, worker logs and numerical-experiment archives remain on the
+validation server; they are not repository fixtures. Core plotting was tested
+headlessly; interactive desktop viewer behavior was not checked.
+
 ## Limits
 
 These are integration and short numerical health checks, not flood prediction
-validation. The generated bed is flat; the pulse is synthetic; building interiors
+validation. The generated-city case used a flat bed; the saved-input case used
+a synthetic slope. The pulse is synthetic; building interiors
 are simulated regions. Rainfall, infiltration, drainage, observed flood data,
 measured terrain accuracy and shoreline convergence remain outside this result.
+
+The workflow supports metric triangular native meshes, explicit synthetic-bed
+tests and conservative face fields. There is no automatic CRS reprojection,
+open inflow/outflow boundary interface or drainage-network coupling. The worker
+runs on the caller's host with one MPI rank; parallel scaling is not established.
+Building interfaces are idealized impermeable reflections, not a roof/runoff
+model. Exported face means omit subcell DG structure, which remains available
+in the raw transient results.
+
+Moving-shoreline accuracy, independent mesh/time convergence and validation
+against observed flooding remain unresolved. The retained baseline remains
+experimental. These checks support an integration demonstration, not
+quantitative flood forecasting or an improved wet/dry algorithm.
 
 The numerical source is byte-preserved from the retained experimental reference;
 it is not an unmodified copy of the thesis commit. Its terrain, wetting/drying and
