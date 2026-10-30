@@ -20,11 +20,17 @@ reconstruction also require the
 
 | Dataset | Python result | Formats | Output |
 | --- | --- | --- | --- |
+| `urban_flood_simulation` | `dtcc_core.model.Mesh` | `dtccpkg`, `dtcc`, `vtu` | Experimental transient water depth and velocity; see [workflow](../shallow-water.md). |
 | `urban_noise_simulation` | `dtcc_core.model.VolumeMesh` | `dtccpkg`, `dtcc`, `vtu` | Complex Helmholtz field: real, imaginary, and amplitude; see [workflow](../helmholtz.md#registered-dtcc-dataset). |
 | `urban_heat_simulation` | `dtcc_core.model.VolumeMesh` | `xdmf`, `dtcc` | Temperature field from a steady-state heat equation. |
 | `air_quality_field` | `dtcc_core.model.VolumeMesh` | `xdmf`, `dtcc` | Scalar concentration field reconstructed from station observations. |
 | `urban_wind_simulation` | `dtcc_core.model.VolumeMesh` | `dtcc` | Velocity, pressure and speed fields from CFD. |
 | `traffic_simulation` | `dtcc_core.model.RoadNetwork` | `dtcc` | Static user-equilibrium assignment with synthetic DeSO demand. |
+
+`urban_flood_simulation` requires `output_dir` and a real-PETSc FEniCSx worker.
+It accepts a native 2D triangular `mesh_path` or generates a flat city mesh.
+Its terrain and wetting/drying extensions remain experimental; see the
+[shallow-water limitations](../shallow-water.md).
 
 Omitting `format` returns a Python model object. Supplying a supported `format`
 returns serialized bytes. `describe()` exposes the argument schema,
@@ -37,10 +43,12 @@ Use `format="dtcc"` for a single native artifact. Save the returned bytes to a
 `.dtcc` file and load it with `dtcc_core.io.load_model(path)`. Core's public
 `dtcc.proto` schema (`DTCC.ModelFile`) defines this format.
 
-For Helmholtz, use `format="dtccpkg"` to keep the completed-run provenance
-and diagnostics together with the mesh. Reopen it with
+For Helmholtz and shallow water, use `format="dtccpkg"` to keep completed-run
+provenance and diagnostics together with the mesh. Reopen it with
 `dtcc_core.datasets.load_model_package(path)`. Standalone `.dtcc` files retain
 fields but not dataset context.
+
+Shallow-water exports contain face-valued cell means with `association="face"`.
 
 Vertex-valued fields use `association="vertex"`. Native heat and air-quality
 exports preserve mesh vertices and nodal scalar samples, rather than the full

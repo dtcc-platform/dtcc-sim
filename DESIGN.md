@@ -29,7 +29,7 @@ Application orchestration and catalog operation belong in DTCC Twin.
 ## Architecture
 
 - Equation packages use `<equation>/solver.py` and `<equation>/parameters.py`:
-  `helmholtz`, `navierstokes`, `stokes` and `heat`. Shared incompressible-flow
+  `helmholtz`, `navierstokes`, `stokes`, `heat` and `shallow_water`. Shared incompressible-flow
   implementation belongs in the private `_flow` package. Top-level imports
   expose the public solver and parameter classes.
 - **Parameters and solvers:** validate scenarios, solve equations and report

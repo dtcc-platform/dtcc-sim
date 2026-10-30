@@ -34,6 +34,9 @@ Documentation = "https://platform.dtcc.chalmers.se/"
 where = ["."]
 include = ["dtcc_sim*", "service*"]
 
+[tool.setuptools.package-data]
+"dtcc_sim.shallow_water" = ["reference.json", "_solver/cecilia_swe/LICENSE"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 markers = [
