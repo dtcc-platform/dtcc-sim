@@ -116,7 +116,9 @@ The wind examples use the [stationary mixed solver](../docs/stationary-flow.md)
 and preview `speed` through `result.plot(...)`. City wind examples request corner
 repair during mesh generation and use the default iterative block solver.
 See the [linear-solver measurements](../docs/flow-linear-solvers.md). Their 12.5 m target size and
-200 × 200 × 80 m Poseidon domain remain explicit. These are stationary scenarios
-with specified effective viscosity; they do not validate city turbulence. The
+200 × 200 × 80 m Poseidon domain remain explicit. The city wind examples use the
+algebraic [atmospheric boundary-layer](../docs/atmospheric-boundary-layer.md)
+closure with log-law walls: mixing length for Navier–Stokes, the equilibrium
+profile for Stokes. They are stationary scenarios and do not validate city turbulence. The
 cavity uses a smooth tangential lid that vanishes at its edges. Channel and
 bluff-body meshes use native Core geometry without Gmsh.

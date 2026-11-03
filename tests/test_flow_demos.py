@@ -66,6 +66,9 @@ def test_city_stationary_demo_on_frozen_mesh(name, monkeypatch, tmp_path):
             state = runpy.run_path(str(source))
             result = state["result"]
             assert result.simulation_diagnostics["stop_reason"] == "converged"
+            turbulence = result.simulation_diagnostics["turbulence"]
+            assert turbulence["turbulence_model"] == ("abl" if "stokes" in name else "mixing_length")
+            assert turbulence["wall_model"] == "log_law"
             np.testing.assert_array_equal(result.vertices, prepared.vertices)
             np.testing.assert_array_equal(result.cells, prepared.cells)
             np.testing.assert_array_equal(result.vertices[:len(native.vertices)], native.vertices)

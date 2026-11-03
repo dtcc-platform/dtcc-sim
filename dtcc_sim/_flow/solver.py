@@ -10,7 +10,7 @@ from ..timing import phase as timing_phase, timed, timed_run
 from ..meshing import prepare_city_mesh, publish_mesh_provenance
 from ..output import _output_directory, _solution_path, _export_city_surface
 from ..coordinates import input_crs, write_coordinate_frame
-from .parameters import _FlowParameters
+from .parameters import KAPPA, _FlowParameters
 
 from enum import IntEnum
 from pathlib import Path
@@ -96,6 +96,10 @@ DEFAULT_STATIONARY_PETSC = {
     "fieldsplit_p_ksp_type": "preonly", "fieldsplit_p_pc_type": "hypre",
     "fieldsplit_p_pc_hypre_type": "boomeramg",
 }
+
+
+VARIABLE_VISCOSITY_PETSC = {"fieldsplit_u_sub_pc_factor_levels": 1}
+"""Velocity-block ILU(1) for spatially varying eddy viscosity."""
 
 
 def _global_max_positive_marker(
@@ -344,13 +348,14 @@ def make_inlet_velocity_expression(
 
     elif profile == "log_law":
         z0 = params.z0
+        zw = params.wall_offset
         z_ref = params.u_ref_height
-        denom = np.log((z_ref + z0) / z0)
+        denom = np.log((z_ref + zw) / z0)
 
         def _expr(x: np.ndarray) -> np.ndarray:
             n = x.shape[1]
             z = np.maximum(x[2], 0.0)
-            mag = U_ref * np.log((z + z0) / z0) / denom
+            mag = U_ref * np.log((z + zw) / z0) / denom
             vals = np.zeros((3, n), dtype=np.float64)
             vals[0, :] = mag * wx
             vals[1, :] = mag * wy
@@ -602,8 +607,55 @@ def _refine_pressure_mesh(mesh, markers, coordinates):
     return refined, tags
 
 
+NITSCHE_PENALTY = 100.
+"""Dimensionless weak-wall normal penalty multiplying ν_eff/h_F + wind_speed."""
+
+CLOSURE_QUADRATURE_DEGREE = 5
+"""Quadrature degree for forms containing wall distances, closures or wall laws."""
+
+
+def _wall_distance(mesh, categories, tags, name):
+    """Poisson wall distance to the facets with the given categories.
+
+    Solves ``-Δφ = 1`` with ``φ = 0`` on the selected facets and natural
+    conditions elsewhere, and returns ``φ`` with the UFL distance
+    ``d = 2φ / (sqrt(|∇φ|² + 2φ) + |∇φ|)``. The distance is exact for a single
+    plane wall with a parallel natural boundary.
+    """
+    fd = mesh.topology.dim - 1
+    facets = np.unique(np.concatenate([categories.find(int(tag)) for tag in tags])).astype(np.int32)
+    if mesh.comm.allreduce(len(facets), op=MPI.SUM) == 0:
+        names = ", ".join(BndCat(int(tag)).name.lower() for tag in tags)
+        raise ValueError(f"The {name} distance requires {names} boundary facets")
+    V = dolfinx.fem.functionspace(mesh, ("Lagrange", 2))
+    bc = dirichletbc(PETSc.ScalarType(0), locate_dofs_topological(V, fd, facets), V)
+    phi, w = ufl.TrialFunction(V), ufl.TestFunction(V)
+    problem = _fem_petsc.LinearProblem(
+        inner(grad(phi), grad(w)) * dx, Constant(mesh, PETSc.ScalarType(1)) * w * dx, bcs=[bc],
+        petsc_options_prefix=f"dtcc_{name}_distance_",
+        petsc_options={"ksp_type": "cg", "pc_type": "hypre", "pc_hypre_type": "boomeramg",
+                       "ksp_rtol": 1e-12, "ksp_atol": 1e-14, "ksp_max_it": 500},
+    )
+    solution = problem.solve()
+    solution = solution[0] if isinstance(solution, tuple) else solution
+    reason = problem.solver.getConvergedReason()
+    if reason <= 0:
+        raise RuntimeError(f"The {name} distance solve failed with KSP reason {reason}")
+    solution.name = f"{name}_potential"
+    potential = ufl.max_value(solution, 0.)
+    slope = ufl.sqrt(dot(grad(solution), grad(solution)))
+    scale = float(mesh.comm.allreduce(np.ptp(mesh.geometry.x, axis=0).max() if len(mesh.geometry.x) else 0., op=MPI.MAX))
+    distance = 2 * potential / ufl.max_value(ufl.sqrt(slope**2 + 2 * potential) + slope, 1e-12 * max(scale, 1.))
+    return solution, distance
+
+
 class _MixedFlowSystem:
-    """Taylor–Hood stationary momentum and continuity with traction boundaries."""
+    """Taylor–Hood stationary momentum and continuity with traction boundaries.
+
+    ``stage`` scales convection and selects the closure stage: 0 gives the
+    linear initialization (equilibrium eddy viscosity and linearized wall law),
+    1 the full model.
+    """
 
     def __init__(self, mesh, params, markers, categories, inlet_expression):
         self.mesh, self.params = mesh, params
@@ -613,22 +665,40 @@ class _MixedFlowSystem:
         self.W = W = dolfinx.fem.functionspace(mesh, basix.ufl.mixed_element([velocity, pressure]))
         self.w = Function(W, name="flow")
         self.convection = Constant(mesh, PETSc.ScalarType(0))
+        self.stage = Constant(mesh, PETSc.ScalarType(0))
         self.u, self.p = u, p = ufl.split(self.w)
         v, q = ufl.TestFunctions(W)
-        self.ds = Measure("ds", domain=mesh, subdomain_data=categories)
+        # Closure fields are not polynomials; a fixed rule keeps their forms affordable.
+        if params.uses_wall_distance:
+            metadata = {"quadrature_degree": CLOSURE_QUADRATURE_DEGREE}
+            dx = Measure("dx", domain=mesh, metadata=metadata)
+            self.ds = Measure("ds", domain=mesh, subdomain_data=categories, metadata=metadata)
+        else:
+            dx = ufl.dx
+            self.ds = Measure("ds", domain=mesh, subdomain_data=categories)
         n = FacetNormal(mesh)
-        h = ufl.CellDiameter(mesh)
-        nu = params.nu_eff
-        self.F = (nu * inner(grad(u), grad(v)) - p * div(v) + q * div(u)
+        solids = [BndCat.WALL, BndCat.ROOF, BndCat.GROUND]
+        if inlet_expression is None and not params.uses_wall_distance:
+            inlet_expression = make_inlet_velocity_expression(params)
+        self._closure(categories, solids, inlet_expression is None)
+        nu = self.nu
+        viscous = inner(self.stress(u), grad(v)) if self.symmetric else nu * inner(grad(u), grad(v))
+        self.F = (viscous - p * div(v) + q * div(u)
                   + self.convection * inner(grad(u) * u, v)) * dx
+        if self.symmetric:
+            open_tags = [BndCat.OUTLET] + ([BndCat.SIDE, BndCat.TOP] if params.side_top_boundary == "open" else [])
+            for tag in open_tags:
+                self.F -= nu * dot(grad(u).T * n, v) * self.ds(int(tag))
         self.bcs = []
         Vu, _ = W.sub(0).collapse()
         inlet = Function(Vu)
-        inlet.interpolate(inlet_expression)
+        if inlet_expression is None:
+            inlet.interpolate(dolfinx.fem.Expression(self._abl_inlet(), Vu.element.interpolation_points))
+        else:
+            inlet.interpolate(inlet_expression)
         fd = mesh.topology.dim - 1
         dofs = locate_dofs_topological((W.sub(0), Vu), fd, categories.find(int(BndCat.INLET)))
         self.bcs.append(dirichletbc(inlet, dofs, W.sub(0)))
-        solids = [BndCat.WALL, BndCat.ROOF, BndCat.GROUND]
         if params.wall_model == "noslip":
             zero = Function(Vu)
             for tag in solids:
@@ -647,8 +717,9 @@ class _MixedFlowSystem:
                     S, _ = sub.collapse()
                     dofs = locate_dofs_topological((sub, S), fd, aligned)
                     self.bcs.append(dirichletbc(Function(S), dofs, sub))
-                self._normal_boundary(u, p, v, q, n, h, nu, int(tag), params.gamma_normal)
-                self.F += params.beta_wall * (inner(u, v) - dot(u, n) * dot(v, n)) * self.ds(int(tag))
+                self._normal_boundary(u, p, v, q, n, nu, int(tag), params.gamma_normal)
+                tangential = u - dot(u, n) * n
+                self.F += self._wall_friction(tangential) * inner(tangential, v) * self.ds(int(tag))
         if params.side_top_boundary == "slip":
             all_markers = sorted(set().union(*mesh.comm.allgather(set(int(m) for m in markers.values))))
             for marker in all_markers:
@@ -671,6 +742,10 @@ class _MixedFlowSystem:
                 S, _ = sub.collapse()
                 dofs = locate_dofs_topological((sub, S), fd, facets)
                 self.bcs.append(dirichletbc(Function(S), dofs, sub))
+            if self.top_shear:
+                wx, wy = params.wind_vector_xy
+                stress = params.friction_velocity**2
+                self.F -= stress * (wx * v[0] + wy * v[1]) * self.ds(int(BndCat.TOP))
         if params.grad_div_gamma:
             self.F += params.grad_div_gamma * div(u) * div(v) * dx
         if getattr(params, "backflow_beta", 0.):
@@ -687,11 +762,114 @@ class _MixedFlowSystem:
         self.history = []
         self.problem = None
 
-    def _normal_boundary(self, u, p, v, q, n, h, nu, tag, penalty):
+    def _closure(self, categories, solids, abl_inlet):
+        """Define wall distances and the effective viscosity ``nu``.
+
+        The ABL closures use ``l_m = κ(d + z_w)``, optionally with a Blackadar
+        limit. ``abl`` gives the equilibrium ``ν_t = u* l_m``; ``mixing_length``
+        gives ``ν_t = l_m² |S|`` with ``|S| = sqrt(2 ε(u):ε(u))``.
+        """
+        params, mesh = self.params, self.mesh
+        self.wall_distance = self.ground_distance = None
+        self.symmetric = params.turbulence_model != "constant"
+        self.top_shear = (params.turbulence_model != "constant" and params.abl_top_shear
+                          and params.side_top_boundary == "slip")
+        if params.uses_wall_distance:
+            _, self.wall_distance = _wall_distance(mesh, categories, solids, "wall")
+            if abl_inlet:
+                _, self.ground_distance = _wall_distance(mesh, categories, [BndCat.GROUND], "ground")
+        if params.turbulence_model == "constant":
+            self.nu_t, self.nu = None, params.nu_eff
+            return
+        friction = params.friction_velocity
+        length = KAPPA * (self.wall_distance + params.wall_offset)
+        if params.mixing_length_limit is not None:
+            length = length / (1 + length / params.mixing_length_limit)
+        equilibrium = friction * length
+        if params.turbulence_model == "abl":
+            self.nu_t = equilibrium
+        else:
+            strain = ufl.sym(grad(self.u))
+            floor = max(1e-6 * friction / (KAPPA * params.wall_offset), 1e-10)
+            shear = ufl.sqrt(2 * inner(strain, strain) + floor**2)
+            self.nu_t = (1 - self.stage) * equilibrium + self.stage * length**2 * shear
+        self.nu = params.nu + self.nu_t
+
+    def stress(self, u):
+        """Viscous stress: gradient form for constant viscosity, symmetric otherwise."""
+        if self.symmetric:
+            return self.nu * (grad(u) + grad(u).T)
+        return self.nu * grad(u)
+
+    def _wall_friction(self, tangential):
+        """Tangential wall-friction coefficient.
+
+        The log-law wall applies ``C_d |u_t| u_t`` with
+        ``C_d = (κ / ln(z_w/z0))²``; initialization uses its equilibrium
+        linearization ``κ u* / ln(z_w/z0)``.
+        """
+        params = self.params
+        if params.wall_model == "friction":
+            return params.beta_wall
+        log_ratio = float(np.log(params.wall_offset / params.z0))
+        drag = (KAPPA / log_ratio) ** 2
+        linear = KAPPA * params.friction_velocity / log_ratio
+        floor = max(1e-6 * params.wind_speed, 1e-12)
+        return (1 - self.stage) * linear + self.stage * drag * ufl.sqrt(inner(tangential, tangential) + floor**2)
+
+    def _abl_inlet(self):
+        """Equilibrium log-law inflow at terrain-relative height."""
+        params = self.params
+        wx, wy = params.wind_vector_xy
+        speed = (params.friction_velocity / KAPPA) * ufl.ln((self.ground_distance + params.wall_offset) / params.z0)
+        return ufl.as_vector((speed * wx, speed * wy, 0. * speed))
+
+    def closure_diagnostics(self):
+        """Closure constants and cell-sampled eddy-viscosity and distance statistics."""
+        params = self.params
+        result = {"turbulence_model": params.turbulence_model, "wall_model": params.wall_model,
+                  "viscous_form": "symmetric" if self.symmetric else "gradient"}
+        if not params.uses_wall_distance:
+            return {**result, "nu_t": params.nu_t}
+        result.update(
+            von_karman=KAPPA, roughness_length=params.z0, friction_velocity=params.friction_velocity,
+            wall_offset=params.wall_offset, top_shear_stress=params.friction_velocity**2 if self.top_shear else 0.,
+            terrain_relative_inlet=self.ground_distance is not None,
+        )
+        if params.wall_model == "log_law":
+            result["wall_function_height"] = params.wall_function_height
+            result["drag_coefficient"] = (KAPPA / float(np.log(params.wall_offset / params.z0)))**2
+        if params.turbulence_model == "mixing_length":
+            result["mixing_length_limit"] = params.mixing_length_limit
+        cells = dolfinx.fem.functionspace(self.mesh, ("DG", 0))
+        def statistics(expression):
+            sampled = Function(cells)
+            sampled.interpolate(dolfinx.fem.Expression(expression, cells.element.interpolation_points))
+            local = sampled.x.array[:self.mesh.topology.index_map(self.mesh.topology.dim).size_local]
+            comm = self.mesh.comm
+            volume = self.integral(Constant(self.mesh, PETSc.ScalarType(1)) * ufl.dx)
+            return {"min": float(comm.allreduce(np.min(local) if len(local) else np.inf, op=MPI.MIN)),
+                    "max": float(comm.allreduce(np.max(local) if len(local) else -np.inf, op=MPI.MAX)),
+                    "mean": self.integral(expression * ufl.dx) / volume}
+        result["wall_distance_m"] = statistics(self.wall_distance)
+        if params.turbulence_model != "constant":
+            result["eddy_viscosity_m2_s"] = statistics(self.nu_t)
+        return result
+
+    def set_stage(self, value):
+        """Select linear initialization (0) or the full nonlinear model (1)."""
+        self.convection.value = PETSc.ScalarType(value)
+        self.stage.value = PETSc.ScalarType(value)
+
+    def _normal_boundary(self, u, p, v, q, n, nu, tag, penalty):
         un, vn = dot(u, n), dot(v, n)
-        gamma = penalty if penalty is not None else 100 * nu / h
-        self.F += (-(nu * dot(grad(u) * n, n) - p) * vn
-                   - nu * dot(grad(v) * n, n) * un - q * un + gamma * un * vn) * self.ds(tag)
+        if penalty is None:
+            height = 3 * ufl.CellVolume(self.mesh) / ufl.FacetArea(self.mesh)
+            penalty = NITSCHE_PENALTY * (nu / height + self.params.wind_speed)
+        def normal_stress(w):
+            return dot(self.stress(w) * n, n) if self.symmetric else nu * dot(grad(w) * n, n)
+        self.F += (-(normal_stress(u) - p) * vn
+                   - normal_stress(v) * un - q * un + penalty * un * vn) * self.ds(tag)
 
     @timed("assembly_and_preconditioner_setup")
     def configure(self, options):
@@ -804,7 +982,7 @@ class _MixedFlowSystem:
 
     @timed("linear_or_nonlinear_solve")
     def solve(self, convection):
-        self.convection.value = PETSc.ScalarType(convection)
+        self.set_stage(convection)
         self.problem.solver.setUseEW(self._adaptive_linear and bool(convection))
         if not convection:
             self.problem.solver.getKSP().setTolerances(rtol=self._linear_rtol)
@@ -1291,11 +1469,12 @@ class _FlowSolver:
         _validate_bbox_markers(mesh, self.markers, inlet_marker, outlet_marker, self._has_outlet)
         self.num_buildings = infer_num_buildings(mesh, self.markers)
         self.category_markers = categorize_boundary(mesh, self.markers, self.num_buildings, inlet_marker, outlet_marker)
-        inlet = (
-            self.coordinate_frame.input_callback(self.inlet_expression)
-            if self.inlet_expression is not None
-            else make_inlet_velocity_expression(params)
-        )
+        if self.inlet_expression is not None:
+            inlet = self.coordinate_frame.input_callback(self.inlet_expression)
+        elif params.uses_wall_distance:
+            inlet = None  # terrain-relative equilibrium profile built from the ground distance
+        else:
+            inlet = make_inlet_velocity_expression(params)
         system = _MixedFlowSystem(mesh, params, self.markers, self.category_markers, inlet)
         is_nonlinear = params.equations == "navier_stokes"
         override = (params.petsc_options if is_nonlinear else params.petsc_stokes) or {}
@@ -1305,6 +1484,8 @@ class _FlowSolver:
         }
         if override.get("pc_type", "fieldsplit") == "fieldsplit":
             linear.update(DEFAULT_STATIONARY_PETSC)
+            if params.turbulence_model != "constant":
+                linear.update(VARIABLE_VISCOSITY_PETSC)
         options = {
             **linear, "snes_type": "newtonls", "snes_linesearch_type": "bt",
             "snes_ksp_ew": is_nonlinear and override.get("ksp_type", linear["ksp_type"]) != "preonly",
@@ -1354,7 +1535,7 @@ class _FlowSolver:
             self.diagnostics["initialization"] = {**initialization, "residual_norm": init_residual}
             final = initialization
             if is_nonlinear:
-                system.convection.value = PETSc.ScalarType(1.)
+                system.set_stage(1.)
                 initial, _ = system.residual()
                 limit = max(params.residual_atol, params.residual_rtol * max(initial, 1.))
                 info("Solving stationary Navier–Stokes with full convection")
@@ -1406,8 +1587,9 @@ class _FlowSolver:
                 "inlet_marker": inlet_marker, "outlet_marker": outlet_marker,
                 "closed_cavity": params.closed_cavity, "wall_model": params.wall_model,
                 "side_top_boundary": params.side_top_boundary, "inlet_profile": params.inlet_profile,
-                "rho": params.rho, "nu": params.nu, "nu_t": params.nu_t, "nu_eff": params.nu_eff,
+                "rho": params.rho, "nu": params.nu, "nu_t": params.nu_t, "nu_eff": params.nu_eff if params.turbulence_model == "constant" else None,
                 "num_buildings": self.num_buildings, "mesh_hmin": hmin,
+                "turbulence": system.closure_diagnostics(),
                 "pressure_gauge": "zero_mean" if system.nullspace else "traction_determined",
                 "degrees_of_freedom": {"velocity": self._function_dof_count(u), "pressure": self._function_dof_count(p)},
                 "boundary_category_counts": self._boundary_category_counts(mesh),

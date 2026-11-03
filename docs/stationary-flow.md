@@ -6,6 +6,9 @@ Taylor–Hood P2/P1 elements. Its momentum equation is
 `(u · ∇)u - ν_eff Δu + ∇p = 0`, with `div(u) = 0` and
 `ν_eff = nu + nu_t`.
 
+With `turbulence_model="abl"` or `"mixing_length"`, `nu_t` is an algebraic
+atmospheric boundary-layer eddy viscosity and the viscous term becomes
+`-div(2 ν_eff ε(u))`; see the [atmospheric boundary layer](atmospheric-boundary-layer.md).
 The viscosity and inlet forcing remain at the requested values. Density does
 not enter this kinematic-pressure equation. A stationary field is neither a time
 average nor a validated turbulence prediction. Some scenarios have no numerically
@@ -29,7 +32,9 @@ result = solver.simulate()
 ```
 
 `StokesSolver` takes `StokesParameters` and omits convection. The dataset
-`urban_wind_simulation` selects it with `equations="stokes"`. Both APIs accept
+`urban_wind_simulation` selects it with `equations="stokes"`. The dataset
+defaults to the [atmospheric boundary-layer](atmospheric-boundary-layer.md)
+closure with log-law walls and inflow and slip sides and top. Both APIs accept
 native tagged DTCC volume meshes, tagged DOLFINx meshes, mesh paths or city bounds.
 Wind direction follows the meteorological FROM convention.
 
@@ -42,15 +47,19 @@ same dataset schema.
 ## Boundaries and pressure
 
 The natural open-boundary condition is gradient traction
-`ν_eff ∂u/∂n - p n = 0`. Pressure is determined by this condition; an outlet does
+`ν_eff ∂u/∂n - p n = 0`, also with the symmetric variable-viscosity stress. Pressure is determined by this condition; an outlet does
 not also receive a pressure Dirichlet constraint. Flat side/top slip imposes zero
 normal velocity and natural tangential traction. No-slip fixes all velocity
 components on buildings, roofs and ground.
 
-Friction walls use tangential Robin friction. Axis-aligned facets receive a
-strong normal constraint. Other facets use consistent normal Nitsche terms with
-a default penalty `100 ν_eff/h`; their measured normal leakage and mass checks
-still determine acceptance. `gamma_normal` explicitly controls that penalty.
+Friction walls use tangential Robin friction; `wall_model="log_law"` uses a
+rough-wall quadratic drag. Axis-aligned facets receive a strong normal
+constraint. Other facets use consistent normal Nitsche terms with a default
+penalty `100 (ν_eff/h_F + wind_speed)`, where `h_F = 3|K|/|F|` is the cell height
+normal to the facet. The velocity term limits leakage under stagnation pressure;
+the normal height keeps flat cells next to small terrain facets coercive. Their
+measured normal leakage and mass checks still determine acceptance.
+`gamma_normal` explicitly controls that penalty.
 
 The assembled Jacobian is tested for the constant-pressure nullspace. A true
 nullspace receives residual projection and zero-mean pressure export. Traction
