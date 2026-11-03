@@ -649,6 +649,49 @@ def _wall_distance(mesh, categories, tags, name):
     return solution, distance
 
 
+def _tangential_inflow(mesh, categories, solids, inlet):
+    """Remove the wall-normal inflow on inlet edges shared with weak walls.
+
+    The inflow profile is horizontal, while sloping terrain and walls only
+    admit tangential velocity. Each inflow value on a weak-wall facet is
+    projected onto the tangent plane of the mean facet normal, and also onto
+    distinct wall directions where facets meet at more than 30 degrees.
+    """
+    fd = mesh.topology.dim - 1
+    V = inlet.function_space
+    inlet_dofs = set(locate_dofs_topological(V, fd, categories.find(int(BndCat.INLET))).tolist())
+    if not inlet_dofs:
+        return
+    facets = np.concatenate([categories.find(int(tag)) for tag in solids]).astype(np.int32)
+    if not len(facets):
+        return
+    nodes = dolfinx.mesh.entities_to_geometry(mesh, fd, facets)
+    inlet_nodes = np.unique(dolfinx.mesh.entities_to_geometry(mesh, fd, categories.find(int(BndCat.INLET))))
+    touching = np.isin(nodes, inlet_nodes).any(axis=1)
+    facets, nodes = facets[touching], nodes[touching]
+    points = mesh.geometry.x[nodes]
+    normals = np.cross(points[:, 1] - points[:, 0], points[:, 2] - points[:, 0])
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-30)
+    shared = {}
+    for facet, normal in zip(facets, normals):
+        for dof in locate_dofs_topological(V, fd, np.array([facet], dtype=np.int32)):
+            if int(dof) in inlet_dofs:
+                shared.setdefault(int(dof), []).append(normal)
+    values = inlet.x.array.reshape(-1, mesh.geometry.dim)
+    for dof, dof_normals in shared.items():
+        aligned = [n if np.dot(n, dof_normals[0]) >= 0 else -n for n in dof_normals]
+        mean = np.sum(aligned, axis=0)
+        basis = [mean / np.linalg.norm(mean)]
+        for normal in aligned:
+            residual = normal - sum(np.dot(normal, b) * b for b in basis)
+            length = np.linalg.norm(residual)
+            if length > .5:  # a distinct wall direction, not a nearly coplanar facet
+                basis.append(residual / length)
+        for b in basis:
+            values[dof] -= np.dot(values[dof], b) * b
+    inlet.x.scatter_forward()
+
+
 class _MixedFlowSystem:
     """Taylor–Hood stationary momentum and continuity with traction boundaries.
 
@@ -697,6 +740,8 @@ class _MixedFlowSystem:
         else:
             inlet.interpolate(inlet_expression)
         fd = mesh.topology.dim - 1
+        if params.wall_model != "noslip":
+            _tangential_inflow(mesh, categories, solids, inlet)
         dofs = locate_dofs_topological((W.sub(0), Vu), fd, categories.find(int(BndCat.INLET)))
         self.bcs.append(dirichletbc(inlet, dofs, W.sub(0)))
         if params.wall_model == "noslip":

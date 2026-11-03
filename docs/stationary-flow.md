@@ -59,7 +59,8 @@ penalty `100 (ν_eff/h_F + wind_speed)`, where `h_F = 3|K|/|F|` is the cell heig
 normal to the facet. The velocity term limits leakage under stagnation pressure;
 the normal height keeps flat cells next to small terrain facets coercive. Their
 measured normal leakage and mass checks still determine acceptance.
-`gamma_normal` explicitly controls that penalty.
+`gamma_normal` explicitly controls that penalty. On inlet edges shared with
+friction or log-law walls, the inflow is projected onto the wall tangent planes.
 
 The assembled Jacobian is tested for the constant-pressure nullspace. A true
 nullspace receives residual projection and zero-mean pressure export. Traction
