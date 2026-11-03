@@ -95,6 +95,16 @@ large compared with `ν_eff/h_F`; the normal height keeps flat cells next to
 small terrain facets coercive. `gamma_normal` overrides the penalty, as for
 `wall_model="friction"`.
 
+On inlet edges shared with these walls, the inflow is projected onto the wall
+tangent planes. The log-law wall speed is nonzero, so the horizontal profile
+would otherwise cross sloping terrain there. Facets within 30° of each other
+share their mean normal. Nitsche continuity terms make the net weak-wall
+leakage equal to the total boundary flux imbalance. On a second TetGen
+realization of the Poseidon mesh (27,211 tetrahedra), the unprojected inflow
+gave a net ground inflow of 25.8 m³/s, 20.7 m³/s of it within 15 m of the
+inlet, and a flux imbalance of 1.23e-4, above the 1e-4 gate. With projection the
+ground net is 7.5 m³/s (2.3 m³/s near the inlet) and the imbalance 2.4e-5.
+
 ## Wall distance
 
 `d` solves `-Δφ = 1` with `φ = 0` on the selected facets, natural conditions
@@ -173,13 +183,14 @@ with the default iterative solver:
 | --- | ---: | ---: | ---: | ---: | ---: |
 | constant `nu_t=2`, no-slip (reference) | 6 | 86 s | 2.09e-3 | 4.5e-14 | 2 / 2 |
 | `abl`, no-slip | 7 | 101 s | 2.01e-3 | 1.5e-16 | 8.75 / 19.3 |
-| `abl`, log-law wall | 7 | 120 s | 2.24e-3 | 7.0e-5 | 8.80 / 18.7 |
+| `abl`, log-law wall | 7 | 138 s | 2.24e-3 | 8.1e-6 | 8.80 / 18.7 |
 | `mixing_length`, no-slip | 11 | 179 s | 1.69e-3 | 1.4e-14 | 10.3 / 22.7 |
-| `mixing_length`, log-law wall | 17 | 338 s | 1.93e-3 | 4.7e-5 | 11.1 / 25.0 |
+| `mixing_length`, log-law wall | 13 | 184 s | 1.93e-3 | 3.3e-5 | 11.1 / 25.0 |
 
-The log-law wall runs have 0.033 and 0.041 m/s RMS wall-normal velocity from
+The log-law wall runs have 0.024 and 0.034 m/s RMS wall-normal velocity from
 weak enforcement on terrain and non-axis-aligned walls; the flux-imbalance
-gate is 1e-4.
+gate is 1e-4. The no-slip ABL rows were measured with ILU(0) velocity blocks.
+Both dataset demos also pass on the 27,211-tetrahedron realization.
 
 Times are from a two-core Linux container and are not comparable with the
 measurements in [wind verification](wind-verification.md). With `abl`, `ν_t`

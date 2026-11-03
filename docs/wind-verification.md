@@ -122,10 +122,13 @@ The default weak-wall penalty now uses the normal cell height and a velocity
 term. With the former `100 ν_eff/h` penalty, the Poseidon case with
 `wall_model="friction"`, `nu_t=2` and MUMPS LU stalled after seven Newton
 iterations at residual 7.18 near small terrain facets beside building walls.
-With the current penalty it converges in six iterations but still fails the
+With the current penalty it converged in six iterations but failed the
 flux-imbalance gate, 1.59e-4 against 1e-4, with 0.056 m/s RMS wall-normal
-leakage. Penalty height alone gave 4.54e-4 and 0.17 m/s. The ABL log-law
-configurations pass the gate on the same mesh.
+leakage; penalty height alone gave 4.54e-4 and 0.17 m/s. Most of the net
+leakage entered through sloping ground at the inlet, where the horizontal
+inflow profile was imposed. With the inflow projected onto the wall tangent
+planes on those edges, the case converges in six iterations and passes:
+flux imbalance 1.69e-5, 0.029 m/s RMS wall-normal velocity.
 
 ## Verification scope
 

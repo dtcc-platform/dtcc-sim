@@ -218,3 +218,31 @@ def test_equilibrium_inflow_is_horizontally_homogeneous(solver_name):
     assert turbulence["viscous_form"] == "symmetric"
     assert turbulence["top_shear_stress"] == pytest.approx(params.friction_velocity**2)
     assert turbulence["wall_distance_m"]["mean"] == pytest.approx(40., rel=1e-8)
+
+
+@pytest.mark.fenics
+@pytest.mark.slow
+def test_inflow_is_tangential_on_sloping_weak_walls():
+    """Inlet edges on sloping ground admit no wall-normal inflow; interior inflow is unchanged."""
+    _numerics()
+    import dolfinx
+    from dtcc_sim._flow.solver import BndCat, _tangential_inflow, categorize_boundary
+    mesh, tags = tagged_box((40., 20., 20.), (4, 2, 2), slope=.3)
+    categories = categorize_boundary(mesh, tags, 0, -3, -4)
+    V = dolfinx.fem.functionspace(mesh, ("Lagrange", 2, (3,)))
+    inlet = dolfinx.fem.Function(V)
+    inlet.interpolate(lambda x: np.vstack([np.full(x.shape[1], 5.), np.zeros(x.shape[1]), np.zeros(x.shape[1])]))
+    _tangential_inflow(mesh, categories, [BndCat.WALL, BndCat.ROOF, BndCat.GROUND], inlet)
+    values = inlet.x.array.reshape(-1, 3)
+    fd = mesh.topology.dim - 1
+    inlet_dofs = dolfinx.fem.locate_dofs_topological(V, fd, categories.find(int(BndCat.INLET)))
+    ground = categories.find(int(BndCat.GROUND))
+    edge = np.intersect1d(inlet_dofs, dolfinx.fem.locate_dofs_topological(V, fd, ground))
+    assert len(edge)
+    points = mesh.geometry.x[dolfinx.mesh.entities_to_geometry(mesh, fd, ground)]
+    normal = np.cross(points[0, 1] - points[0, 0], points[0, 2] - points[0, 0])
+    normal /= np.linalg.norm(normal)
+    assert np.max(np.abs(values[edge] @ normal)) < 1e-12
+    assert np.min(values[edge, 0]) > 4.
+    interior = np.setdiff1d(inlet_dofs, edge)
+    np.testing.assert_array_equal(values[interior], [[5., 0., 0.]] * len(interior))
