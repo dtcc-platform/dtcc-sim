@@ -55,7 +55,10 @@ diagonal pressure preconditioning to avoid amplifying the arbitrary gauge mode.
 Build these blocks from the actual Jacobian without assembling an unused
 auxiliary matrix. Navier–Stokes uses bounded Eisenstat–Walker tolerances during
 Newton iteration and a tight linear tolerance during Stokes initialization.
-Independent full residual, flux and divergence checks determine acceptance.
+Independent full residual, flux, divergence and wall-leakage checks determine
+acceptance. Lateral faces are classified from the wind direction: every face
+the wind enters through is an inflow and every face it leaves through an
+outlet, so oblique winds keep their crosswind component.
 Explicit PETSc overrides remain available, including LU; failed solves raise
 without changing methods or relaxing acceptance.
 

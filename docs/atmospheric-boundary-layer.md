@@ -4,9 +4,9 @@ The stationary flow solvers can replace the explicit constant `nu_t` with an
 algebraic eddy viscosity for the neutral atmospheric surface layer. The closure,
 the inflow, the ground treatment and the top boundary are chosen together so
 that the logarithmic wind profile is an exact solution of the continuous
-equations over flat, empty terrain. This is the first step towards RANS; it is
-not a transport-equation turbulence model and has not been validated against
-urban measurements.
+equations over flat, empty terrain. This is an algebraic RANS closure without
+turbulence transport equations. It has not been validated against wind-tunnel
+or urban measurements.
 
 ```python
 from dtcc_sim import NavierStokesParameters, NavierStokesSolver
@@ -21,7 +21,7 @@ result = NavierStokesSolver(bounds=bounds, params=parameters).simulate()
 ```
 
 For the solver APIs, `turbulence_model="constant"` remains the default and keeps
-the previous formulation and results unchanged. The `urban_wind_simulation`
+the gradient-form constant-viscosity formulation. The `urban_wind_simulation`
 dataset defaults to the ABL model: `turbulence_model="mixing_length"` for
 Navier–Stokes, `"abl"` for Stokes, with `wall_model="log_law"`,
 `inlet_profile="log_law"` and `side_top_boundary="slip"`. Pass
@@ -66,6 +66,17 @@ log-law profile. Constant viscosity keeps the gradient form.
 to the ground facets. Over flat ground it equals the height above the domain
 base. A supplied `inlet_expression` replaces the built-in profile.
 
+**Wind direction.** Every lateral face the wind enters through receives the
+inflow profile, every face it leaves through is a traction outlet, and faces
+parallel to the wind stay side faces. A wind 20° off the x-axis enters through
+the west and south faces and leaves through the east and north faces. In an
+empty 160 × 160 × 80 m domain with 20 m cells the volume-mean flow direction is
+20.01° (`abl`) and 20.02° (`mixing_length`), within 1.1 % RMS of the
+equilibrium profile. With only one inflow and one outflow face, slip on the
+other two removed most of the crosswind: the mean direction was 5.3° and the
+RMS deviation 36 %. Explicit `inlet_marker`/`outlet_marker` and closed cavities
+keep single faces.
+
 **Top.** With slip sides and top, the top receives the equilibrium shear stress
 `u*²` along the wind direction (Richards and Hoxey). Without it, the momentum
 lost to the ground is not replaced and the profile decays downstream.
@@ -89,11 +100,11 @@ and `δ` apply to buildings, roofs and ground.
 
 Axis-aligned wall facets receive a strong normal constraint; other facets use
 Nitsche. The default weak-wall penalty is
-`100 (ν_eff / h_F + wind_speed)` with `h_F = 3|K|/|F|`, the cell height normal to
-the facet. The convective part limits leakage where the stagnation pressure is
-large compared with `ν_eff/h_F`; the normal height keeps flat cells next to
-small terrain facets coercive. `gamma_normal` overrides the penalty, as for
-`wall_model="friction"`.
+`nitsche_penalty (ν_eff / h_F + wind_speed)` with `nitsche_penalty=100` and
+`h_F = 3|K|/|F|`, the cell height normal to the facet. The convective part
+limits leakage where the stagnation pressure is large compared with
+`ν_eff/h_F`; the normal height keeps flat cells next to small terrain facets
+coercive. `gamma_normal` overrides the penalty, as for `wall_model="friction"`.
 
 On inlet edges shared with these walls, the inflow is projected onto the wall
 tangent planes. The log-law wall speed is nonzero, so the horizontal profile
@@ -104,6 +115,43 @@ realization of the Poseidon mesh (27,211 tetrahedra), the unprojected inflow
 gave a net ground inflow of 25.8 m³/s, 20.7 m³/s of it within 15 m of the
 inlet, and a flux imbalance of 1.23e-4, above the 1e-4 gate. With projection the
 ground net is 7.5 m³/s (2.3 m³/s near the inlet) and the imbalance 2.4e-5.
+
+## Impermeability
+
+Weak enforcement lets some flow cross terrain and non-axis-aligned walls.
+Acceptance bounds it separately for ground and for building walls and roofs:
+`∫|u·n|` over each surface, divided by the inflow volume flux, must not
+exceed `ground_leakage_tolerance` and `building_leakage_tolerance` (default
+2 %). Diagnostics record these fractions, the absolute fluxes and the RMS
+normal velocity per surface. The net flux imbalance gate alone does not
+detect leakage, because inflow and outflow through walls largely cancel.
+
+On planar terrain the leakage is negligible, below 2e-5 of the inflow with 20 m
+and 10 m cells on a plane rising 10 % along the wind. Curved
+terrain is approximated by facets whose normals jump at every edge, so tangential
+wall flow cannot satisfy no penetration on both sides of an edge. The leakage
+is then set by the penalty and does not decrease with refinement.
+`tools/verification/wall_leakage.py` solves 200 × 40 × 80 m of terrain
+`z = 4 sin(2πx/80) sin(2πy/80)` m with `mixing_length` and log-law walls:
+
+| `nitsche_penalty` | 20 m cells | 10 m cells | 5 m cells |
+| --- | ---: | ---: | ---: |
+| 100 (default) | 1.10 % | 1.19 % | 1.19 % |
+| 1000 | 0.27 % | 0.27 % | 0.32 % |
+| 10000 | | 0.078 % | |
+
+The net flux imbalance converges, from 1.2e-4 to 2.0e-6 with the default
+penalty and from 1.4e-4 to 6.0e-7 with 1000. Raising the penalty from 100 to
+10000 reduces the mean tangential ground speed by 2.0 % and the volume-mean
+speed by 0.01 %. On the 27,211-tetrahedron Poseidon mesh, `nitsche_penalty=1000`
+lowers ground and building leakage from 0.72 % and 0.22 % to 0.26 % and
+0.026 %. It also makes the first `mixing_length` Newton system much harder
+for the default iterative solver: depending on the mesh and its ordering the
+FGMRES solve stalls at its 500-iteration limit, with ILU(0), ILU(1) or
+shifted ILU(1). Use larger penalties with an explicit direct solver.
+Averaging normals over nearly coplanar facets reduced the leakage under
+refinement (2.9 %, 3.2 %, 2.2 % with 100) but stayed above the facetwise
+values, so the solver uses facet normals.
 
 ## Wall distance
 
@@ -135,20 +183,33 @@ The tests in `tests/test_atmospheric_boundary_layer.py` cover:
 
 - exact Poisson wall distance over flat ground;
 - the Newton Jacobian against centred finite differences, including closure,
-  wall law, Nitsche terms on sloped ground, grad-div and backflow damping;
-- a manufactured solution with both closures, imposed through the full weak
-  residual. This includes symmetric stress, the open-boundary correction, wall
-  law and top shear. On 2, 4 and 8 subdivisions per unit length the L2 errors
-  are:
+  wall law, Nitsche terms on sloped ground, grad-div and backflow damping,
+  serially and on two MPI ranks;
+- manufactured solutions with both closures on `[0,2] × [0,1] × [0,1]`, with
+  log-law ground, slip sides and top and a traction outlet, in two
+  constructions. The weak construction imposes the exact solution through the
+  implemented residual and checks its discretization. The independent
+  construction derives the forcing `-div(2 ν_eff ε(u)) + (u·∇)u + ∇p`, the
+  eddy viscosity, the outflow traction `ν_eff ∇u n - p n`, the top shear `u*²`
+  and the wall drag `C_d |u_t| u_t` from the model equations; the implemented
+  terms must reproduce them. Reversing the top shear, dropping the outflow
+  correction or doubling `C_d` stalls velocity convergence at 5.5e-2, 3.6e-3
+  and 7.0e-2. L2 errors on 2, 4 and 8 subdivisions per unit length:
 
-  | Closure | Velocity errors | Pressure errors | Finest-pair orders |
-  | --- | --- | --- | --- |
-  | `abl` | 1.73e-2, 2.52e-3, 3.47e-4 | 1.87e-2, 4.25e-3, 1.03e-3 | 2.86 / 2.04 |
-  | `mixing_length` | 2.07e-2, 3.01e-3, 4.13e-4 | 2.02e-2, 4.61e-3, 1.09e-3 | 2.87 / 2.08 |
+  | Construction | Closure | Velocity errors | Pressure errors | Finest-pair orders |
+  | --- | --- | --- | --- | --- |
+  | weak | `abl` | 1.73e-2, 2.52e-3, 3.47e-4 | 1.87e-2, 4.25e-3, 1.03e-3 | 2.86 / 2.04 |
+  | weak | `mixing_length` | 2.07e-2, 3.01e-3, 4.13e-4 | 2.02e-2, 4.61e-3, 1.09e-3 | 2.87 / 2.08 |
+  | independent | `abl` | 7.38e-3, 9.07e-4, 1.01e-4 | 1.67e-2, 4.06e-3, 1.01e-3 | 3.17 / 2.01 |
+  | independent | `mixing_length` | 6.62e-3, 9.84e-4, 1.29e-4 | 1.71e-2, 4.13e-3, 1.02e-3 | 2.93 / 2.02 |
 
-- horizontal homogeneity for Navier–Stokes and Stokes on a 200 × 20 × 80 m
-  box with 10 m cells: outlet speeds within 1 % of equilibrium between 5 and
-  75 m height.
+- horizontal homogeneity on a 200 × 20 × 80 m box with 10 m cells for
+  Navier–Stokes with `abl` and `mixing_length` and for Stokes with `abl`:
+  outlet speeds within 1 % of equilibrium between 5 and 75 m height;
+- lateral-face classification for several wind directions, and the oblique
+  20° case above for both closures;
+- the impermeability gates on curved terrain, including rejection with a
+  tightened tolerance.
 
 ### Horizontal homogeneity
 
@@ -179,18 +240,17 @@ On the Poseidon city mesh (200 × 200 × 80 m, 12.5 m target size,
 `backflow_beta=2`), all ABL configurations pass the standard acceptance gates
 with the default iterative solver:
 
-| Configuration | Newton iterations | Solve time | Dimensionless divergence | Flux imbalance | Mean / max `ν_t` [m²/s] |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| constant `nu_t=2`, no-slip (reference) | 6 | 86 s | 2.09e-3 | 4.5e-14 | 2 / 2 |
-| `abl`, no-slip | 7 | 101 s | 2.01e-3 | 1.5e-16 | 8.75 / 19.3 |
-| `abl`, log-law wall | 7 | 138 s | 2.24e-3 | 8.1e-6 | 8.80 / 18.7 |
-| `mixing_length`, no-slip | 11 | 179 s | 1.69e-3 | 1.4e-14 | 10.3 / 22.7 |
-| `mixing_length`, log-law wall | 13 | 184 s | 1.93e-3 | 3.3e-5 | 11.1 / 25.0 |
+| Configuration | Newton iterations | Solve time | Dimensionless divergence | Flux imbalance | Ground / building leakage | Mean / max `ν_t` [m²/s] |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| constant `nu_t=2`, no-slip (reference) | 6 | 86 s | 2.09e-3 | 4.5e-14 | 0 / 0 | 2 / 2 |
+| `abl`, no-slip | 7 | 101 s | 2.01e-3 | 1.5e-16 | 0 / 0 | 8.75 / 19.3 |
+| `abl`, log-law wall | 7 | 136 s | 2.24e-3 | 8.1e-6 | 0.56 % / 0.12 % | 8.80 / 18.7 |
+| `mixing_length`, no-slip | 11 | 179 s | 1.69e-3 | 1.4e-14 | 0 / 0 | 10.3 / 22.7 |
+| `mixing_length`, log-law wall | 13 | 184 s | 1.93e-3 | 3.3e-5 | 0.71 % / 0.22 % | 11.1 / 25.0 |
 
-The log-law wall runs have 0.024 and 0.034 m/s RMS wall-normal velocity from
-weak enforcement on terrain and non-axis-aligned walls; the flux-imbalance
-gate is 1e-4. The no-slip ABL rows were measured with ILU(0) velocity blocks.
-Both dataset demos also pass on the 27,211-tetrahedron realization.
+Leakage is `∫|u·n|` over the surface divided by the inflow volume flux; the
+gates are 2 %. The no-slip ABL rows were measured with ILU(0) velocity blocks.
+All four city wind demos also pass on the 27,211-tetrahedron realization.
 
 Times are from a two-core Linux container and are not comparable with the
 measurements in [wind verification](wind-verification.md). With `abl`, `ν_t`
@@ -203,10 +263,18 @@ about 9 m²/s, compared with the constant 2 m²/s of the earlier demos.
   The surface-layer profile is assumed over the full domain height.
 - Algebraic closures have no turbulence history or transport. Separated wakes,
   recirculation lengths and pedestrian-level gusts are not predicted reliably.
-- One roughness length for terrain and buildings. Building surfaces are
-  aerodynamically smoother than urban terrain.
-- The inflow is a single lateral face. Oblique winds still prescribe a
-  velocity component through slip side faces.
+- One roughness length and wall-function height for terrain, façades and
+  roofs. Building surfaces are aerodynamically smoother than urban terrain;
+  both need separate justification and sensitivity studies.
+- The mixing length assumes local equilibrium of turbulence production and
+  dissipation. It does not transport turbulence generated upstream into wakes
+  and recirculation zones, so building separation, wake recovery and
+  pedestrian-level wind are not validated by the flat-domain checks.
+- The domain stays aligned with the map axes. Oblique winds enter through two
+  faces; the inflow at the corner between them has no upstream development.
+- Weak no penetration on curved terrain leaks a mesh-independent fraction of
+  the inflow set by the penalty: about 1.2 % on the hills case and 0.7 % on
+  the Poseidon terrain with the default.
 - The domain size, mesh sensitivity and wall-function height have not been
   studied for city cases. City runs do not establish physical validity.
 
