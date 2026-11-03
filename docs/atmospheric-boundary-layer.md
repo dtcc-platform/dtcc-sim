@@ -109,7 +109,11 @@ coercive. `gamma_normal` overrides the penalty, as for `wall_model="friction"`.
 On inlet edges shared with these walls, the inflow is projected onto the wall
 tangent planes. The log-law wall speed is nonzero, so the horizontal profile
 would otherwise cross sloping terrain there. Facets within 30° of each other
-share their mean normal. Nitsche continuity terms make the net weak-wall
+share their mean normal. The incident facets of each node are collected from
+all MPI ranks and ordered by position, so the projected inflow is the same for
+every partition: on curved terrain serial, two-rank and four-rank values agree
+to 1e-15 m/s, where averaging per-rank projections differed by up to
+0.17 m/s. Nitsche continuity terms make the net weak-wall
 leakage equal to the total boundary flux imbalance. On a second TetGen
 realization of the Poseidon mesh (27,211 tetrahedra), the unprojected inflow
 gave a net ground inflow of 25.8 m³/s, 20.7 m³/s of it within 15 m of the
@@ -126,11 +130,15 @@ exceed `ground_leakage_tolerance` and `building_leakage_tolerance` (default
 normal velocity per surface. The net flux imbalance gate alone does not
 detect leakage, because inflow and outflow through walls largely cancel.
 
+The gates are an explicit error allowance. They bound flow through the
+polyhedral walls; they do not establish accuracy, and 2 % per surface group
+is not a physically derived tolerance. On curved terrain the measure also
+contains geometry: the exact flow is tangent to the true surface and itself
+crosses the facets that approximate it.
+
 On planar terrain the leakage is negligible, below 2e-5 of the inflow with 20 m
-and 10 m cells on a plane rising 10 % along the wind. Curved
-terrain is approximated by facets whose normals jump at every edge, so tangential
-wall flow cannot satisfy no penetration on both sides of an edge. The leakage
-is then set by the penalty and does not decrease with refinement.
+and 10 m cells on a plane rising 10 % along the wind. On curved terrain it
+did not decrease when mesh and geometry were refined together.
 `tools/verification/wall_leakage.py` solves 200 × 40 × 80 m of terrain
 `z = 4 sin(2πx/80) sin(2πy/80)` m with `mixing_length` and log-law walls:
 
@@ -149,9 +157,46 @@ lowers ground and building leakage from 0.72 % and 0.22 % to 0.26 % and
 for the default iterative solver: depending on the mesh and its ordering the
 FGMRES solve stalls at its 500-iteration limit, with ILU(0), ILU(1) or
 shifted ILU(1). Use larger penalties with an explicit direct solver.
-Averaging normals over nearly coplanar facets reduced the leakage under
-refinement (2.9 %, 3.2 %, 2.2 % with 100) but stayed above the facetwise
-values, so the solver uses facet normals.
+
+This plateau does not show that convergence is impossible. Slip and
+no-penetration conditions on polyhedral approximations of curved walls have
+known geometric consistency and locking problems whose outcome depends on the
+formulation and the geometry approximation; strong imposition has its own
+difficulties ([Urquiza et al., 2014](https://www.sciencedirect.com/science/article/abs/pii/S0021999113005895)).
+
+### Curved-wall manufactured solution
+
+`tools/verification/curved_wall_mms.py` separates solution refinement from
+geometry refinement. The domain lies between `z = 0.05 sin(2πx)` and `z = 1`
+on `[0,2] × [0,0.5]`; the exact velocity comes from a stream function constant
+on both walls, so it is tangent to the true ground. Forcing, outflow and top
+tractions and log-law wall drag are derived from the exact solution (`ν = 0.05`,
+`U = 1`, maximum slope 0.31, `nitsche_penalty=100`, MUMPS LU). Geometry
+refinement places the ground nodes of each mesh on the curve; fixed geometry
+maps the coarsest mesh and refines it uniformly, keeping its polyhedral ground.
+Velocity L2 errors with `n` cells per unit height:
+
+| Normal in the Nitsche terms | Refinement | n = 4 | n = 8 | n = 16 |
+| --- | --- | ---: | ---: | ---: |
+| facet (solver) | geometry | 1.38e-1 | 1.17e-1 | 5.90e-2 |
+| facet (solver) | fixed | 1.38e-1 | 9.79e-2 | 7.76e-2 |
+| vertex-averaged, P1 | geometry | 7.07e-2 | 2.24e-2 | 6.03e-3 |
+| vertex-averaged, P1 | fixed | 7.07e-2 | 3.81e-2 | 3.47e-2 |
+| exact curve normal | geometry | 1.56e-2 | 1.26e-3 | 1.41e-4 |
+| exact curve normal | fixed | 1.56e-2 | 3.80e-3 | 1.63e-3 |
+
+On flat ground the same construction gives 6.8e-3 and 4.5e-4 for n = 4 and 8.
+With facet normals the curved-wall error is about 400 times the exact-normal
+error at n = 16 and converges at observed orders 0.24 and 0.98. Vertex-averaged
+normals converge at about 1.7 and 1.9, and the exact normal at 3.6 and 3.2.
+With fixed geometry every variant stalls at its geometric error. The flux through
+the facets is not an error measure here: with the exact normal it equals the
+exact solution's own facet flux (5.9 % of the inflow at n = 16), while the flux
+along the true normal is 0.039 %. These results identify the facetwise normal
+as the dominant error source on curved terrain in the current formulation.
+Reconstructed wall normals, with leakage measured along the enforced normal,
+are the indicated next step; sharp building edges and wall–ground corners need
+separate normals.
 
 ## Wall distance
 
@@ -272,9 +317,9 @@ about 9 m²/s, compared with the constant 2 m²/s of the earlier demos.
   pedestrian-level wind are not validated by the flat-domain checks.
 - The domain stays aligned with the map axes. Oblique winds enter through two
   faces; the inflow at the corner between them has no upstream development.
-- Weak no penetration on curved terrain leaks a mesh-independent fraction of
-  the inflow set by the penalty: about 1.2 % on the hills case and 0.7 % on
-  the Poseidon terrain with the default.
+- Weak no penetration uses facet normals. On curved terrain this dominates the
+  wall error and the facet flux did not decrease with refinement: about 1.2 %
+  of the inflow on the hills case and 0.7 % on the Poseidon terrain.
 - The domain size, mesh sensitivity and wall-function height have not been
   studied for city cases. City runs do not establish physical validity.
 

@@ -64,11 +64,11 @@ def _numerics():
         pytest.skip("Stationary flow numerical tests require real PETSc")
 
 
-def tagged_box(extent, cells, slope=0.):
+def tagged_box(extent, cells, slope=0., comm=None):
     """Box with canonical DTCC markers: ground -1, top -2, x faces -3/-4, y faces -5/-6."""
     import dolfinx.mesh as dm
     from mpi4py import MPI
-    mesh = dm.create_box(MPI.COMM_WORLD, [[0., 0., 0.], list(extent)], list(cells))
+    mesh = dm.create_box(comm or MPI.COMM_WORLD, [[0., 0., 0.], list(extent)], list(cells))
     mesh.topology.create_entities(2)
     mesh.topology.create_connectivity(2, 3)
     faces = dm.exterior_facet_indices(mesh.topology)
@@ -389,3 +389,33 @@ def test_weak_wall_leakage_is_measured_and_gated():
     with pytest.raises(RuntimeError, match="quality checks failed"):
         solver.simulate()
     assert solver.diagnostics["stop_reason"] == "quality_failure"
+
+
+@pytest.mark.fenics
+@pytest.mark.slow
+def test_tangential_inflow_is_partition_independent():
+    """Inflow projected on curved terrain matches a serial projection on every rank."""
+    _numerics()
+    import dolfinx
+    from mpi4py import MPI
+    from dtcc_sim._flow.solver import BndCat, _tangential_inflow, categorize_boundary
+
+    def projected(comm):
+        mesh, tags = tagged_box((200., 40., 80.), (20, 4, 8), comm=comm)
+        x = mesh.geometry.x
+        # Ground curved along the inlet and rising into the domain
+        x[:, 2] += 3 * np.sin(2 * np.pi * x[:, 0] / 50) * (1 + x[:, 1] / 20) * (1 - x[:, 2] / 80)
+        categories = categorize_boundary(mesh, tags, 0, -5, -6)  # wind from the south
+        V = dolfinx.fem.functionspace(mesh, ("Lagrange", 2, (3,)))
+        inlet = dolfinx.fem.Function(V)
+        inlet.interpolate(lambda p: np.vstack([np.zeros(p.shape[1]), 5 + .01 * p[2], np.zeros(p.shape[1])]))
+        _tangential_inflow(mesh, categories, [BndCat.WALL, BndCat.ROOF, BndCat.GROUND], inlet)
+        dofs = dolfinx.fem.locate_dofs_topological(V, 2, categories.find(int(BndCat.INLET)))
+        keys = [tuple(row) for row in np.round(V.tabulate_dof_coordinates()[dofs], 8)]
+        return dict(zip(keys, inlet.x.array.reshape(-1, 3)[dofs]))
+
+    distributed, serial = projected(MPI.COMM_WORLD), projected(MPI.COMM_SELF)
+    assert set(distributed) <= set(serial)
+    changed = sum(np.linalg.norm(serial[key] - [0., 5 + .01 * key[2], 0.]) > 1e-6 for key in serial)
+    assert changed > 20
+    assert max(np.linalg.norm(value - serial[key]) for key, value in distributed.items()) < 1e-12
