@@ -1222,6 +1222,14 @@ class UrbanWindSimulationArgs(DatasetBaseArgs, _FlowParameters):
         description="Solver output directory; owned files are replaced after acceptance",
     )
     equations: WindEquationSet = Field("navier_stokes", description="Stationary Navier–Stokes or linear Stokes")
+    turbulence_model: Literal["constant", "abl", "mixing_length"] = Field(
+        "mixing_length",
+        description="Eddy viscosity; default mixing_length for Navier–Stokes and abl for Stokes. "
+                    "constant uses the explicit nu_t",
+    )
+    wall_model: Literal["noslip", "friction", "log_law"] = Field("log_law", description="Building, roof and ground treatment")
+    inlet_profile: WindInletProfile = Field("log_law", description="Inflow profile; ABL closures require log_law")
+    side_top_boundary: Literal["open", "slip"] = Field("slip", description="Lateral non-inflow faces and top")
     nonlinear_rtol: Optional[float] = Field(None, gt=0, lt=1, description="SNES relative tolerance; default 1e-9")
     nonlinear_atol: Optional[float] = Field(None, gt=0, description="SNES absolute tolerance; default 1e-10")
     nonlinear_max_it: Optional[int] = Field(None, gt=0, description="SNES iteration limit; default 40")
@@ -1234,6 +1242,8 @@ class UrbanWindSimulationArgs(DatasetBaseArgs, _FlowParameters):
     @classmethod
     def equation_options(cls, data):
         if isinstance(data, dict):
+            if data.get("equations", "navier_stokes") == "stokes" and data.get("turbulence_model") is None:
+                data = {**data, "turbulence_model": "abl"}
             if data.get("equations", "navier_stokes") == "stokes":
                 invalid = {key for key in ("nonlinear_rtol", "nonlinear_atol", "nonlinear_max_it", "backflow_beta", "petsc_options") if data.get(key) is not None}
                 if invalid:
@@ -1359,7 +1369,7 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             "Collapse raw boundary markers into wall, roof, ground, inlet, "
             "outlet, side, and top categories"
         ),
-        "Build the selected uniform, power-law, or log-law inlet velocity profile",
+        "Build the selected uniform, power-law, or log-law inlet velocity profile; ABL closures use terrain-relative height",
         "Solve stationary mixed Navier-Stokes or explicitly selected linear Stokes",
         "Check nonlinear convergence, independent residual, divergence, boundary flux and fields",
         (
@@ -1402,7 +1412,8 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         "unknowns: velocity u and kinematic pressure p/rho",
         "fields: velocity dim=3 m/s, pressure dim=1 m^2/s^2, speed dim=1 m/s",
         "default wind convention: 270 degrees means wind from west, flowing east",
-        "default wall model: no-slip on buildings, roofs, and ground",
+        "default turbulence: mixing-length (Navier–Stokes) or equilibrium ABL (Stokes) eddy viscosity",
+        "default walls: rough log-law wall function on buildings, roofs, and ground",
         "city-scale CFD validation is expensive/manual until benchmarked",
     ]
     presentation_legend = {
@@ -1418,7 +1429,7 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
                 "label": "inlet/outlet",
                 "meaning": "bbox faces selected from wind direction",
             },
-            {"label": "walls/ground", "meaning": "solid no-slip or friction surfaces"},
+            {"label": "walls/ground", "meaning": "solid log-law, no-slip or friction surfaces"},
         ],
     }
     view_hints = {
@@ -1439,9 +1450,11 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             "settings can dominate the result."
         ),
         (
-            "The default nu_t=0 is a laminar/simplified setting. Urban "
-            "turbulence, atmospheric stratification, thermal buoyancy, and "
-            "rough-wall calibration are not validated by default."
+            "The default algebraic neutral-ABL eddy viscosity (mixing length "
+            "for Navier–Stokes, equilibrium profile for Stokes) with a log-law "
+            "inflow and rough-wall law is not a transport-equation RANS model. "
+            "Urban turbulence, atmospheric stratification, thermal buoyancy, "
+            "and rough-wall calibration are not validated."
         ),
         (
             "City-scale runs can be slow and mesh-sensitive; treat them as "

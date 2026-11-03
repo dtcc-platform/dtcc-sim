@@ -111,6 +111,22 @@ and supplies **no valid city speed ratio**. IPCS pressure-correction outlet
 constraints also differ from the mixed traction boundary, so field agreement
 would not establish physical validation.
 
+## Atmospheric boundary layer
+
+Algebraic ABL closures, the log-law wall and the equilibrium inflow are
+verified separately: wall distance, Jacobian, manufactured convergence with
+variable viscosity, empty-domain horizontal homogeneity and city acceptance.
+See the [atmospheric boundary layer](atmospheric-boundary-layer.md).
+
+The default weak-wall penalty now uses the normal cell height and a velocity
+term. With the former `100 ν_eff/h` penalty, the Poseidon case with
+`wall_model="friction"`, `nu_t=2` and MUMPS LU stalled after seven Newton
+iterations at residual 7.18 near small terrain facets beside building walls.
+With the current penalty it converges in six iterations but still fails the
+flux-imbalance gate, 1.59e-4 against 1e-4, with 0.056 m/s RMS wall-normal
+leakage. Penalty height alone gave 4.54e-4 and 0.17 m/s. The ABL log-law
+configurations pass the gate on the same mesh.
+
 ## Verification scope
 
 The real-environment suite passes 335 tests, with six skips and three opt-in

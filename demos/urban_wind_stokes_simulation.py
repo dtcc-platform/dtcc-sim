@@ -1,4 +1,4 @@
-"""Linear stationary Poseidon airflow with explicitly selected Stokes equations."""
+"""Linear stationary Poseidon airflow with Stokes equations and an equilibrium ABL eddy viscosity."""
 
 from dtcc_sim import StokesParameters, StokesSolver
 
@@ -7,7 +7,8 @@ center_y = 6399009.716755
 L = 200.0
 bounds = (center_x-L/2, center_y-L/2, center_x+L/2, center_y+L/2)
 params = StokesParameters(
-    mesh_max_mesh_size=12.5, mesh_domain_height=80., wind_speed=5., wind_dir_deg=270., nu_t=2.,
+    mesh_max_mesh_size=12.5, mesh_domain_height=80., wind_speed=5., wind_dir_deg=270.,
+    turbulence_model="abl", wall_model="log_law",
     mesh_lod="lod2", mesh_cache_dir="output/city-mesh-cache",
     side_top_boundary="slip", inlet_profile="log_law",
 )

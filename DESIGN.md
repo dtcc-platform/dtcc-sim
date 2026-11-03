@@ -59,6 +59,14 @@ Independent full residual, flux and divergence checks determine acceptance.
 Explicit PETSc overrides remain available, including LU; failed solves raise
 without changing methods or relaxing acceptance.
 
+The default constant `nu_t` keeps the gradient viscous form. Atmospheric
+boundary-layer closures use the symmetric stress with spatially varying
+viscosity, a Poisson wall distance, an equilibrium log-law inflow at
+terrain-relative height, top shear and an optional log-law wall. Closure,
+inflow, wall and top are chosen together so that the log-law profile is an
+exact continuous solution over flat terrain; horizontal homogeneity is its
+verification. See [atmospheric boundary layer](docs/atmospheric-boundary-layer.md).
+
 Preserve the input coordinate frame in returned models, backend functions and
 exported meshes, including refined meshes. Restore supplied meshes exactly on
 success and failure; retain original coordinates for serialization. Geographic

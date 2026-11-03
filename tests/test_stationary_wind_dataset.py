@@ -9,6 +9,8 @@ def test_dataset_schema_and_serialized_defaults(equations):
     args = UrbanWindSimulationArgs(bounds=(0, 0, 1, 1), equations=equations)
     restored = UrbanWindSimulationArgs.model_validate(args.model_dump())
     assert restored.equations == equations
+    assert restored.turbulence_model == ("abl" if equations == "stokes" else "mixing_length")
+    assert (restored.wall_model, restored.inlet_profile, restored.side_top_boundary) == ("log_law", "log_law", "slip")
     schema = UrbanWindSimulationArgs.model_json_schema()["properties"]
     assert {"nonlinear_rtol", "nonlinear_max_it", "residual_rtol", "mesh_refinement_levels"} <= schema.keys()
     assert not {"dt", "max_steps", "simulation_mode", "petsc_pressure"} & schema.keys()
@@ -60,6 +62,7 @@ def test_native_wind_dataset_serialization(equations, monkeypatch, tmp_path):
         return BoxMesh(3, 3, 3)
     monkeypatch.setattr(datasets, "city_volume_mesh", city_mesh)
     args = UrbanWindSimulationArgs(bounds=(0, 0, 1, 1), equations=equations, nu=.1,
+                                   turbulence_model="constant", wall_model="noslip",
                                    wind_speed=.1, side_top_boundary="slip", inlet_profile="power_law",
                                    power_law_alpha=1., u_ref_height=1., format="dtcc")
     payload = UrbanWindSimulationDataset().build(args)
@@ -68,3 +71,18 @@ def test_native_wind_dataset_serialization(equations, monkeypatch, tmp_path):
     result = io.load_model(target)
     assert {field.name for field in result.fields} == {"velocity", "pressure", "speed"}
     assert all(np.isfinite(field.values).all() for field in result.fields)
+
+
+def test_dataset_atmospheric_defaults_reach_solver_parameters():
+    from dtcc_sim import NavierStokesParameters, StokesParameters
+    for equations, parameter_type, model in [("navier_stokes", NavierStokesParameters, "mixing_length"),
+                                             ("stokes", StokesParameters, "abl")]:
+        args = UrbanWindSimulationArgs(bounds=(0, 0, 1, 1), equations=equations)
+        params = parameter_type.model_validate({
+            name: getattr(args, name) for name in parameter_type.model_fields if getattr(args, name) is not None
+        })
+        assert (params.turbulence_model, params.wall_model, params.inlet_profile) == (model, "log_law", "log_law")
+    with pytest.raises(ValueError, match="turbulence_model='constant'"):
+        UrbanWindSimulationArgs(bounds=(0, 0, 1, 1), inlet_profile="uniform")
+    constant = UrbanWindSimulationArgs(bounds=(0, 0, 1, 1), turbulence_model="constant", nu_t=2.)
+    assert constant.nu_t == 2.

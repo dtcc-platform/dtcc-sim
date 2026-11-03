@@ -70,7 +70,8 @@ See the [installation guide](installation.md#solver-output) for outputs and
 
 The [stationary flow guide](stationary-flow.md) covers Navier–Stokes and Stokes
 configuration, pressure gauges, traction boundaries, numerical acceptance and
-failure behavior.
+failure behavior. The [atmospheric boundary-layer guide](atmospheric-boundary-layer.md)
+covers the algebraic eddy-viscosity closures, log-law wall and equilibrium inflow.
 
 Every solver prints a wall-clock breakdown at the end of a run. See
 [run timings](timings.md) for phase meanings, diagnostics, saved reports and MPI
