@@ -35,7 +35,8 @@ class _FlowParameters(CityMeshSettings):
     wall_model: Literal["noslip", "friction", "log_law"] = "noslip"
     beta_wall: float = Field(.5, ge=0, description="Tangential friction coefficient")
     wall_function_height: float = Field(2., gt=0, description="Height of the computational wall above the roughness surface for wall_model='log_law' [m]")
-    gamma_normal: float | None = Field(None, gt=0, description="Weak-wall normal Nitsche penalty [m/s]; default 100 (ν_eff/h_F + wind_speed)")
+    gamma_normal: float | None = Field(None, gt=0, description="Weak-wall normal Nitsche penalty [m/s]; default nitsche_penalty (ν_eff/h_F + wind_speed)")
+    nitsche_penalty: float = Field(100., gt=0, description="Dimensionless weak-wall normal penalty factor when gamma_normal is unset")
     inlet_profile: Literal["uniform", "power_law", "log_law"] = "uniform"
     z0: float = Field(.5, gt=0, description="Aerodynamic roughness length [m]")
     u_ref_height: float = Field(10., gt=0, description="Height of wind_speed above the ground [m]")
@@ -48,6 +49,8 @@ class _FlowParameters(CityMeshSettings):
     residual_atol: float = Field(1e-9, gt=0)
     divergence_tolerance: float = Field(.1, gt=0, description="Maximum hmin × RMS(div u) / RMS(u)")
     flux_imbalance_tolerance: float = Field(1e-4, gt=0, lt=1, description="Maximum absolute net flux / integrated absolute boundary flux")
+    ground_leakage_tolerance: float = Field(.02, gt=0, lt=1, description="Maximum ∫ground |u·n| / inflow volume flux")
+    building_leakage_tolerance: float = Field(.02, gt=0, lt=1, description="Maximum ∫walls and roofs |u·n| / inflow volume flux")
 
     @model_validator(mode="before")
     @classmethod

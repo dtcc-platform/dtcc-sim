@@ -1364,7 +1364,7 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             "Optionally fetch weather wind speed and direction; fail if "
             "use_weather=True and no usable wind data is returned"
         ),
-        "Select inlet and outlet bbox faces from meteorological wind direction",
+        "Classify lateral bbox faces as inflow, outflow or side from the meteorological wind direction",
         (
             "Collapse raw boundary markers into wall, roof, ground, inlet, "
             "outlet, side, and top categories"

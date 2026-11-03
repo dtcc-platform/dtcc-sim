@@ -122,14 +122,16 @@ def categorize_boundary(
     mesh: dolfinx.mesh.Mesh,
     markers: dolfinx.mesh.MeshTags,
     num_buildings: int,
-    inlet_marker: int,
-    outlet_marker: Optional[int],
+    inlet_marker,
+    outlet_marker,
     ground_tag: int = -1,
     top_tag: int = -2,
 ) -> dolfinx.mesh.MeshTags:
     """Collapse per-building markers into wind-specific categories.
 
-    Returns MeshTags with values from :class:`BndCat`.
+    ``inlet_marker`` and ``outlet_marker`` are one bbox marker or a sequence
+    of markers; ``outlet_marker`` may be None. Returns MeshTags with values
+    from :class:`BndCat`.
     """
     fdim = mesh.topology.dim - 1
     idx = np.asarray(markers.indices, dtype=np.int32)
@@ -142,12 +144,8 @@ def categorize_boundary(
     mask_roof = (vals >= N) & (vals < 2 * N)
     mask_ground = vals == ground_tag
     mask_top = vals == top_tag
-    mask_inlet = vals == inlet_marker
-    mask_outlet = (
-        vals == outlet_marker
-        if outlet_marker is not None
-        else np.zeros(len(vals), dtype=bool)
-    )
+    mask_inlet = np.isin(vals, _marker_list(inlet_marker))
+    mask_outlet = np.isin(vals, _marker_list(outlet_marker))
 
     # Remaining bbox faces (not inlet, outlet or top)
     mask_side = (vals < ground_tag) & ~mask_top & ~mask_inlet & ~mask_outlet
@@ -180,6 +178,44 @@ def categorize_boundary(
 # ---------------------------------------------------------------------------
 # Helpers — inlet / outlet selection
 # ---------------------------------------------------------------------------
+
+
+def _marker_list(markers) -> list:
+    """One marker, a sequence of markers or None as a list of ints."""
+    if markers is None:
+        return []
+    if np.ndim(markers) == 0:
+        return [int(markers)]
+    return [int(marker) for marker in markers]
+
+
+LATERAL_FLOW_TOLERANCE = 1e-8
+"""Faces with |wind · n| below this are parallel to the wind."""
+
+
+def classify_lateral_faces(params: _FlowParameters) -> Tuple[list, list]:
+    """Inflow and outflow lateral bbox markers for the wind direction.
+
+    Every lateral face the wind enters through receives the inflow profile
+    and every face it leaves through is a traction outlet, so oblique winds
+    keep their crosswind component. Faces parallel to the wind stay side
+    faces. Explicit markers or a closed cavity select single faces as in
+    :func:`select_inlet_outlet`.
+    """
+    if params.closed_cavity or params.inlet_marker is not None or params.outlet_marker is not None:
+        inlet, outlet = select_inlet_outlet(params)
+        return [inlet], _marker_list(outlet)
+    wind = np.array(params.wind_vector_xy)
+    inlets, outlets = [], []
+    for marker, normal in BBOX_MARKER_NORMALS.items():
+        if abs(normal[2]) > .5:
+            continue
+        flux = float(np.dot(normal[:2], wind))
+        if flux < -LATERAL_FLOW_TOLERANCE:
+            inlets.append(marker)
+        elif flux > LATERAL_FLOW_TOLERANCE:
+            outlets.append(marker)
+    return inlets, outlets
 
 
 def select_inlet_outlet(
@@ -261,8 +297,8 @@ def select_inlet_outlet(
 def _validate_bbox_markers(
     mesh: dolfinx.mesh.Mesh,
     markers: dolfinx.mesh.MeshTags,
-    inlet_marker: int,
-    outlet_marker: Optional[int],
+    inlet_marker,
+    outlet_marker,
     has_outlet: bool,
 ) -> None:
     """Validate that expected boundary markers exist in the mesh tags.
@@ -278,25 +314,21 @@ def _validate_bbox_markers(
     for arr in all_counts:
         global_available.update(int(v) for v in arr)
 
-    # Check inlet marker
-    if inlet_marker not in global_available:
-        raise RuntimeError(
-            f"Inlet marker {inlet_marker} not found in mesh tags.  "
-            f"Available markers: {sorted(global_available)}.  "
-            f"Expected bbox markers: {sorted(BBOX_MARKER_NORMALS.keys())}."
-        )
+    for marker in _marker_list(inlet_marker):
+        if marker not in global_available:
+            raise RuntimeError(
+                f"Inlet marker {marker} not found in mesh tags.  "
+                f"Available markers: {sorted(global_available)}.  "
+                f"Expected bbox markers: {sorted(BBOX_MARKER_NORMALS.keys())}."
+            )
 
-    # Check outlet marker
-    if (
-        has_outlet
-        and outlet_marker is not None
-        and outlet_marker not in global_available
-    ):
-        raise RuntimeError(
-            f"Outlet marker {outlet_marker} not found in mesh tags.  "
-            f"Available markers: {sorted(global_available)}.  "
-            f"Set closed_cavity=True if no outlet face exists."
-        )
+    for marker in _marker_list(outlet_marker) if has_outlet else []:
+        if marker not in global_available:
+            raise RuntimeError(
+                f"Outlet marker {marker} not found in mesh tags.  "
+                f"Available markers: {sorted(global_available)}.  "
+                f"Set closed_cavity=True if no outlet face exists."
+            )
 
     # Warn if none of the expected bbox markers are present
     expected_bbox = set(BBOX_MARKER_NORMALS.keys())
@@ -607,9 +639,6 @@ def _refine_pressure_mesh(mesh, markers, coordinates):
     return refined, tags
 
 
-NITSCHE_PENALTY = 100.
-"""Dimensionless weak-wall normal penalty multiplying ν_eff/h_F + wind_speed."""
-
 CLOSURE_QUADRATURE_DEGREE = 5
 """Quadrature degree for forms containing wall distances, closures or wall laws."""
 
@@ -660,13 +689,13 @@ def _tangential_inflow(mesh, categories, solids, inlet):
     fd = mesh.topology.dim - 1
     V = inlet.function_space
     inlet_dofs = set(locate_dofs_topological(V, fd, categories.find(int(BndCat.INLET))).tolist())
-    if not inlet_dofs:
-        return
     facets = np.concatenate([categories.find(int(tag)) for tag in solids]).astype(np.int32)
-    if not len(facets):
-        return
+    if not inlet_dofs:
+        facets = facets[:0]
     nodes = dolfinx.mesh.entities_to_geometry(mesh, fd, facets)
-    inlet_nodes = np.unique(dolfinx.mesh.entities_to_geometry(mesh, fd, categories.find(int(BndCat.INLET))))
+    nodes = nodes.reshape(len(facets), nodes.shape[-1] if nodes.ndim == 2 else 3)
+    inlet_facets = categories.find(int(BndCat.INLET)).astype(np.int32)
+    inlet_nodes = np.unique(dolfinx.mesh.entities_to_geometry(mesh, fd, inlet_facets))
     touching = np.isin(nodes, inlet_nodes).any(axis=1)
     facets, nodes = facets[touching], nodes[touching]
     points = mesh.geometry.x[nodes]
@@ -674,10 +703,13 @@ def _tangential_inflow(mesh, categories, solids, inlet):
     normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-30)
     shared = {}
     for facet, normal in zip(facets, normals):
-        for dof in locate_dofs_topological(V, fd, np.array([facet], dtype=np.int32)):
+        for dof in locate_dofs_topological(V, fd, np.array([facet], dtype=np.int32), remote=False):
             if int(dof) in inlet_dofs:
                 shared.setdefault(int(dof), []).append(normal)
-    values = inlet.x.array.reshape(-1, mesh.geometry.dim)
+    values = inlet.x.array.reshape(-1, mesh.geometry.dim).copy()
+    correction, count = dolfinx.fem.Function(V), dolfinx.fem.Function(V)
+    corrections = correction.x.array.reshape(-1, mesh.geometry.dim)
+    counts = count.x.array.reshape(-1, mesh.geometry.dim)
     for dof, dof_normals in shared.items():
         aligned = [n if np.dot(n, dof_normals[0]) >= 0 else -n for n in dof_normals]
         mean = np.sum(aligned, axis=0)
@@ -687,8 +719,17 @@ def _tangential_inflow(mesh, categories, solids, inlet):
             length = np.linalg.norm(residual)
             if length > .5:  # a distinct wall direction, not a nearly coplanar facet
                 basis.append(residual / length)
+        projected = values[dof].copy()
         for b in basis:
-            values[dof] -= np.dot(values[dof], b) * b
+            projected -= np.dot(projected, b) * b
+        corrections[dof] = projected - values[dof]
+        counts[dof] = 1.
+    # A rank may hold a dof without its wall facets: owners average the corrections.
+    for vector in (correction.x, count.x):
+        vector.scatter_reverse(dolfinx.la.InsertMode.add)
+    owned = V.dofmap.index_map.size_local
+    target = inlet.x.array.reshape(-1, mesh.geometry.dim)
+    target[:owned] += corrections[:owned] / np.maximum(counts[:owned], 1.)
     inlet.x.scatter_forward()
 
 
@@ -910,7 +951,7 @@ class _MixedFlowSystem:
         un, vn = dot(u, n), dot(v, n)
         if penalty is None:
             height = 3 * ufl.CellVolume(self.mesh) / ufl.FacetArea(self.mesh)
-            penalty = NITSCHE_PENALTY * (nu / height + self.params.wind_speed)
+            penalty = self.params.nitsche_penalty * (nu / height + self.params.wind_speed)
         def normal_stress(w):
             return dot(self.stress(w) * n, n) if self.symmetric else nu * dot(grad(w) * n, n)
         self.F += (-(normal_stress(u) - p) * vn
@@ -1510,10 +1551,11 @@ class _FlowSolver:
         self._validate_parameters()
         params = self.params
         inlet_marker, outlet_marker = select_inlet_outlet(params)
-        self._has_outlet = outlet_marker is not None
-        _validate_bbox_markers(mesh, self.markers, inlet_marker, outlet_marker, self._has_outlet)
+        inlet_markers, outlet_markers = classify_lateral_faces(params)
+        self._has_outlet = bool(outlet_markers)
+        _validate_bbox_markers(mesh, self.markers, inlet_markers, outlet_markers, self._has_outlet)
         self.num_buildings = infer_num_buildings(mesh, self.markers)
-        self.category_markers = categorize_boundary(mesh, self.markers, self.num_buildings, inlet_marker, outlet_marker)
+        self.category_markers = categorize_boundary(mesh, self.markers, self.num_buildings, inlet_markers, outlet_markers)
         if self.inlet_expression is not None:
             inlet = self.coordinate_frame.input_callback(self.inlet_expression)
         elif params.uses_wall_distance:
@@ -1562,7 +1604,7 @@ class _FlowSolver:
                     system.close()
                     mesh, self.markers = _refine_pressure_mesh(mesh, self.markers, exc.coordinates)
                     self.mesh = mesh
-                    self.category_markers = categorize_boundary(mesh, self.markers, self.num_buildings, inlet_marker, outlet_marker)
+                    self.category_markers = categorize_boundary(mesh, self.markers, self.num_buildings, inlet_markers, outlet_markers)
                     system = _MixedFlowSystem(mesh, params, self.markers, self.category_markers, inlet)
                     self.diagnostics["mesh_refinements"] = self.diagnostics.get("mesh_refinements", 0) + 1
             timings["setup_s"] = time.perf_counter() - started
@@ -1604,6 +1646,17 @@ class _FlowSolver:
                 solid_measure = system.ds(int(BndCat.WALL)) + system.ds(int(BndCat.ROOF)) + system.ds(int(BndCat.GROUND))
                 solid_area = system.integral(Constant(mesh, PETSc.ScalarType(1.)) * solid_measure)
                 wall_rms = np.sqrt(max(0., system.integral(dot(u, n)**2 * solid_measure)) / max(solid_area, 1e-14))
+                open_measure = sum((system.ds(int(tag)) for tag in [BndCat.OUTLET, BndCat.SIDE, BndCat.TOP]), system.ds(int(BndCat.INLET)))
+                inflow_flux = system.integral(ufl.max_value(-dot(u, n), 0.) * open_measure)
+                leakage = {}
+                for name, tags in [("ground", [BndCat.GROUND]), ("building", [BndCat.WALL, BndCat.ROOF])]:
+                    measure = sum((system.ds(int(tag)) for tag in tags[1:]), system.ds(int(tags[0])))
+                    area = system.integral(Constant(mesh, PETSc.ScalarType(1.)) * measure)
+                    leakage[name] = {
+                        "flux": system.integral(abs(dot(u, n)) * measure),
+                        "rms": float(np.sqrt(max(0., system.integral(dot(u, n)**2 * measure)) / max(area, 1e-14))),
+                    }
+                    leakage[name]["fraction"] = leakage[name]["flux"] / max(inflow_flux, 1e-14)
                 slip_measure = system.ds(int(BndCat.SIDE)) + system.ds(int(BndCat.TOP))
                 slip_area = system.integral(Constant(mesh, PETSc.ScalarType(1.)) * slip_measure)
                 slip_rms = np.sqrt(max(0., system.integral(dot(u, n)**2 * slip_measure)) / max(slip_area, 1e-14)) if params.side_top_boundary == "slip" else None
@@ -1616,12 +1669,23 @@ class _FlowSolver:
                 "net_boundary_flux": net_flux, "absolute_boundary_flux": absolute_flux,
                 "flux_imbalance": flux_imbalance, "flux_imbalance_tolerance": params.flux_imbalance_tolerance,
                 "wall_normal_velocity_rms": float(wall_rms), "slip_normal_velocity_rms": slip_rms,
+                "inflow_flux": inflow_flux,
+                "ground_leakage_flux": leakage["ground"]["flux"], "ground_normal_velocity_rms": leakage["ground"]["rms"],
+                "ground_leakage_fraction": leakage["ground"]["fraction"],
+                "ground_leakage_tolerance": params.ground_leakage_tolerance,
+                "building_leakage_flux": leakage["building"]["flux"], "building_normal_velocity_rms": leakage["building"]["rms"],
+                "building_leakage_fraction": leakage["building"]["fraction"],
+                "building_leakage_tolerance": params.building_leakage_tolerance,
                 "finite_fields": bool(finite),
             }
-            accepted = (finite and np.isfinite(list(convergence[k] for k in ["residual_norm", "dimensionless_divergence", "flux_imbalance"])).all()
+            gated = ["residual_norm", "dimensionless_divergence", "flux_imbalance",
+                     "ground_leakage_fraction", "building_leakage_fraction"]
+            accepted = (finite and np.isfinite([convergence[k] for k in gated]).all()
                         and max(residual, compatible) <= limit
                         and dimensionless_divergence <= params.divergence_tolerance
-                        and flux_imbalance <= params.flux_imbalance_tolerance)
+                        and flux_imbalance <= params.flux_imbalance_tolerance
+                        and leakage["ground"]["fraction"] <= params.ground_leakage_tolerance
+                        and leakage["building"]["fraction"] <= params.building_leakage_tolerance)
             timings["total_s"] = time.perf_counter() - started
             self.diagnostics.update({
                 "scheme": "mixed_stationary", "stop_reason": "converged" if accepted else "quality_failure",
@@ -1630,6 +1694,7 @@ class _FlowSolver:
                 "wind_dir_deg": params.wind_dir_deg, "wind_vector_xy": params.wind_vector_xy,
                 "inlet_scale": 1., "convection_scale": 1. if is_nonlinear else 0.,
                 "inlet_marker": inlet_marker, "outlet_marker": outlet_marker,
+                "inlet_markers": inlet_markers, "outlet_markers": outlet_markers,
                 "closed_cavity": params.closed_cavity, "wall_model": params.wall_model,
                 "side_top_boundary": params.side_top_boundary, "inlet_profile": params.inlet_profile,
                 "rho": params.rho, "nu": params.nu, "nu_t": params.nu_t, "nu_eff": params.nu_eff if params.turbulence_model == "constant" else None,

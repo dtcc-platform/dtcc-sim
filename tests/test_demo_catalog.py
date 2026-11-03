@@ -61,8 +61,8 @@ def test_dataset_wind_uses_same_scenario_as_direct_solver():
         return {item.arg: ast.literal_eval(item.value) for item in call.keywords
                 if item.arg != "bounds"}
 
-    from dtcc_sim import NavierStokesParameters
     from dtcc_sim.datasets import UrbanWindSimulationArgs
+    from dtcc_sim.navierstokes.parameters import NavierStokesParameters
 
     direct = NavierStokesParameters(**keywords("urban_wind_simulation.py", "NavierStokesParameters"))
     dataset = keywords("dataset_urban_wind.py", "urban_wind_simulation")

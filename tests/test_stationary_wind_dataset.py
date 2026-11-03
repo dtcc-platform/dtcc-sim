@@ -74,7 +74,8 @@ def test_native_wind_dataset_serialization(equations, monkeypatch, tmp_path):
 
 
 def test_dataset_atmospheric_defaults_reach_solver_parameters():
-    from dtcc_sim import NavierStokesParameters, StokesParameters
+    from dtcc_sim.navierstokes.parameters import NavierStokesParameters
+    from dtcc_sim.stokes.parameters import StokesParameters
     for equations, parameter_type, model in [("navier_stokes", NavierStokesParameters, "mixing_length"),
                                              ("stokes", StokesParameters, "abl")]:
         args = UrbanWindSimulationArgs(bounds=(0, 0, 1, 1), equations=equations)

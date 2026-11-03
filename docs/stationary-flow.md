@@ -36,7 +36,12 @@ result = solver.simulate()
 defaults to the [atmospheric boundary-layer](atmospheric-boundary-layer.md)
 closure with log-law walls and inflow and slip sides and top. Both APIs accept
 native tagged DTCC volume meshes, tagged DOLFINx meshes, mesh paths or city bounds.
-Wind direction follows the meteorological FROM convention.
+Wind direction follows the meteorological FROM convention. Every lateral
+bounding-box face the wind enters through receives the inflow profile, every
+face it leaves through is a traction outlet, and faces parallel to the wind
+are side faces. An oblique wind therefore has two inflow and two outflow faces.
+Explicit `inlet_marker` and `outlet_marker` or `closed_cavity=True` select
+single faces.
 
 Time steps, CFL controls, ramps, statistical windows and pressure-correction
 options are invalid arguments. Configure nonlinear tolerances and
@@ -55,10 +60,11 @@ components on buildings, roofs and ground.
 Friction walls use tangential Robin friction; `wall_model="log_law"` uses a
 rough-wall quadratic drag. Axis-aligned facets receive a strong normal
 constraint. Other facets use consistent normal Nitsche terms with a default
-penalty `100 (ν_eff/h_F + wind_speed)`, where `h_F = 3|K|/|F|` is the cell height
-normal to the facet. The velocity term limits leakage under stagnation pressure;
-the normal height keeps flat cells next to small terrain facets coercive. Their
-measured normal leakage and mass checks still determine acceptance.
+penalty `nitsche_penalty (ν_eff/h_F + wind_speed)`, `nitsche_penalty=100`,
+where `h_F = 3|K|/|F|` is the cell height normal to the facet. The velocity term
+limits leakage under stagnation pressure; the normal height keeps flat cells
+next to small terrain facets coercive. Ground and building leakage gates bound
+the flow through these walls.
 `gamma_normal` explicitly controls that penalty. On inlet edges shared with
 friction or log-law walls, the inflow is projected onto the wall tangent planes.
 
@@ -107,13 +113,18 @@ for settings, comparisons and scaling limitations.
 
 Acceptance requires positive SNES and applicable KSP reasons, finite fields,
 an independently assembled residual including Dirichlet mismatch and pressure
-compatibility, dimensionless divergence and total boundary flux balance.
+compatibility, dimensionless divergence, total boundary flux balance and
+ground and building leakage.
 Defaults are:
 
 - Residual: `max(1e-9, 1e-8 × max(initial residual norm, 1))`, using the
   full-convection residual at the Stokes initial field for Navier–Stokes.
 - Dimensionless divergence: `hmin × RMS(div u) / max(RMS(u), 1e-14) <= 0.1`.
 - Flux imbalance: `abs(∫boundary u·n) / max(∫boundary abs(u·n), 1e-14) <= 1e-4`.
+- Ground leakage: `∫ground abs(u·n) / max(inflow volume flux, 1e-14) <= 0.02`,
+  and the same for building walls and roofs. Strong no-slip walls have none;
+  see the [atmospheric boundary layer](atmospheric-boundary-layer.md#impermeability)
+  for weak walls on curved terrain.
 
 Taylor–Hood incompressibility is weak. Pointwise divergence need not vanish.
 Underresolved cavity flows can fail the divergence gate despite a small

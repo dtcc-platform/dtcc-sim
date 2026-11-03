@@ -4,7 +4,8 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from dtcc_sim import NavierStokesParameters, StokesParameters
+from dtcc_sim.navierstokes.parameters import NavierStokesParameters
+from dtcc_sim.stokes.parameters import StokesParameters
 
 pytestmark = [pytest.mark.simulation]
 
@@ -43,6 +44,7 @@ class TestParameters:
         assert StokesParameters(**abl(turbulence_model="abl", wall_model="log_law")).uses_wall_distance
 
     def test_log_law_inlet_uses_wall_offset(self):
+        pytest.importorskip("dolfinx")
         from dtcc_sim._flow.solver import make_inlet_velocity_expression
         params = NavierStokesParameters(inlet_profile="log_law", wall_model="log_law", wind_speed=5.)
         values = make_inlet_velocity_expression(params)(np.array([[0., 0.], [0., 0.], [0., 10.]]))
@@ -109,14 +111,16 @@ def test_jacobian_with_closure_and_weak_terrain_walls(turbulence_model):
     _numerics()
     import dolfinx.fem as fem
     from dolfinx.fem import petsc as fp
+    from petsc4py import PETSc
     from dtcc_sim._flow.solver import _MixedFlowSystem, categorize_boundary
     mesh, tags = tagged_box((40., 20., 20.), (4, 2, 2), slope=.15)
     params = NavierStokesParameters(**abl(turbulence_model=turbulence_model, wall_model="log_law",
                                           backflow_beta=2., grad_div_gamma=3.))
     system = _MixedFlowSystem(mesh, params, tags, categorize_boundary(mesh, tags, 0, -3, -4), None)
     system.set_stage(1.)
-    rng = np.random.default_rng(7)
+    rng = np.random.default_rng(7 + mesh.comm.rank)
     system.w.x.array[:] = 3 * rng.normal(size=system.w.x.array.size)
+    system.w.x.scatter_forward()
     matrix = fp.assemble_matrix(fem.form(system.J))
     matrix.assemble()
     direction = system.w.x.petsc_vec.duplicate()
@@ -129,7 +133,9 @@ def test_jacobian_with_closure_and_weak_terrain_walls(turbulence_model):
         system.w.x.array[:] = original
         system.w.x.petsc_vec.axpy(sign * 1e-6, direction)
         system.w.x.scatter_forward()
-        values.append(fp.assemble_vector(residual))
+        vector = fp.assemble_vector(residual)
+        vector.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+        values.append(vector)
     values[0].axpy(-1, values[1])
     values[0].scale(1 / 2e-6)
     values[0].axpy(-1, action)
@@ -168,16 +174,82 @@ def weak_manufactured(n, turbulence_model):
     return system, exact_u, exact_p
 
 
+def independent_manufactured(n, turbulence_model):
+    """Manufactured solution with independently derived forcing and boundary data.
+
+    The viscosity, wall drag and expected boundary terms are written out from
+    the model equations; the implementation's terms must reproduce them for
+    the discrete solution to converge to the exact one.
+    """
+    import ufl
+    from dtcc_sim._flow.parameters import KAPPA
+    from dtcc_sim._flow.solver import BndCat, DEFAULT_STATIONARY_PETSC, _MixedFlowSystem, categorize_boundary
+    mesh, tags = tagged_box((2., 1., 1.), (2 * n, n, n))
+    nu, z0, delta, z_ref, speed = 1e-3, .05, .1, .5, 1.
+    params = NavierStokesParameters(**abl(
+        turbulence_model=turbulence_model, wall_model="log_law", wind_speed=speed, z0=z0,
+        u_ref_height=z_ref, wall_function_height=delta, nu=nu,
+    ))
+    x = ufl.SpatialCoordinate(mesh)
+    bubble = x[2]**2 * (1 - x[2])**2
+    exact_u = ufl.as_vector((1 + x[2] + .1 * bubble.dx(2) * ufl.sin(ufl.pi * x[0]), 0.,
+                             -.1 * bubble * ufl.pi * ufl.cos(ufl.pi * x[0])))
+    exact_p = ufl.sin(x[0]) * ufl.cos(x[2])
+
+    def inlet(points):
+        z = points[2]
+        return np.array([1 + z + .1 * (2 * z * (1 - z)**2 - 2 * z**2 * (1 - z)) * np.sin(np.pi * points[0]),
+                         np.zeros_like(z), -.1 * z**2 * (1 - z)**2 * np.pi * np.cos(np.pi * points[0])])
+
+    # Model data written out independently: flat ground at z = 0 is the only wall.
+    z_w = z0 + delta
+    friction = KAPPA * speed / np.log((z_ref + z_w) / z0)
+    length = KAPPA * (x[2] + z_w)
+    strain = ufl.sym(ufl.grad(exact_u))
+    eddy = friction * length if turbulence_model == "abl" else length**2 * ufl.sqrt(2 * ufl.inner(strain, strain))
+    stress = 2 * (nu + eddy) * strain
+    forcing = -ufl.div(stress) + ufl.grad(exact_u) * exact_u + ufl.grad(exact_p)
+    drag = (KAPPA / np.log(z_w / z0))**2 * ufl.sqrt(exact_u[0]**2 + exact_u[1]**2)
+    top_shear = friction**2  # along x for wind from 270 degrees
+
+    system = _MixedFlowSystem(mesh, params, tags, categorize_boundary(mesh, tags, 0, -3, -4), inlet)
+    v, _ = ufl.TestFunctions(system.W)
+    n_ = ufl.FacetNormal(mesh)
+    dx = ufl.Measure("dx", domain=mesh, metadata={"quadrature_degree": 8})
+    ds = ufl.Measure("ds", domain=mesh, subdomain_data=system.ds.subdomain_data(),
+                     metadata={"quadrature_degree": 8})
+    traction = stress * n_
+    outlet = (nu + eddy) * ufl.grad(exact_u) * n_ - exact_p * n_  # gradient-form outflow traction
+    top = ufl.as_vector((traction[0] - top_shear, traction[1], 0.))
+    ground = ufl.as_vector((traction[0] + drag * exact_u[0], traction[1] + drag * exact_u[1], 0.))
+    system.F -= (ufl.inner(forcing, v) * dx + ufl.inner(outlet, v) * ds(int(BndCat.OUTLET))
+                 + ufl.inner(top, v) * ds(int(BndCat.TOP)) + ufl.inner(ground, v) * ds(int(BndCat.GROUND)))
+    system.J = ufl.derivative(system.F, system.w)
+    _, dp = ufl.TrialFunctions(system.W)
+    _, q = ufl.TestFunctions(system.W)
+    system.P = system.J + dp * q * ufl.dx
+    system.configure({**DEFAULT_STATIONARY_PETSC, "snes_type": "newtonls", "snes_linesearch_type": "bt",
+                      "snes_rtol": 1e-11, "snes_atol": 1e-12, "snes_max_it": 30})
+    return system, exact_u, exact_p
+
+
 @pytest.mark.fenics
 @pytest.mark.slow
+@pytest.mark.parametrize("construction", ["weak", "independent"])
 @pytest.mark.parametrize("turbulence_model", ["abl", "mixing_length"])
-def test_variable_viscosity_manufactured_convergence(turbulence_model):
-    """Symmetric stress, open-boundary correction, wall law and top shear converge at Taylor–Hood rates."""
+def test_variable_viscosity_manufactured_convergence(turbulence_model, construction):
+    """Symmetric stress, open-boundary correction, wall law and top shear converge at Taylor–Hood rates.
+
+    The weak construction checks the discretization of the implemented
+    residual; the independent construction checks that residual against
+    forcing and boundary data derived from the model equations.
+    """
     _numerics()
     import ufl
+    manufactured = weak_manufactured if construction == "weak" else independent_manufactured
     errors = []
     for n in [2, 4, 8]:
-        system, exact_u, exact_p = weak_manufactured(n, turbulence_model)
+        system, exact_u, exact_p = manufactured(n, turbulence_model)
         try:
             system.solve(0.)
             system.solve(1.)
@@ -193,8 +265,9 @@ def test_variable_viscosity_manufactured_convergence(turbulence_model):
 
 @pytest.mark.fenics
 @pytest.mark.slow
-@pytest.mark.parametrize("solver_name", ["navierstokes", "stokes"])
-def test_equilibrium_inflow_is_horizontally_homogeneous(solver_name):
+@pytest.mark.parametrize("solver_name, turbulence_model", [
+    ("navierstokes", "abl"), ("stokes", "abl"), ("navierstokes", "mixing_length")])
+def test_equilibrium_inflow_is_horizontally_homogeneous(solver_name, turbulence_model):
     """An empty flat domain preserves the equilibrium log-law inflow."""
     _numerics()
     from dolfinx import geometry
@@ -203,7 +276,7 @@ def test_equilibrium_inflow_is_horizontally_homogeneous(solver_name):
     mesh, tags = tagged_box((200., 20., 80.), (20, 2, 8))
     parameter_type, solver_type = ((NavierStokesParameters, NavierStokesSolver) if solver_name == "navierstokes"
                                    else (StokesParameters, StokesSolver))
-    params = parameter_type(**abl(turbulence_model="abl", wall_model="log_law", wind_speed=5.))
+    params = parameter_type(**abl(turbulence_model=turbulence_model, wall_model="log_law", wind_speed=5.))
     solver = solver_type(mesh=mesh, markers=tags, params=params)
     u, _ = solver.simulate()
     heights = np.array([5., 10., 20., 40., 75.])
@@ -211,7 +284,11 @@ def test_equilibrium_inflow_is_horizontally_homogeneous(solver_name):
     points = np.column_stack([np.full_like(heights, 200. - 1e-6), np.full_like(heights, 10.), heights])
     tree = geometry.bb_tree(mesh, 3)
     cells = geometry.compute_colliding_cells(mesh, geometry.compute_collisions_points(tree, points), points)
-    outlet = u.eval(points, np.array([cells.links(i)[0] for i in range(len(points))], dtype=np.int32))
+    found = [i for i in range(len(points)) if len(cells.links(i))]
+    local = np.full((len(points), 3), np.nan)
+    if found:
+        local[found] = u.eval(points[found], np.array([cells.links(i)[0] for i in found], dtype=np.int32))
+    outlet = np.nanmean(np.stack(mesh.comm.allgather(local)), axis=0)  # from the ranks holding each point
     assert np.max(np.abs(outlet[:, 0] - exact) / exact) < .01
     assert np.max(np.abs(outlet[:, 1:])) < .01 * params.wind_speed
     turbulence = solver.diagnostics["turbulence"]
@@ -238,11 +315,77 @@ def test_inflow_is_tangential_on_sloping_weak_walls():
     inlet_dofs = dolfinx.fem.locate_dofs_topological(V, fd, categories.find(int(BndCat.INLET)))
     ground = categories.find(int(BndCat.GROUND))
     edge = np.intersect1d(inlet_dofs, dolfinx.fem.locate_dofs_topological(V, fd, ground))
-    assert len(edge)
-    points = mesh.geometry.x[dolfinx.mesh.entities_to_geometry(mesh, fd, ground)]
-    normal = np.cross(points[0, 1] - points[0, 0], points[0, 2] - points[0, 0])
-    normal /= np.linalg.norm(normal)
-    assert np.max(np.abs(values[edge] @ normal)) < 1e-12
-    assert np.min(values[edge, 0]) > 4.
+    assert mesh.comm.allreduce(len(edge)) > 0
+    normal = np.array([-.3, -.15, 1.]) / np.linalg.norm([-.3, -.15, 1.])  # ground z = 0.3 (x + y/2)
+    assert np.all(np.abs(values[edge] @ normal) < 1e-12)
+    assert np.all(values[edge, 0] > 4.)
     interior = np.setdiff1d(inlet_dofs, edge)
-    np.testing.assert_array_equal(values[interior], [[5., 0., 0.]] * len(interior))
+    np.testing.assert_array_equal(values[interior], np.tile([5., 0., 0.], (len(interior), 1)))
+
+
+def test_lateral_faces_follow_the_wind_direction():
+    pytest.importorskip("dolfinx")
+    from dtcc_sim._flow.solver import classify_lateral_faces
+    cases = {270.: ([-3], [-4]), 180.: ([-5], [-6]), 250.: ([-3, -5], [-4, -6]), 45.: ([-4, -6], [-3, -5])}
+    for direction, (inlets, outlets) in cases.items():
+        found = classify_lateral_faces(NavierStokesParameters(wind_dir_deg=direction))
+        assert (sorted(found[0]), sorted(found[1])) == (sorted(inlets), sorted(outlets)), direction
+    explicit = NavierStokesParameters(wind_dir_deg=250., inlet_marker=-3, outlet_marker=-4)
+    assert classify_lateral_faces(explicit) == ([-3], [-4])
+    assert classify_lateral_faces(NavierStokesParameters(closed_cavity=True)) == ([-3], [])
+
+
+@pytest.mark.fenics
+@pytest.mark.slow
+@pytest.mark.parametrize("turbulence_model", ["abl", "mixing_length"])
+def test_oblique_wind_keeps_its_direction(turbulence_model):
+    """Wind 20 degrees off the x-axis enters and leaves through two faces each."""
+    _numerics()
+    import ufl
+    from dtcc_sim import NavierStokesSolver
+    from dtcc_sim._flow.parameters import KAPPA
+    mesh, tags = tagged_box((160., 160., 80.), (8, 8, 4))
+    params = NavierStokesParameters(**abl(turbulence_model=turbulence_model, wall_model="log_law",
+                                          wind_speed=5., wind_dir_deg=250.))
+    solver = NavierStokesSolver(mesh=mesh, markers=tags, params=params)
+    u, _ = solver.simulate()
+    mean = [integral(mesh, u[i] * ufl.dx) for i in range(2)]
+    assert np.degrees(np.arctan2(mean[1], mean[0])) == pytest.approx(20., abs=.1)
+    z = ufl.SpatialCoordinate(mesh)[2]
+    speed = params.friction_velocity / KAPPA * ufl.ln((z + params.wall_offset) / params.z0)
+    wx, wy = params.wind_vector_xy
+    exact = ufl.as_vector((speed * wx, speed * wy, 0.))
+    deviation = integral(mesh, ufl.inner(u - exact, u - exact) * ufl.dx) / integral(mesh, ufl.inner(exact, exact) * ufl.dx)
+    assert np.sqrt(deviation) < .02
+    assert sorted(solver.diagnostics["inlet_markers"]) == [-5, -3]
+    assert sorted(solver.diagnostics["outlet_markers"]) == [-6, -4]
+
+
+@pytest.mark.fenics
+@pytest.mark.slow
+def test_weak_wall_leakage_is_measured_and_gated():
+    """Flow through weakly enforced curved terrain is bounded by the leakage gates."""
+    _numerics()
+    from dtcc_sim import NavierStokesSolver
+
+    def hills():
+        mesh, tags = tagged_box((200., 40., 80.), (20, 4, 8))
+        x = mesh.geometry.x
+        x[:, 2] += 4 * np.sin(2 * np.pi * x[:, 0] / 80) * np.sin(2 * np.pi * x[:, 1] / 80) * (1 - x[:, 2] / 80)
+        return mesh, tags
+
+    params = NavierStokesParameters(**abl(turbulence_model="abl", wall_model="log_law", wind_speed=5.,
+                                          divergence_tolerance=1.))
+    mesh, tags = hills()
+    solver = NavierStokesSolver(mesh=mesh, markers=tags, params=params)
+    solver.simulate()
+    convergence = solver.diagnostics["convergence"]
+    assert 0 < convergence["ground_leakage_fraction"] < params.ground_leakage_tolerance
+    assert convergence["building_leakage_fraction"] == 0.
+    assert convergence["ground_normal_velocity_rms"] > 0
+    strict = params.model_copy(update={"ground_leakage_tolerance": 1e-6})
+    mesh, tags = hills()
+    solver = NavierStokesSolver(mesh=mesh, markers=tags, params=strict)
+    with pytest.raises(RuntimeError, match="quality checks failed"):
+        solver.simulate()
+    assert solver.diagnostics["stop_reason"] == "quality_failure"
