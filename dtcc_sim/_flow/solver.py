@@ -683,35 +683,50 @@ def _tangential_inflow(mesh, categories, solids, inlet):
 
     The inflow profile is horizontal, while sloping terrain and walls only
     admit tangential velocity. Each inflow value on a weak-wall facet is
-    projected onto the tangent plane of the mean facet normal, and also onto
-    distinct wall directions where facets meet at more than 30 degrees.
+    projected onto the tangent plane of the mean normal of all weak-wall
+    facets containing it, and also onto distinct wall directions where facets
+    meet at more than 30 degrees. The incident facets are collected from all
+    ranks and ordered geometrically, so the result does not depend on the
+    mesh partition.
     """
-    fd = mesh.topology.dim - 1
+    fd, gdim = mesh.topology.dim - 1, mesh.geometry.dim
     V = inlet.function_space
-    inlet_dofs = set(locate_dofs_topological(V, fd, categories.find(int(BndCat.INLET))).tolist())
+    index_map = V.dofmap.index_map
+    inlet_facets = categories.find(int(BndCat.INLET)).astype(np.int32)
+    inlet_dofs = locate_dofs_topological(V, fd, inlet_facets)
+    inlet_set = set(inlet_dofs.tolist())
     facets = np.concatenate([categories.find(int(tag)) for tag in solids]).astype(np.int32)
-    if not inlet_dofs:
+    if not inlet_set:
         facets = facets[:0]
     nodes = dolfinx.mesh.entities_to_geometry(mesh, fd, facets)
     nodes = nodes.reshape(len(facets), nodes.shape[-1] if nodes.ndim == 2 else 3)
-    inlet_facets = categories.find(int(BndCat.INLET)).astype(np.int32)
     inlet_nodes = np.unique(dolfinx.mesh.entities_to_geometry(mesh, fd, inlet_facets))
     touching = np.isin(nodes, inlet_nodes).any(axis=1)
     facets, nodes = facets[touching], nodes[touching]
     points = mesh.geometry.x[nodes]
     normals = np.cross(points[:, 1] - points[:, 0], points[:, 2] - points[:, 0])
     normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-30)
-    shared = {}
-    for facet, normal in zip(facets, normals):
-        for dof in locate_dofs_topological(V, fd, np.array([facet], dtype=np.int32), remote=False):
-            if int(dof) in inlet_dofs:
-                shared.setdefault(int(dof), []).append(normal)
-    values = inlet.x.array.reshape(-1, mesh.geometry.dim).copy()
-    correction, count = dolfinx.fem.Function(V), dolfinx.fem.Function(V)
-    corrections = correction.x.array.reshape(-1, mesh.geometry.dim)
-    counts = count.x.array.reshape(-1, mesh.geometry.dim)
-    for dof, dof_normals in shared.items():
-        aligned = [n if np.dot(n, dof_normals[0]) >= 0 else -n for n in dof_normals]
+    midpoints = points.mean(axis=1)
+    records = []
+    for facet, normal, midpoint in zip(facets, normals, midpoints):
+        dofs = [int(d) for d in locate_dofs_topological(V, fd, np.array([facet], dtype=np.int32), remote=False)
+                if int(d) in inlet_set]
+        for dof in index_map.local_to_global(np.array(dofs, dtype=np.int32)) if dofs else []:
+            records.append([float(dof), *midpoint, *normal])
+    gathered = [row for rows in mesh.comm.allgather(records) for row in rows]
+    scale = float(mesh.comm.allreduce(np.ptp(mesh.geometry.x, axis=0).max() if len(mesh.geometry.x) else 0., op=MPI.MAX))
+    incident = {}
+    for row in gathered:
+        key = tuple(np.round(np.asarray(row[1:4]) / max(scale, 1.), 9))
+        incident.setdefault(int(row[0]), {})[key] = np.asarray(row[4:7])
+    owned = np.array([dof for dof in inlet_dofs if dof < index_map.size_local], dtype=np.int32)
+    values = inlet.x.array.reshape(-1, gdim)
+    for dof, global_dof in zip(owned, index_map.local_to_global(owned) if len(owned) else []):
+        facet_normals = incident.get(int(global_dof))
+        if not facet_normals:
+            continue
+        ordered = [facet_normals[key] for key in sorted(facet_normals)]
+        aligned = [n if np.dot(n, ordered[0]) >= 0 else -n for n in ordered]
         mean = np.sum(aligned, axis=0)
         basis = [mean / np.linalg.norm(mean)]
         for normal in aligned:
@@ -719,17 +734,8 @@ def _tangential_inflow(mesh, categories, solids, inlet):
             length = np.linalg.norm(residual)
             if length > .5:  # a distinct wall direction, not a nearly coplanar facet
                 basis.append(residual / length)
-        projected = values[dof].copy()
         for b in basis:
-            projected -= np.dot(projected, b) * b
-        corrections[dof] = projected - values[dof]
-        counts[dof] = 1.
-    # A rank may hold a dof without its wall facets: owners average the corrections.
-    for vector in (correction.x, count.x):
-        vector.scatter_reverse(dolfinx.la.InsertMode.add)
-    owned = V.dofmap.index_map.size_local
-    target = inlet.x.array.reshape(-1, mesh.geometry.dim)
-    target[:owned] += corrections[:owned] / np.maximum(counts[:owned], 1.)
+            values[dof] -= np.dot(values[dof], b) * b
     inlet.x.scatter_forward()
 
 

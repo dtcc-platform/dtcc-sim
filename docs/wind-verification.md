@@ -116,8 +116,8 @@ would not establish physical validation.
 Algebraic ABL closures, the log-law wall and the equilibrium inflow are
 verified separately: wall distance, Jacobians in serial and on two MPI ranks,
 weak and independently derived manufactured solutions, empty-domain horizontal
-homogeneity for aligned and oblique winds, weak-wall leakage and city
-acceptance.
+homogeneity for aligned and oblique winds, weak-wall leakage, a curved-wall
+manufactured solution and city acceptance.
 See the [atmospheric boundary layer](atmospheric-boundary-layer.md).
 
 The default weak-wall penalty uses the normal cell height and a velocity term.
