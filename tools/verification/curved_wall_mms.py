@@ -4,8 +4,9 @@ The domain lies between the curved ground z = g(x) = A sin(2πx/λ) and a flat
 top z = H. The exact velocity follows from a stream function that is constant
 on both, so it is tangent to the true ground. Forcing, outflow traction, top
 traction and log-law wall drag are derived independently from the exact
-solution and the discrete facet normals; the condition u·n = 0 on the
-polyhedral ground is left as the solver imposes it.
+solution and the normal the solver imposes no penetration along; that
+condition itself is left as the solver imposes it. ``--normals`` selects the
+solver's averaged wall normals, facet normals or the exact curve normal.
 
 Two refinements are compared:
 
@@ -26,6 +27,7 @@ import dolfinx.mesh as dm
 from mpi4py import MPI
 
 from dtcc_sim._flow.parameters import KAPPA
+from dtcc_sim._flow import solver as flow
 from dtcc_sim._flow.solver import (BndCat, DEFAULT_STATIONARY_PETSC, _MixedFlowSystem,
                                    categorize_boundary)
 from dtcc_sim.navierstokes.parameters import NavierStokesParameters
@@ -81,48 +83,7 @@ def exact_inflow(amplitude, wavelength):
     return velocity
 
 
-def vertex_normals(mesh, categories):
-    """Continuous P1 ground normal from area-weighted facet normals at each vertex."""
-    V = dolfinx.fem.functionspace(mesh, ("Lagrange", 1, (3,)))
-    field = dolfinx.fem.Function(V)
-    facets = categories.find(int(BndCat.GROUND)).astype(np.int32)
-    nodes = dm.entities_to_geometry(mesh, 2, facets)
-    points = mesh.geometry.x[nodes]
-    cross = np.cross(points[:, 1] - points[:, 0], points[:, 2] - points[:, 0])
-    cross[cross[:, 2] < 0] *= -1  # upward; outward is downward and the sign cancels in u·m m
-    vertex_dofs = dolfinx.fem.locate_dofs_topological(V, 2, facets)
-    coordinates = V.tabulate_dof_coordinates()
-    lookup = {tuple(np.round(coordinates[d], 10)): d for d in vertex_dofs}
-    values = field.x.array.reshape(-1, 3)
-    for corner_points, normal in zip(points, cross):
-        for point in corner_points:
-            values[lookup[tuple(np.round(point, 10))]] += normal
-    field.x.scatter_forward()
-    return field / ufl.sqrt(ufl.dot(field, field))
-
-
-class _NormalFlowSystem(_MixedFlowSystem):
-    """Ground Nitsche terms with a supplied normal ``m`` instead of the facet normal."""
-
-    normal = None
-
-    def _normal_boundary(self, u, p, v, q, n, nu, tag, penalty):
-        if self.normal is None or tag != int(BndCat.GROUND):
-            return super()._normal_boundary(u, p, v, q, n, nu, tag, penalty)
-        m = self.normal(self.mesh)
-        um, vm = ufl.dot(u, m), ufl.dot(v, m)
-        height = 3 * ufl.CellVolume(self.mesh) / ufl.FacetArea(self.mesh)
-        gamma = self.params.nitsche_penalty * (nu / height + self.params.wind_speed)
-        self.F += (-(nu * ufl.dot(ufl.grad(u) * n, m) - p * ufl.dot(n, m)) * vm
-                   - (nu * ufl.dot(ufl.grad(v) * n, m) + q * ufl.dot(n, m)) * um + gamma * um * vm) * self.ds(tag)
-        # The caller adds facet-tangential wall drag; replace it by drag tangential to m.
-        facet_tangential, tangential = u - ufl.dot(u, n) * n, u - um * m
-        self.F += (self._wall_friction(tangential) * ufl.inner(tangential, v)
-                   - self._wall_friction(facet_tangential) * ufl.inner(facet_tangential, v)) * self.ds(tag)
-        self._ground_normal = m
-
-
-def solve(mesh, amplitude, wavelength, normal="facet"):
+def solve(mesh, amplitude, wavelength, normal="averaged"):
     markers = tags(mesh)
     params = NavierStokesParameters(
         nu=NU, wind_speed=U, z0=Z0, wall_function_height=DELTA, inlet_profile="log_law",
@@ -133,13 +94,17 @@ def solve(mesh, amplitude, wavelength, normal="facet"):
     u_exact, p_exact = exact(x, amplitude, wavelength)
     slope = ground(x[0], amplitude, wavelength, ufl).dx(0)
     true_normal = ufl.as_vector((-slope, 0., 1.)) / ufl.sqrt(1 + slope**2)
-    system_type = _MixedFlowSystem if normal == "facet" else type("System", (_NormalFlowSystem,), {
-        "normal": staticmethod((lambda mesh: true_normal) if normal == "exact"
-                               else (lambda mesh: vertex_normals(mesh, categories)))})
-    system = system_type(mesh, params, markers, categories, exact_inflow(amplitude, wavelength))
+    replacement = {"facet": ufl.FacetNormal(mesh), "exact": true_normal}.get(normal)
+    original = flow._wall_normals
+    if replacement is not None:
+        flow._wall_normals = lambda *args: (None, replacement)
+    try:
+        system = _MixedFlowSystem(mesh, params, markers, categories, exact_inflow(amplitude, wavelength))
+    finally:
+        flow._wall_normals = original
     v, _ = ufl.TestFunctions(system.W)
     n = ufl.FacetNormal(mesh)
-    m = getattr(system, "_ground_normal", n)
+    m = system.wall_normal
     dx = ufl.Measure("dx", domain=mesh, metadata={"quadrature_degree": 8})
     ds = ufl.Measure("ds", domain=mesh, subdomain_data=categories, metadata={"quadrature_degree": 8})
     forcing = -NU * ufl.div(ufl.grad(u_exact)) + ufl.grad(u_exact) * u_exact + ufl.grad(p_exact)
@@ -180,7 +145,7 @@ def main():
     parser.add_argument("--levels", type=int, nargs="+", default=[4, 8, 16])
     parser.add_argument("--amplitude", type=float, default=.1)
     parser.add_argument("--wavelength", type=float, default=1.)
-    parser.add_argument("--normals", nargs="+", default=["facet"], choices=["facet", "vertex", "exact"])
+    parser.add_argument("--normals", nargs="+", default=["averaged"], choices=["averaged", "facet", "exact"])
     parser.add_argument("--output")
     args = parser.parse_args()
     results = []

@@ -63,8 +63,10 @@ constraint. Other facets use consistent normal Nitsche terms with a default
 penalty `nitsche_penalty (ν_eff/h_F + wind_speed)`, `nitsche_penalty=100`,
 where `h_F = 3|K|/|F|` is the cell height normal to the facet. The velocity term
 limits leakage under stagnation pressure; the normal height keeps flat cells
-next to small terrain facets coercive. Ground and building leakage gates bound
-the flow through these walls.
+next to small terrain facets coercive. No penetration acts along an averaged
+wall normal: area-weighted vertex means of the facet normals, interpolated
+linearly, with facet normals kept at sharp edges and corners. Ground and
+building leakage gates bound the flow across these walls along that normal.
 `gamma_normal` explicitly controls that penalty. On inlet edges shared with
 friction or log-law walls, the inflow is projected onto the wall tangent planes.
 
@@ -121,7 +123,8 @@ Defaults are:
   full-convection residual at the Stokes initial field for Navier–Stokes.
 - Dimensionless divergence: `hmin × RMS(div u) / max(RMS(u), 1e-14) <= 0.1`.
 - Flux imbalance: `abs(∫boundary u·n) / max(∫boundary abs(u·n), 1e-14) <= 1e-4`.
-- Ground leakage: `∫ground abs(u·n) / max(inflow volume flux, 1e-14) <= 0.02`,
+- Ground leakage: `∫ground abs(u·m) / max(inflow volume flux, 1e-14) <= 0.02`,
+  with `m` the enforced wall normal,
   and the same for building walls and roofs. Strong no-slip walls have none;
   see the [atmospheric boundary layer](atmospheric-boundary-layer.md#impermeability)
   for weak walls on curved terrain.

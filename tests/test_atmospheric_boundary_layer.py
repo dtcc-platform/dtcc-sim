@@ -375,7 +375,7 @@ def test_weak_wall_leakage_is_measured_and_gated():
         return mesh, tags
 
     params = NavierStokesParameters(**abl(turbulence_model="abl", wall_model="log_law", wind_speed=5.,
-                                          divergence_tolerance=1.))
+                                          divergence_tolerance=1., flux_imbalance_tolerance=1e-3))
     mesh, tags = hills()
     solver = NavierStokesSolver(mesh=mesh, markers=tags, params=params)
     solver.simulate()
@@ -419,3 +419,33 @@ def test_tangential_inflow_is_partition_independent():
     changed = sum(np.linalg.norm(serial[key] - [0., 5 + .01 * key[2], 0.]) > 1e-6 for key in serial)
     assert changed > 20
     assert max(np.linalg.norm(value - serial[key]) for key, value in distributed.items()) < 1e-12
+
+
+@pytest.mark.fenics
+@pytest.mark.slow
+def test_wall_normals_are_averaged_and_partition_independent():
+    """Averaged wall normals follow curved terrain, keep sharp edges and match a serial computation."""
+    _numerics()
+    from mpi4py import MPI
+    from dtcc_sim._flow.solver import BndCat, _wall_normals, categorize_boundary
+
+    def normals(comm):
+        mesh, tags = tagged_box((200., 40., 80.), (20, 4, 8), comm=comm)
+        x = mesh.geometry.x
+        x[:, 2] += 1.5 * np.sin(2 * np.pi * x[:, 0] / 100) * (1 + x[:, 1] / 40) * (1 - x[:, 2] / 80)
+        categories = categorize_boundary(mesh, tags, 0, -5, -6)
+        field, _ = _wall_normals(mesh, categories, [BndCat.WALL, BndCat.ROOF, BndCat.GROUND])
+        coordinates = field.function_space.tabulate_dof_coordinates()
+        values = field.x.array.reshape(-1, 3)
+        wall = np.linalg.norm(values, axis=1) > 0
+        return dict(zip([tuple(row) for row in np.round(coordinates[wall], 8)], values[wall]))
+
+    distributed, serial = normals(MPI.COMM_WORLD), normals(MPI.COMM_SELF)
+    assert set(distributed) <= set(serial) and len(serial) == 21 * 5  # every ground vertex
+    assert max(np.linalg.norm(value - serial[key]) for key, value in distributed.items()) < 1e-12
+    # Outward ground normals point down; the analytic normal of z = g(x, y) is (g_x, g_y, -1) normalized.
+    for (x, y, z), value in serial.items():
+        gx = 1.5 * 2 * np.pi / 100 * np.cos(2 * np.pi * x / 100) * (1 + y / 40)
+        gy = 1.5 * np.sin(2 * np.pi * x / 100) / 40
+        exact = np.array([gx, gy, -1.]) / np.linalg.norm([gx, gy, -1.])
+        assert np.dot(value, exact) > np.cos(np.deg2rad(2.))  # one-sided at the domain edges

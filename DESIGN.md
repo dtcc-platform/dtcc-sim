@@ -58,7 +58,10 @@ Newton iteration and a tight linear tolerance during Stokes initialization.
 Independent full residual, flux, divergence and wall-leakage checks determine
 acceptance. Lateral faces are classified from the wind direction: every face
 the wind enters through is an inflow and every face it leaves through an
-outlet, so oblique winds keep their crosswind component.
+outlet, so oblique winds keep their crosswind component. Weak walls impose no
+penetration along averaged vertex normals, keeping facet normals at sharp
+edges; boundary data that depend on neighbouring facets are assembled across
+MPI ranks so that results do not depend on the partition.
 Explicit PETSc overrides remain available, including LU; failed solves raise
 without changing methods or relaxing acceptance.
 

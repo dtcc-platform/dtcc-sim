@@ -678,6 +678,72 @@ def _wall_distance(mesh, categories, tags, name):
     return solution, distance
 
 
+SHARP_WALL_ANGLE_DEG = 30.
+"""Wall facets meeting at a node at more than this angle keep their own normals."""
+
+
+def _wall_normals(mesh, categories, solids):
+    """Weak-wall normals averaged over the facets sharing each vertex.
+
+    A polyhedral approximation of a curved wall has facet normals that jump
+    at every edge, so flow tangent to the true wall crosses the facets and
+    is penalized. Each wall vertex instead receives the area-weighted mean of
+    the outward normals of all incident weak-wall facets, accumulated across
+    MPI ranks, and the continuous P1 interpolant is used on smooth walls.
+    Vertices whose incident facets deviate more than SHARP_WALL_ANGLE_DEG
+    from that mean (building edges, wall–ground corners) are left at zero;
+    where the interpolant is short or far from the facet normal the facet
+    normal is used. On planar walls the result is the facet normal.
+    """
+    fd, tdim, gdim = mesh.topology.dim - 1, mesh.topology.dim, mesh.geometry.dim
+    V = dolfinx.fem.functionspace(mesh, ("Lagrange", 1, (gdim,)))
+    total, sharp = Function(V), Function(V)
+    mesh.topology.create_connectivity(fd, 0)
+    mesh.topology.create_connectivity(fd, tdim)
+    mesh.topology.create_connectivity(tdim, 0)
+    cell_vertices = mesh.topology.connectivity(tdim, 0).array.reshape(-1, tdim + 1)
+    vertex_dofs = np.empty(mesh.topology.index_map(0).size_local + mesh.topology.index_map(0).num_ghosts, dtype=np.int32)
+    vertex_dofs[cell_vertices] = V.dofmap.list[:len(cell_vertices)]
+    facets = np.unique(np.concatenate([categories.find(int(tag)) for tag in solids])).astype(np.int32)
+    facets = facets[facets < mesh.topology.index_map(fd).size_local]
+    facet_vertices = mesh.topology.connectivity(fd, 0)
+    facet_cells = mesh.topology.connectivity(fd, tdim)
+    if len(facets):
+        dofs = vertex_dofs[np.array([facet_vertices.links(f) for f in facets])]
+        points = mesh.geometry.x[dolfinx.mesh.entities_to_geometry(mesh, fd, facets).reshape(len(facets), -1)[:, :3]]
+        cross = np.cross(points[:, 1] - points[:, 0], points[:, 2] - points[:, 0])
+        cells = np.array([facet_cells.links(f)[0] for f in facets], dtype=np.int32)
+        centroids = mesh.geometry.x[mesh.geometry.dofmaps[0][cells]].mean(axis=1)
+        cross[np.einsum("ij,ij->i", cross, points.mean(axis=1) - centroids) < 0] *= -1
+    else:
+        dofs, cross = np.zeros((0, 3), dtype=np.int32), np.zeros((0, 3))
+    sums = total.x.array.reshape(-1, gdim)
+    for corner in range(3):
+        np.add.at(sums, dofs[:, corner], .5 * cross)  # area-weighted outward normals
+    total.x.scatter_reverse(dolfinx.la.InsertMode.add)
+    total.x.scatter_forward()
+    lengths = np.linalg.norm(sums, axis=1, keepdims=True)
+    means = np.divide(sums, lengths, out=np.zeros_like(sums), where=lengths > 0)
+    if len(facets):
+        normals = cross / np.linalg.norm(cross, axis=1, keepdims=True)
+        limit = np.cos(np.deg2rad(SHARP_WALL_ANGLE_DEG))
+        flags = sharp.x.array.reshape(-1, gdim)
+        for corner in range(3):
+            deviating = np.einsum("ij,ij->i", normals, means[dofs[:, corner]]) < limit
+            np.add.at(flags[:, 0], dofs[deviating, corner], 1.)
+    sharp.x.scatter_reverse(dolfinx.la.InsertMode.add)
+    sharp.x.scatter_forward()
+    smooth = sharp.x.array.reshape(-1, gdim)[:, 0] == 0
+    sums[:] = np.where(smooth[:, None], means, 0.)
+    total.x.scatter_forward()
+    total.name = "wall_normal"
+    n = FacetNormal(mesh)
+    length = ufl.sqrt(dot(total, total))
+    averaged = total / ufl.max_value(length, 1e-12)
+    use = ufl.And(ufl.ge(length, .5), ufl.ge(dot(averaged, n), np.cos(np.deg2rad(SHARP_WALL_ANGLE_DEG))))
+    return total, ufl.conditional(use, averaged, n)
+
+
 def _tangential_inflow(mesh, categories, solids, inlet):
     """Remove the wall-normal inflow on inlet edges shared with weak walls.
 
@@ -791,12 +857,14 @@ class _MixedFlowSystem:
             _tangential_inflow(mesh, categories, solids, inlet)
         dofs = locate_dofs_topological((W.sub(0), Vu), fd, categories.find(int(BndCat.INLET)))
         self.bcs.append(dirichletbc(inlet, dofs, W.sub(0)))
+        self.wall_normal_field, self.wall_normal = None, n
         if params.wall_model == "noslip":
             zero = Function(Vu)
             for tag in solids:
                 dofs = locate_dofs_topological((W.sub(0), Vu), fd, categories.find(int(tag)))
                 self.bcs.append(dirichletbc(zero, dofs, W.sub(0)))
         else:
+            self.wall_normal_field, self.wall_normal = _wall_normals(mesh, categories, solids)
             for tag in solids:
                 facets = categories.find(int(tag))
                 geometry = dolfinx.mesh.entities_to_geometry(mesh, fd, facets)
@@ -809,8 +877,8 @@ class _MixedFlowSystem:
                     S, _ = sub.collapse()
                     dofs = locate_dofs_topological((sub, S), fd, aligned)
                     self.bcs.append(dirichletbc(Function(S), dofs, sub))
-                self._normal_boundary(u, p, v, q, n, nu, int(tag), params.gamma_normal)
-                tangential = u - dot(u, n) * n
+                self._normal_boundary(u, p, v, q, n, self.wall_normal, nu, int(tag), params.gamma_normal)
+                tangential = u - dot(u, self.wall_normal) * self.wall_normal
                 self.F += self._wall_friction(tangential) * inner(tangential, v) * self.ds(int(tag))
         if params.side_top_boundary == "slip":
             all_markers = sorted(set().union(*mesh.comm.allgather(set(int(m) for m in markers.values))))
@@ -953,15 +1021,21 @@ class _MixedFlowSystem:
         self.convection.value = PETSc.ScalarType(value)
         self.stage.value = PETSc.ScalarType(value)
 
-    def _normal_boundary(self, u, p, v, q, n, nu, tag, penalty):
-        un, vn = dot(u, n), dot(v, n)
+    def _normal_boundary(self, u, p, v, q, n, m, nu, tag, penalty):
+        """Nitsche no penetration along the wall normal ``m``.
+
+        The traction ``σ(u) n - p n`` on a facet with normal ``n`` is
+        projected on ``m``; on planar walls ``m = n``.
+        """
+        um, vm = dot(u, m), dot(v, m)
         if penalty is None:
             height = 3 * ufl.CellVolume(self.mesh) / ufl.FacetArea(self.mesh)
             penalty = self.params.nitsche_penalty * (nu / height + self.params.wind_speed)
         def normal_stress(w):
-            return dot(self.stress(w) * n, n) if self.symmetric else nu * dot(grad(w) * n, n)
-        self.F += (-(normal_stress(u) - p) * vn
-                   - normal_stress(v) * un - q * un + penalty * un * vn) * self.ds(tag)
+            return dot(self.stress(w) * n, m) if self.symmetric else nu * dot(grad(w) * n, m)
+        alignment = dot(n, m)
+        self.F += (-(normal_stress(u) - p * alignment) * vm
+                   - (normal_stress(v) + q * alignment) * um + penalty * um * vm) * self.ds(tag)
 
     @timed("assembly_and_preconditioner_setup")
     def configure(self, options):
@@ -1651,7 +1725,8 @@ class _FlowSolver:
                 flux_imbalance = abs(net_flux) / max(absolute_flux, 1e-14)
                 solid_measure = system.ds(int(BndCat.WALL)) + system.ds(int(BndCat.ROOF)) + system.ds(int(BndCat.GROUND))
                 solid_area = system.integral(Constant(mesh, PETSc.ScalarType(1.)) * solid_measure)
-                wall_rms = np.sqrt(max(0., system.integral(dot(u, n)**2 * solid_measure)) / max(solid_area, 1e-14))
+                wall_normal = system.wall_normal  # the normal along which no penetration is imposed
+                wall_rms = np.sqrt(max(0., system.integral(dot(u, wall_normal)**2 * solid_measure)) / max(solid_area, 1e-14))
                 open_measure = sum((system.ds(int(tag)) for tag in [BndCat.OUTLET, BndCat.SIDE, BndCat.TOP]), system.ds(int(BndCat.INLET)))
                 inflow_flux = system.integral(ufl.max_value(-dot(u, n), 0.) * open_measure)
                 leakage = {}
@@ -1659,8 +1734,9 @@ class _FlowSolver:
                     measure = sum((system.ds(int(tag)) for tag in tags[1:]), system.ds(int(tags[0])))
                     area = system.integral(Constant(mesh, PETSc.ScalarType(1.)) * measure)
                     leakage[name] = {
-                        "flux": system.integral(abs(dot(u, n)) * measure),
-                        "rms": float(np.sqrt(max(0., system.integral(dot(u, n)**2 * measure)) / max(area, 1e-14))),
+                        "flux": system.integral(abs(dot(u, wall_normal)) * measure),
+                        "facet_flux": system.integral(abs(dot(u, n)) * measure),
+                        "rms": float(np.sqrt(max(0., system.integral(dot(u, wall_normal)**2 * measure)) / max(area, 1e-14))),
                     }
                     leakage[name]["fraction"] = leakage[name]["flux"] / max(inflow_flux, 1e-14)
                 slip_measure = system.ds(int(BndCat.SIDE)) + system.ds(int(BndCat.TOP))
@@ -1678,9 +1754,11 @@ class _FlowSolver:
                 "inflow_flux": inflow_flux,
                 "ground_leakage_flux": leakage["ground"]["flux"], "ground_normal_velocity_rms": leakage["ground"]["rms"],
                 "ground_leakage_fraction": leakage["ground"]["fraction"],
+                "ground_facet_flux": leakage["ground"]["facet_flux"],
                 "ground_leakage_tolerance": params.ground_leakage_tolerance,
                 "building_leakage_flux": leakage["building"]["flux"], "building_normal_velocity_rms": leakage["building"]["rms"],
                 "building_leakage_fraction": leakage["building"]["fraction"],
+                "building_facet_flux": leakage["building"]["facet_flux"],
                 "building_leakage_tolerance": params.building_leakage_tolerance,
                 "finite_fields": bool(finite),
             }

@@ -48,6 +48,7 @@ def run(params, **mesh_arguments):
             "ground_normal_velocity_rms", "building_normal_velocity_rms", "flux_imbalance"]
     return {"elapsed_s": time.perf_counter() - start,
             "nonlinear_iterations": solver.diagnostics["nonlinear_iterations"],
+            "ground_facet_flux_fraction": convergence["ground_facet_flux"] / convergence["inflow_flux"],
             **{key: convergence[key] for key in keys}}
 
 
@@ -75,7 +76,8 @@ def main():
             result = run(NavierStokesParameters(nitsche_penalty=penalty, **common), mesh=mesh, markers=tags)
             results.append({"case": "hills", "size_m": size, "nitsche_penalty": penalty, **result})
             if MPI.COMM_WORLD.rank == 0:
-                print(f"hills h={size:5.1f} C={penalty:6.0f}: ground {100 * result['ground_leakage_fraction']:.3f} %, "
+                print(f"hills h={size:5.1f} C={penalty:6.0f}: ground {100 * result['ground_leakage_fraction']:.3f} % "
+                      f"(facets {100 * result['ground_facet_flux_fraction']:.3f} %), "
                       f"imbalance {result['flux_imbalance']:.2e}, {result['nonlinear_iterations']} Newton, "
                       f"{result['elapsed_s']:.0f} s", flush=True)
         if args.city_mesh:
