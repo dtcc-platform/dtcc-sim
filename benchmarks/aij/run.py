@@ -42,7 +42,7 @@ def mesh_point(points, delta):
 
 
 def run(case_name, resolution="coarse", turbulence_model="mixing_length", wall_function_height=2e-3,
-        ratio=1.2, output=Path("output/benchmarks/aij"), save_fields=False, low_memory=False):
+        ratio=1.2, output=Path("output/benchmarks/aij"), low_memory=False):
     from mpi4py import MPI
 
     from dtcc_sim import NavierStokesParameters, NavierStokesSolver
@@ -78,7 +78,7 @@ def run(case_name, resolution="coarse", turbulence_model="mixing_length", wall_f
     directory = output / f"case-{case_name}" / f"{turbulence_model}-{resolution}"
     solver = NavierStokesSolver(mesh=mesh, markers=markers, params=params, output_dir=str(directory))
     started = time.perf_counter()
-    u, _ = solver.simulate(output_path=str(directory / "solution.xdmf") if save_fields else None)
+    u, _ = solver.simulate()
     solve_seconds = time.perf_counter() - started
 
     sections = {}
@@ -141,11 +141,10 @@ def main():
     parser.add_argument("--turbulence-model", choices=["mixing_length", "abl"], default="mixing_length")
     parser.add_argument("--wall-function-height", type=float, default=2e-3, help="δ [m]")
     parser.add_argument("--output", type=Path, default=Path("output/benchmarks/aij"))
-    parser.add_argument("--save-fields", action="store_true", help="Write the velocity and pressure as XDMF")
     parser.add_argument("--low-memory", action="store_true", help="Use the lower-memory linear solver settings")
     args = parser.parse_args()
     result = run(args.case, args.resolution, args.turbulence_model, args.wall_function_height,
-                 output=args.output, save_fields=args.save_fields, low_memory=args.low_memory)
+                 output=args.output, low_memory=args.low_memory)
     from mpi4py import MPI
     if MPI.COMM_WORLD.rank == 0:
         print(f"case {args.case} {args.turbulence_model} {args.resolution}: {result['mesh']['cells']} cells, "
