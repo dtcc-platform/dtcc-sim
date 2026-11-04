@@ -73,7 +73,8 @@ python -m benchmarks.aij.report output/benchmarks/aij
 
 `run` writes `output/benchmarks/aij/case-<case>/<model>-<resolution>/results.json`
 with the inflow fit, mesh, solver diagnostics, sampled and measured values
-and metrics. `report` writes `summary.md` and per-case figures: the approach
+and metrics, next to the solver's velocity and pressure (XDMF) and building
+surface (`city.vtu`) for viewing in ParaView. `report` writes `summary.md` and per-case figures: the approach
 flow, the measured sections and a scatter plot of the speeds.
 
 ## Results
