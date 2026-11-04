@@ -162,5 +162,18 @@ Repeated successful runs replace owned outputs and preserve unrelated files.
 Numerical failures preserve existing solution files and propagate through the
 dataset and service as failures.
 
+### MPI
+
+Flow runs from bounds work unchanged under `mpirun`, for example
+`mpirun -n 4 python demos/dataset_urban_wind.py`. Rank zero generates or loads
+the city mesh, all ranks solve the distributed problem and write XDMF output
+collectively, and the vertex fields are gathered onto the native `VolumeMesh`
+on rank zero. The other ranks return a `RankZeroResult` whose `info`, `plot`
+and `save` do nothing, and dtcc-sim informational messages come from rank zero
+only. On a two-core container the 27,474-tetrahedron Poseidon mesh took 181 s
+on two ranks against 252 s on one; mesh generation and setup do not speed up,
+and the velocity preconditioner weakens as ranks are added. DTCC `VolumeMesh`
+input (`mesh=`) still requires one rank.
+
 See [numerical verification](wind-verification.md) for reference errors,
 measurements and city limitations.

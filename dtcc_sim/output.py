@@ -4,6 +4,33 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 
+class RankZeroResult:
+    """Result on MPI ranks other than zero when the result is gathered on rank zero.
+
+    Distributed solves collect native results on rank zero. On the other
+    ranks, ``info``, ``plot`` and ``save`` do nothing, so the same script runs
+    serially and under ``mpirun`` with output from rank zero only. Other
+    attributes are not available.
+    """
+
+    def info(self, *args, **kwargs):
+        return None
+
+    def plot(self, *args, **kwargs):
+        return None
+
+    def save(self, *args, **kwargs):
+        return None
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        raise AttributeError(f"{name!r} is not available: the result is held on MPI rank 0")
+
+    def __repr__(self):
+        return "RankZeroResult()"
+
+
 def _output_directory(directory):
     """Validate a supplied directory without creating it during configuration."""
     if directory is None:

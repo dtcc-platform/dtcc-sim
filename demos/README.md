@@ -7,6 +7,10 @@ conda activate fenicsx-env
 python demos/urban_heat_cooling.py
 ```
 
+The wind demos also run unchanged in parallel, for example
+`mpirun -n 4 python demos/dataset_urban_wind.py`; output comes from rank zero.
+See [stationary flow](../docs/stationary-flow.md#mpi).
+
 Follow the [demo guidelines](../docs/demo-guidelines.md) when adding or revising
 examples. See [CONTRIBUTING.md](../CONTRIBUTING.md#demos) for verification and
 [installation](../docs/installation.md) for dependencies. Close plots and viewers
