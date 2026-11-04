@@ -17,12 +17,7 @@ profile and the measured mean velocity components and turbulent kinetic
 energy. Reading `.xls` files needs `xlrd`, in the `benchmarks` extra.
 
 The page states no licence for the data, so the files are not part of this
-repository. The published results were computed from files with these
-SHA-256 checksums:
-
-```text
-c2fab8c1494e777381c3819cb8874a10d3f1c5595f701d3f83119d09bad74cff  CaseA(1_1_2).xls
-cf40db4df01abb9c5e304d192f978aa6c0f979ccc2c263d3968716940ecd7cc6  CaseB(4_4_1).xls
-```
-
-Check with `shasum -a 256 *.xls` (macOS) or `sha256sum *.xls` (Linux).
+repository. `python -m pytest tests/test_benchmarks_aij.py` checks that both
+workbooks are found and read with the point counts above. File checksums are
+not a reliable check: opening a workbook in a spreadsheet program can rewrite
+its metadata without changing the data.
