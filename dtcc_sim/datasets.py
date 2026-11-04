@@ -7,6 +7,7 @@ automatically register themselves with dtcc_core.datasets.
 """
 
 from .meshing import CityMeshSettings
+from .output import RankZeroResult
 from .timing import phase as timing_phase, timed_run
 
 from typing import Optional, Literal
@@ -1523,6 +1524,8 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         })
         sim = solver_type(bounds=bounds, params=params, output_dir=args.output_dir)
         result = sim.simulate()
+        if isinstance(result, RankZeroResult):
+            return result  # rank zero holds and serializes the result
 
         with timing_phase("export"):
             if args.format:

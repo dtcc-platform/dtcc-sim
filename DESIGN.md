@@ -73,6 +73,10 @@ inflow, wall and top are chosen together so that the log-law profile is an
 exact continuous solution over flat terrain; horizontal homogeneity is its
 verification. See [atmospheric boundary layer](docs/atmospheric-boundary-layer.md).
 
+Scripts behave the same serially and under `mpirun`. Distributed solves
+gather native results on rank zero; other ranks receive a stand-in whose
+output methods do nothing, and informational logging comes from rank zero.
+
 Preserve the input coordinate frame in returned models, backend functions and
 exported meshes, including refined meshes. Restore supplied meshes exactly on
 success and failure; retain original coordinates for serialization. Geographic

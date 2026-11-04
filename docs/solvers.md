@@ -39,7 +39,9 @@ result.info()
 
 Pass a DTCC `VolumeMesh` to a 3D solver; conversion to FEniCSx stays inside Sim.
 Heat and flow require tagged boundary faces, supplied by `BoxMesh`. Native DTCC
-mesh conversion currently uses one MPI rank. Heat and flow use the real PETSc
+mesh conversion currently uses one MPI rank. Flow solvers given bounds run
+under MPI and return the native result on rank zero; see
+[stationary flow](stationary-flow.md#mpi). Heat and flow use the real PETSc
 environment; Helmholtz uses the complex environment.
 
 All finite-element solvers and smooth reconstruction use Float64 local

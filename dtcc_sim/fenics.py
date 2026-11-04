@@ -172,7 +172,9 @@ ERROR = LogLevel.ERROR
 
 
 def info(message: str) -> None:
-    """Log an informational message."""
+    """Log an informational message on MPI rank zero."""
+    if MPI.COMM_WORLD.rank != 0:
+        return
     if _sim_logger is not None:
         _sim_logger.info(message)
     else:

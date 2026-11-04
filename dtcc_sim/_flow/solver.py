@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ..timing import phase as timing_phase, timed, timed_run
 from ..meshing import prepare_city_mesh, publish_mesh_provenance
-from ..output import _output_directory, _solution_path, _export_city_surface
+from ..output import RankZeroResult, _output_directory, _solution_path, _export_city_surface
 from ..coordinates import input_crs, write_coordinate_frame
 from .parameters import KAPPA, _FlowParameters
 
@@ -404,25 +404,51 @@ def make_inlet_velocity_expression(
 # ---------------------------------------------------------------------------
 
 
+def _owned_vertex_values(mesh: dolfinx.mesh.Mesh, function: Function) -> np.ndarray:
+    """Values of ``function`` at the geometry nodes owned by this rank."""
+    owned = mesh.geometry.index_map().size_local
+    size = int(np.prod(function.ufl_shape)) if function.ufl_shape else 1
+    if owned == 0:
+        return np.zeros((0, size))
+    function.x.scatter_forward()
+    dofmap = np.asarray(mesh.geometry.dofmaps[0])
+    cells = np.empty(len(mesh.geometry.x), dtype=np.int32)
+    cells[dofmap.ravel()] = np.repeat(np.arange(len(dofmap), dtype=np.int32), dofmap.shape[1])
+    points = np.ascontiguousarray(mesh.geometry.x[:owned], dtype=np.float64)
+    return np.asarray(function.eval(points, cells[:owned]), dtype=np.float64).reshape(owned, size)
+
+
 def _dolfinx_to_volume_mesh(
     dolfinx_mesh: dolfinx.mesh.Mesh,
     u_sol: Function,
     p_sol: Function,
     volume_mesh_dtcc: Any,
 ) -> Any:
-    """Map dolfinx solution fields onto a dtcc-core VolumeMesh.
+    """Gather dolfinx solution fields onto a dtcc-core VolumeMesh on rank zero.
 
-    Evaluates velocity and pressure directly at mesh vertices (no P2→P1
-    interpolation) and attaches ``velocity``, ``pressure``, and ``speed``
-    fields in dtcc-core vertex ordering.
+    Every rank evaluates velocity and pressure directly at its owned mesh
+    vertices (no P2→P1 interpolation); rank zero, which holds the VolumeMesh,
+    collects them and attaches ``velocity``, ``pressure`` and ``speed`` fields
+    in dtcc-core vertex ordering. Returns the VolumeMesh on rank zero and None
+    on other ranks. Collective over the mesh communicator.
     """
-    from dtcc_core.model import Field as DtccField
+    comm = dolfinx_mesh.comm
+    owned = dolfinx_mesh.geometry.index_map().size_local
+    local = (
+        np.array(dolfinx_mesh.geometry.x[:owned], dtype=np.float64),
+        _owned_vertex_values(dolfinx_mesh, u_sol),
+        _owned_vertex_values(dolfinx_mesh, p_sol),
+    )
+    parts = comm.gather(local, root=0)
+    if comm.rank != 0:
+        return None
+    coordinates, velocity, pressure = (np.concatenate([part[i] for part in parts]) for i in range(3))
+    return _attach_wind_fields(volume_mesh_dtcc, coordinates, velocity, pressure.ravel())
 
-    # Evaluate FE functions directly at mesh vertices.
-    # This avoids projected/interpolated output and returns vertex values.
-    u_arr = _evaluate_function_at_vertices(dolfinx_mesh, u_sol)
-    p_arr = _evaluate_function_at_vertices(dolfinx_mesh, p_sol).ravel()
-    fem_verts = np.asarray(dolfinx_mesh.geometry.x, dtype=np.float64)
+
+def _attach_wind_fields(volume_mesh_dtcc: Any, fem_verts: np.ndarray, u_arr: np.ndarray, p_arr: np.ndarray) -> Any:
+    """Attach vertex velocity, pressure and speed matched by coordinates."""
+    from dtcc_core.model import Field as DtccField
 
     # ---- map to dtcc-core vertex ordering ----
     dtcc_verts = np.asarray(volume_mesh_dtcc.vertices, dtype=np.float64)  # (M,3)
@@ -1540,6 +1566,10 @@ class _FlowSolver:
                 f"Saved velocity to {vel_path} and pressure to {pres_path}"
             )
 
+    def _native_output(self, mesh: dolfinx.mesh.Mesh) -> bool:
+        """Whether a native VolumeMesh, held on rank zero, receives the fields."""
+        return bool(mesh.comm.allreduce(int(self.volume_mesh_dtcc is not None), op=MPI.MAX))
+
     def _finalize_result(
         self,
         mesh: dolfinx.mesh.Mesh,
@@ -1552,13 +1582,12 @@ class _FlowSolver:
     ) -> Any:
         """Handle optional XDMF output and return type conversion."""
         result = (u_sol, p_sol)
-        if self.volume_mesh_dtcc is not None:
-            if mesh.comm.size > 1:
-                if mesh.comm.rank == 0:
-                    warning("Native VolumeMesh output requires one MPI rank; returning dolfinx fields")
-            else:
-                result = native_result if native_result is not None else _dolfinx_to_volume_mesh(mesh, u_sol, p_sol, self.volume_mesh_dtcc)
+        if self._native_output(mesh):
+            if mesh.comm.rank == 0:
+                result = native_result
                 result.simulation_diagnostics = dict(self.diagnostics)
+            else:
+                result = RankZeroResult()
         with timing_phase("export"):
             if output_path is not None:
                 self._write_solution_xdmf(mesh, u_sol, p_sol, output_path, prepared=xdmf_fields)
@@ -1606,8 +1635,7 @@ class _FlowSolver:
                 with timing_phase("postprocessing"):
                     native_result = (
                         _dolfinx_to_volume_mesh(mesh, u, p, self.volume_mesh_dtcc)
-                        if self.volume_mesh_dtcc is not None and mesh.comm.size == 1
-                        else None
+                        if self._native_output(mesh) else None
                     )
                     xdmf_fields = self._prepare_xdmf_fields(mesh, u, p) if output_path else None
             finally:
