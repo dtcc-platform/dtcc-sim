@@ -29,8 +29,10 @@ RESOLUTIONS = {"coarse": 4, "medium": 6, "fine": 8}
 GRAD_DIV = .05
 """Grad-div stabilization γ relative to U_H h, the ratio of the city wind demos."""
 
-LOW_MEMORY_PETSC = {"fieldsplit_u_pc_type": "bjacobi", "ksp_gmres_restart": 30}
-"""Velocity block Jacobi without overlap copies and shorter FGMRES restarts."""
+LOW_MEMORY_PETSC = {"fieldsplit_u_pc_type": "bjacobi", "fieldsplit_u_sub_pc_factor_levels": 0,
+                    "ksp_gmres_restart": 60, "ksp_max_it": 3000}
+"""Velocity block Jacobi with ILU(0) and no overlap copies: about two thirds of
+the default memory, with more linear iterations."""
 
 
 def mesh_point(points, delta):

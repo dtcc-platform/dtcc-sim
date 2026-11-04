@@ -67,9 +67,13 @@ component.
 
 ```bash
 python -m benchmarks.aij.run --case A --resolution coarse
-python -m benchmarks.aij.run --case B --resolution coarse --turbulence-model abl
+python -m benchmarks.aij.run --case B --resolution medium --low-memory
 python -m benchmarks.aij.report output/benchmarks/aij
 ```
+
+The default linear solver needs about 6 GB for 106,488 cells. `--low-memory`
+uses block Jacobi ILU(0) for the velocity block and more linear iterations;
+it needs about 4 GB for 141,864 cells and gives the same solution.
 
 `run` writes `output/benchmarks/aij/case-<case>/<model>-<resolution>/results.json`
 with the inflow fit, mesh, solver diagnostics, sampled and measured values
@@ -95,6 +99,12 @@ for the speed |U| / U_H:
 | B | coarse (H/4) | 75,024 | 7 | 583 s | vertical | 0.54 | 0.74 | −0.12 | 0.85 |
 | | | | | | z = 12.5 mm | 0.56 | 0.88 | −0.16 | 0.90 |
 | | | | | | all 224 points | 0.55 | 0.81 | −0.14 | 0.87 |
+| B | medium (H/6) | 141,864 | 9 | 996 s | vertical | 0.54 | 0.72 | −0.14 | 0.83 |
+| | | | | | z = 12.5 mm | 0.52 | 0.90 | −0.17 | 0.90 |
+| | | | | | all 224 points | 0.53 | 0.81 | −0.16 | 0.86 |
+
+Case B medium used `--low-memory`; with it, case B coarse reproduces the
+default-settings solution to 1e-10 U_H at every measurement point.
 
 - **Case A** meets the VDI 3783-9 hit rate of 0.66 overall and in every
   section at the medium resolution. The approach flow, the flow around the
@@ -105,15 +115,16 @@ for the speed |U| / U_H:
   −0.47 U_H against −0.14 to −0.16 U_H at x = 0.75b and 1.25b. Above 1.25H the
   computed speeds are 6–16 % low, as the fitted log law is below the measured
   inflow there.
-- **Case B** misses the hit rate. The wake behind the slab recovers too fast:
-  from x = 4b to 8b the computed speeds in the wake are well above the
-  measured ones, and the overall fractional bias of −0.14 is an
-  overprediction.
-- **Mesh sensitivity.** From coarse to medium the computed speeds at the case
-  A measurement points change by 0.028 U_H on average and at most 0.23 U_H,
-  near the roof edge; the metrics change by at most 0.05. Case B medium and
-  the fine levels need more than 7 GB of memory (about 6 GB for 106,488 cells
-  with the default solver settings), so mesh independence is not established.
+- **Case B** misses the hit rate at both resolutions. The wake behind the
+  slab recovers too fast: from x = 4b to 8b the computed speeds in the wake
+  are well above the measured ones, and the overall fractional bias of −0.16
+  is an overprediction. The coarse and medium wakes nearly coincide, so the
+  discrepancy comes from the closure, not the mesh.
+- **Mesh sensitivity.** From coarse to medium the computed speeds at the
+  measurement points change on average by 0.028 U_H (case A) and 0.021 U_H
+  (case B), and at most by 0.23 U_H near the building edges; the overall hit
+  rates change by 0.02. The fine level has not been run, so mesh independence
+  is not established.
 - **Equilibrium closure.** With `--turbulence-model abl` Newton iteration
   stalls for case A at a residual of 2.7e-4, 2 % of its initial value. The
   closure sets the eddy viscosity from the wall distance alone, so it is small
