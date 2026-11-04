@@ -110,7 +110,9 @@ def profiles(results, name, along, station_axis, length, scale_label, path, stat
 def scatter(results, path):
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(1, len(results), figsize=(3.3 * len(results), 3.5), squeeze=False)
+    fig, axes = plt.subplots(1, len(results), figsize=(3.3 * len(results), 3.9), squeeze=False)
+    fig.suptitle(f"Case {results[0]['case']}: {results[0]['title']}, computed against measured speed",
+                 fontsize=10, color=INK)
     for ax, r in zip(axes[0], results):
         style(ax)
         observed = np.concatenate([np.linalg.norm(s["observed"], axis=1) for s in r["sections"].values()])
@@ -125,7 +127,7 @@ def scatter(results, path):
         ax.set(xlim=(0, top), ylim=(0, top), aspect="equal")
         ax.set_xlabel("measured |U| / U_H", fontsize=8, color=MUTED)
         ax.set_ylabel("computed |U| / U_H", fontsize=8, color=MUTED)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, .95))
     fig.savefig(path, dpi=150)
     plt.close(fig)
 
