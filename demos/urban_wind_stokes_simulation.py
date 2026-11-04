@@ -1,10 +1,10 @@
-"""Linear stationary Poseidon airflow with Stokes equations and an equilibrium ABL eddy viscosity."""
+"""Linear stationary Chalmers Johanneberg airflow with Stokes equations and an equilibrium ABL eddy viscosity."""
 
 from dtcc_sim import StokesParameters, StokesSolver
 
-center_x = 319995.962899
-center_y = 6399009.716755
-L = 200.0
+center_x = 319970.0
+center_y = 6397910.0
+L = 250.0
 bounds = (center_x-L/2, center_y-L/2, center_x+L/2, center_y+L/2)
 params = StokesParameters(
     mesh_max_mesh_size=12.5, mesh_domain_height=80., wind_speed=5., wind_dir_deg=270.,

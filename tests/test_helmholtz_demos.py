@@ -122,7 +122,7 @@ def test_box_demo_runs_twice_without_arguments(demo_runtime, monkeypatch, solver
 
 
 @pytest.mark.skipif(os.environ.get("DTCC_RUN_DEMOS") != "1", reason="Live city data is opt-in")
-def test_noise_demo_runs_twice_and_reuses_mesh(demo_runtime, monkeypatch):
+def test_noise_demo_runs_twice_and_reuses_mesh(demo_runtime, monkeypatch, recwarn):
     import json
     import sys
     import numpy as np
@@ -131,6 +131,11 @@ def test_noise_demo_runs_twice_and_reuses_mesh(demo_runtime, monkeypatch):
     runs = []
     for index in range(2):
         state = runpy.run_path(str(DEMO_DIR / "dataset_urban_noise.py"))
+        assert not any(
+            "Gaussian source centre" in str(warning.message)
+            and "outside the computational mesh" in str(warning.message)
+            for warning in recwarn
+        )
         run = Path(state["output_dir"])
         runs.append(run)
         assert state["noise"].dataset_context.request.dataset_name == "urban_noise_simulation"

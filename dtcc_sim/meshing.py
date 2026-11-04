@@ -44,6 +44,18 @@ def _mesh_input_hashes(mesh_path, *, relative=False):
     }
 
 
+def _supported_city_arguments(arguments):
+    from dtcc_core import datasets
+
+    model = getattr(datasets.city_volume_mesh, "ArgsModel", None)
+    if model is not None and "repair_boundary_corners" not in model.model_fields:
+        arguments = {
+            key: value for key, value in arguments.items()
+            if key != "repair_boundary_corners"
+        }
+    return arguments
+
+
 class CityMeshSettings(BaseModel):
     """Core city-volume geometry inputs shared by scalar and flow solvers."""
 
@@ -112,7 +124,7 @@ class CityMeshParameters:
         """Resolve and record the dataset defaults without generating a mesh."""
         from dtcc_core import datasets
 
-        supplied = dict(
+        supplied = _supported_city_arguments(dict(
             {"repair_boundary_corners": True, **self.options},
             bounds=list(self.bounds),
             max_mesh_size=self.h,
@@ -120,7 +132,7 @@ class CityMeshParameters:
             min_building_detail=self.min_building_detail,
             boundary_face_markers=True,
             format=None,
-        )
+        ))
         unknown = set(supplied).difference(
             datasets.city_volume_mesh.ArgsModel.model_fields
         )
@@ -249,7 +261,7 @@ def prepare_city_mesh(bounds, settings):
         if hasattr(bounds, "xmin")
         else tuple(bounds)
     )
-    arguments = dict(
+    arguments = _supported_city_arguments(dict(
         bounds=box,
         max_mesh_size=settings.mesh_max_mesh_size,
         domain_height=settings.mesh_domain_height,
@@ -260,7 +272,7 @@ def prepare_city_mesh(bounds, settings):
         lod2_method=settings.mesh_lod2_method,
         flat_ground=settings.mesh_flat_ground,
         repair_boundary_corners=settings.mesh_repair_boundary_corners,
-    )
+    ))
     if settings.mesh_cache_dir is None:
         mesh = datasets.city_volume_mesh(**arguments)
         return mesh, dict(

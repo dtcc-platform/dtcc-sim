@@ -1,4 +1,4 @@
-"""Wind and noise demonstrations use one geographic domain convention."""
+"""City demonstrations use one geographic domain convention."""
 
 import ast
 from pathlib import Path
@@ -18,9 +18,10 @@ import pytest
         ("urban_heat_cooling", "mesh_domain_height"),
         ("urban_heat_heatwave", "mesh_domain_height"),
         ("smooth_reconstruction", "mesh_domain_height"),
+        ("dataset_traffic", None),
     ],
 )
-def test_poseidon_demo_domain(name, height_parameter):
+def test_chalmers_demo_domain(name, height_parameter):
     path = Path(__file__).resolve().parents[1] / "demos" / f"{name}.py"
     tree = ast.parse(path.read_text())
     constants = {
@@ -31,9 +32,9 @@ def test_poseidon_demo_domain(name, height_parameter):
         and node.targets[0].id in {"center_x", "center_y", "L"}
     }
     assert constants == {
-        "center_x": 319995.962899,
-        "center_y": 6399009.716755,
-        "L": 200.0,
+        "center_x": 319970.0,
+        "center_y": 6397910.0,
+        "L": 250.0,
     }
     heights = [
         ast.literal_eval(keyword.value)
@@ -42,7 +43,7 @@ def test_poseidon_demo_domain(name, height_parameter):
         for keyword in node.keywords
         if keyword.arg == height_parameter
     ]
-    assert heights == [80.0]
+    assert heights == ([] if height_parameter is None else [80.0])
 
 
 @pytest.mark.parametrize(

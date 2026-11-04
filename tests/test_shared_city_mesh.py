@@ -5,6 +5,7 @@ import json
 
 import numpy as np
 import pytest
+from pydantic import create_model
 
 from dtcc_core import BoxMesh
 from dtcc_sim import meshing
@@ -18,6 +19,14 @@ from dtcc_sim.meshing import (
 
 @pytest.fixture
 def generated(monkeypatch):
+    from dtcc_core import datasets
+
+    legacy = create_model(
+        "CornerRepairCityArgs",
+        __base__=datasets.city_volume_mesh.ArgsModel,
+        repair_boundary_corners=(bool, False),
+    )
+    monkeypatch.setattr(datasets.city_volume_mesh, "ArgsModel", legacy)
     calls = []
 
     def build(arguments, path):
@@ -113,6 +122,41 @@ def test_uncached_generation_preserves_returned_native_model(monkeypatch):
     assert seen["lod"] == "lod2" and seen["repair_boundary_corners"] is True
     assert seen["flat_ground"] is False
     assert record["reused"] is False
+
+
+def test_cached_request_omits_corner_option_when_core_does_not_expose_it(monkeypatch):
+    from dtcc_core import datasets
+
+    original = datasets.city_volume_mesh.ArgsModel
+    fields = {name: (field.annotation, field) for name, field in original.model_fields.items()
+              if name != "repair_boundary_corners"}
+    current = create_model("CityArgsWithoutCornerRepair", **fields)
+    monkeypatch.setattr(datasets.city_volume_mesh, "ArgsModel", current)
+    args = CityMeshParameters((0, 0, 20, 20), h=5,
+                             options={"repair_boundary_corners": True}).resolved_arguments()
+    assert "repair_boundary_corners" not in args
+    assert args["max_mesh_size"] == 5
+    with pytest.raises(ValueError, match="Unknown city meshing options"):
+        CityMeshParameters((0, 0, 20, 20), h=5,
+                           options={"unknown_geometry_option": True}).resolved_arguments()
+
+
+def test_uncached_request_omits_corner_option_when_core_does_not_expose_it(monkeypatch):
+    from dtcc_core import datasets
+
+    native = BoxMesh(1, 1, 1)
+    seen = {}
+
+    def generate(**arguments):
+        seen.update(arguments)
+        return native
+
+    generate.ArgsModel = create_model("CityArgsWithoutCornerRepair")
+    monkeypatch.setattr(datasets, "city_volume_mesh", generate)
+    mesh, record = prepare_city_mesh((0, 0, 20, 20), CityMeshSettings())
+    assert mesh is native
+    assert "repair_boundary_corners" not in seen
+    assert record["arguments"] == seen
 
 
 def test_scalar_dataset_schemas_expose_common_geometry_settings():

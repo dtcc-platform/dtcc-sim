@@ -96,9 +96,10 @@ versions; files are verified before reuse. An explicit `mesh_cache_dir` shares
 meshes across runs and numerical runtimes without sharing solution artifacts.
 Generated meshes retain their request and cache-reuse provenance.
 
-The Gothenburg city demos use a terrain-following 200 × 200 × 80 m domain,
+The Gothenburg city demos use a terrain-following 250 × 250 × 80 m domain,
 12.5 m target size, 0.5 m minimum building detail, catalogue LOD2 roofs and
-boundary-corner repair. They share `output/city-mesh-cache`. The air-quality
+boundary-corner repair when exposed by Core. They share
+`output/city-mesh-cache`. The air-quality
 sensor demo retains its Stockholm bounds, observation-coverage settings and
 LOD1 geometry. Its larger LOD2 volume currently fails during TetGen generation;
 meshing failures remain explicit, without automatic LOD fallback.
