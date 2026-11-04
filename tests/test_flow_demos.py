@@ -49,7 +49,7 @@ def test_city_stationary_demo_on_frozen_mesh(name, monkeypatch, tmp_path):
         assert kwargs["repair_boundary_corners"] is True
         bounds = kwargs["bounds"]
         width, height = (bounds.xmax-bounds.xmin, bounds.ymax-bounds.ymin) if hasattr(bounds, "xmin") else (bounds[2]-bounds[0], bounds[3]-bounds[1])
-        assert width == 200 and height == 200
+        assert width == 250 and height == 250
         return copy.deepcopy(prepared)
     city_mesh.ArgsModel = datasets.city_volume_mesh.ArgsModel
     city_mesh.validate = datasets.city_volume_mesh.validate

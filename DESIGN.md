@@ -49,7 +49,8 @@ Built-in wind profiles use height above the domain base.
 
 Stationary incompressible flow uses flexible GMRES with a velocity/pressure
 Schur split. The velocity preconditioner uses overlapping additive Schwarz
-with local ILU(0); the algebraic pressure Schur approximation uses BoomerAMG
+with local ILU(0), or ILU(1) with reverse Cuthill–McKee ordering for
+eddy-viscosity closures; the algebraic pressure Schur approximation uses BoomerAMG
 for traction-determined pressure. A verified constant-pressure nullspace uses
 diagonal pressure preconditioning to avoid amplifying the arbitrary gauge mode.
 Build these blocks from the actual Jacobian without assembling an unused
