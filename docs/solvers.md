@@ -111,7 +111,9 @@ Bounds-based heat, flow and reconstruction solvers share `CityMeshSettings`.
 Their parameters and application datasets expose `mesh_lod`, `mesh_lod2_method`,
 `mesh_flat_ground`, `mesh_min_building_detail`, `mesh_repair_boundary_corners`
 and `mesh_cache_dir`, alongside target size, domain height and terrain raster
-controls. The general API default is LOD1; the city demos explicitly use
+controls. Corner repair is forwarded only when Core exposes that option;
+cache identity records the effective Core request. The general API default is
+LOD1; the city demos explicitly use
 `mesh_lod="lod2"`. The Stockholm sensor demo explicitly uses LOD1: its larger
 LOD2 volume currently fails inside TetGen. This is a geometry limitation, not
 an automatic runtime fallback. Catalogue reconstruction fits roof geometry to source points;

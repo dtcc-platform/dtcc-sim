@@ -1,10 +1,10 @@
-"""Stationary Poseidon airflow with a mixing-length eddy viscosity and log-law walls."""
+"""Stationary Chalmers Johanneberg airflow with a mixing-length eddy viscosity and log-law walls."""
 
 from dtcc_sim import NavierStokesParameters, NavierStokesSolver
 
-center_x = 319995.962899
-center_y = 6399009.716755
-L = 200.0
+center_x = 319970.0
+center_y = 6397910.0
+L = 250.0
 bounds = (center_x-L/2, center_y-L/2, center_x+L/2, center_y+L/2)
 params = NavierStokesParameters(
     mesh_max_mesh_size=12.5, mesh_domain_height=80., wind_speed=5., wind_dir_deg=270.,

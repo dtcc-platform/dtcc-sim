@@ -2,9 +2,9 @@
 
 from dtcc_sim import HeatParameters, HeatSolver
 
-center_x = 319995.962899
-center_y = 6399009.716755
-L = 200.0
+center_x = 319970.0
+center_y = 6397910.0
+L = 250.0
 bounds = (center_x - L / 2, center_y - L / 2, center_x + L / 2, center_y + L / 2)
 
 params = HeatParameters(
