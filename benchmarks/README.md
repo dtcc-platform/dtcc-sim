@@ -12,9 +12,10 @@ benchmarks are in [`tools/benchmarks`](../tools/benchmarks/README.md).
 
 ## Reference data
 
-Measurement data are not redistributed with DTCC Sim. Each case directory
-names the files to download and where to place them; `benchmarks/data/` is
-ignored by Git. Install the reader dependencies with
+Measurement data are not redistributed with DTCC Sim.
+[`data/README.md`](data/README.md) lists the files to download and where to
+place them; Git ignores everything in `benchmarks/data/` except the README
+files. Install the reader dependencies with
 `uv pip install -e ".[benchmarks]"` or, in the Conda FEniCSx environment,
 `conda install scipy xlrd`.
 

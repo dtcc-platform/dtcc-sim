@@ -16,9 +16,10 @@ model size of Meng and Hibi. Case B states b = 50 mm.
 
 ## Data
 
-Download `CaseA(1_1_2).xls` and `CaseB(4_4_1).xls` from the AIJ page and place
-them in `benchmarks/data/aij/`. The page states no licence for the data, so
-they are not part of this repository.
+Download `CaseA(1_1_2).xls` and `CaseB(4_4_1).xls` from the AIJ page into
+`benchmarks/data/aij/`; [that directory's README](../data/aij/README.md) lists
+their contents and checksums. The page states no licence for the data, so they
+are not part of this repository.
 
 ## Setup
 
