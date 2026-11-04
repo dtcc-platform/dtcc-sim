@@ -322,9 +322,10 @@ closure with wind-tunnel measurements of the mean velocity around an isolated
 high-rise building (case A) and a slab normal to the wind (case B). For case A
 the VDI 3783-9 hit rate of the speed is 0.76 over 186 points, above the
 required 0.66; the roof separation is too weak and the reverse flow near the
-ground behind the building too strong. For case B it is 0.55 over 224 points:
-the wake behind the slab recovers too fast. Mesh independence has not been
-established. The `abl` closure does not reach a stationary solution for case
+ground behind the building too strong. For case B it is 0.53–0.55 over 224
+points at two resolutions: the wake behind the slab recovers too fast, a
+closure error that mesh refinement does not change. Mesh independence has not
+been established. The `abl` closure does not reach a stationary solution for case
 A; its eddy viscosity depends on the wall distance alone.
 
 ## Limitations
