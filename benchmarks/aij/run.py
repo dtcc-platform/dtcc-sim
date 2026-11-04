@@ -54,7 +54,7 @@ def run(case_name, resolution="coarse", turbulence_model="mixing_length", wall_f
     if not case.path.exists():
         raise FileNotFoundError(
             f"{case.path} not found; download {case.workbook} from "
-            "https://www.aij.or.jp/jpn/publish/cfdguide/index_e.htm")
+            "https://www.aij.or.jp/jpn/publish/cfdguide/index_e.htm (see benchmarks/data/aij/README.md)")
     data = read_workbook(case.path, case.length)
     H, delta = case.height, wall_function_height
     friction_velocity, z0, fit_rms = fit_log_law(data.inflow_z, data.inflow_speed, H)
