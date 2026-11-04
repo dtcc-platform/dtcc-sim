@@ -111,6 +111,44 @@ contain explicit PETSc settings so comparisons do not depend on library defaults
 Use `--profile asm_selfp_gauge` for the closed-cavity default's diagonal
 pressure preconditioner.
 
+## Eddy-viscosity closures
+
+The `abl` and `mixing_length` closures make the velocity block much harder:
+ILU(0) reaches the 500-iteration limit in the Stokes initialization of city
+meshes, so they use ILU(1). With the natural ordering of the mixed space, ILU(1)
+factorizations and triangular solves took two thirds of a city solve. Reverse
+Cuthill–McKee ordering of the local velocity blocks
+(`fieldsplit_u_sub_pc_factor_mat_ordering_type=rcm`) keeps the fill low and is
+the default for these closures.
+
+Candidates were compared on the 27,474-tetrahedron Poseidon mesh with
+`mixing_length`, log-law walls, grad-div 3 and backflow 2, in serial on a
+two-core Linux container. Times are complete `simulate()` runs; Newton counts
+of identical runs vary by one or two.
+
+| Velocity block / Schur factorization | Time, s | Newton | Linear iterations, Stokes / Newton | Outcome |
+| --- | ---: | ---: | ---: | --- |
+| ASM ILU(1), natural ordering | 239 | 14 | 147 / 301 | Converged; 79 s factorization, 74 s solves |
+| ASM ILU(1), reverse Cuthill–McKee (default) | **133** | 14 | 174 / 343 | Converged; 12 s factorization, 28 s solves |
+| ASM ILU(1), nested dissection | 147 | 13 | 177 / 310 | Converged |
+| ASM ILU(1) RCM, upper Schur factorization | 138 | 15 | 172 / 325 | Converged |
+| ASM ILU(1) RCM, full Schur factorization | 170 | 13 | 206 / 384 | Converged |
+| ASM ILU(1) RCM, pressure mass `1/(ν_eff + γ)` Schur | 329 | 14 | 111 / 402 | Converged; the extra preconditioning matrix costs 200 s of assembly |
+| GAMG, unsmoothed aggregation, two SOR sweeps | 181 | 13 | 201 / 301 | Converged |
+| GAMG, one SOR sweep, threshold 0.02 | 157 | 10 | 291 / 388 | Converged |
+| Full MUMPS LU | 189 | 7 | – | Converged; 150 s of factorizations |
+| ASM ILU(0) RCM | – | – | 500 in Stokes | Failed |
+| ASM ILU(1) RCM, preconditioner rebuilt every second Newton step | – | – | 500 in Newton | Failed |
+| BoomerAMG | – | – | 500 in Stokes | Failed |
+
+The reordering gave the same speedup on a second realization of the Poseidon
+mesh (231 to 126 s), and 76 s on two ranks against 181 s with the natural
+ordering. Velocities agree with LU to a relative norm of `1e-9`, and those of
+the reordered and natural-ordering solves to `2.5e-8`. With constant `nu_t=2`
+the reordering changed the ILU(0) time from 63 to 60 s, and that default is
+unchanged. GAMG, with a lower Newton count and no ILU fill, may scale better
+on larger meshes and more ranks; it has not been measured there.
+
 ## Scope
 
 These timings select a practical configuration for this mesh and machine.

@@ -98,8 +98,16 @@ DEFAULT_STATIONARY_PETSC = {
 }
 
 
-VARIABLE_VISCOSITY_PETSC = {"fieldsplit_u_sub_pc_factor_levels": 1}
-"""Velocity-block ILU(1) for spatially varying eddy viscosity."""
+VARIABLE_VISCOSITY_PETSC = {
+    "fieldsplit_u_sub_pc_factor_levels": 1,
+    "fieldsplit_u_sub_pc_factor_mat_ordering_type": "rcm",
+}
+"""Velocity-block ILU(1) for spatially varying eddy viscosity.
+
+Reverse Cuthill–McKee ordering of each local block keeps the ILU(1) fill, and
+with it the factorization and triangular-solve cost, far below the natural
+ordering of the mixed space.
+"""
 
 
 def _global_max_positive_marker(

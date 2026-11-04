@@ -170,9 +170,11 @@ the city mesh, all ranks solve the distributed problem and write XDMF output
 collectively, and the vertex fields are gathered onto the native `VolumeMesh`
 on rank zero. The other ranks return a `RankZeroResult` whose `info`, `plot`
 and `save` do nothing, and dtcc-sim informational messages come from rank zero
-only. On a two-core container the 27,474-tetrahedron Poseidon mesh took 181 s
-on two ranks against 252 s on one; mesh generation and setup do not speed up,
-and the velocity preconditioner weakens as ranks are added. DTCC `VolumeMesh`
+only. On a two-core container the 27,474-tetrahedron Poseidon mesh with the
+mixing-length closure took 76 s on two ranks against 133 s on one. Mesh
+generation does not speed up, and the one-level velocity preconditioner
+weakens as ranks are added. Limit threads to one per rank
+(`OMP_NUM_THREADS=1`), and use at most one rank per performance core. DTCC `VolumeMesh`
 input (`mesh=`) still requires one rank.
 
 See [numerical verification](wind-verification.md) for reference errors,

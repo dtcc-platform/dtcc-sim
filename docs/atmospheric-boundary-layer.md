@@ -221,12 +221,15 @@ gives degrees above 30 for these non-polynomial coefficients.
 
 ## Linear solver
 
-The ABL closures keep the default FGMRES/Schur solver but use ILU(1) instead of
-ILU(0) in the overlapping Schwarz velocity blocks. On the Poseidon mesh with
-`mixing_length` and log-law walls, Stokes initialization needs 142 instead of
-376 iterations; ILU(0) could reach the 500-iteration limit after a different
-mesh ordering. The full solve takes 14 instead of 17 Newton iterations and
-288 instead of 338 s. Explicit `petsc_options` override this choice.
+The ABL closures keep the default FGMRES/Schur solver but use ILU(1) with
+reverse Cuthill–McKee ordering instead of ILU(0) in the overlapping Schwarz
+velocity blocks. ILU(0) reaches the 500-iteration limit in the Stokes
+initialization of city meshes. With the natural ordering, the ILU(1)
+factorizations and triangular solves take two thirds of a city solve; the
+reordering reduces their fill and halves the solve time at nearly the same
+iteration counts. Explicit `petsc_options` override this choice; see
+[linear solvers](flow-linear-solvers.md#eddy-viscosity-closures) for the
+comparison.
 
 ## Diagnostics
 
