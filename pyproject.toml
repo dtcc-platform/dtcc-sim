@@ -22,6 +22,7 @@ dependencies = ["dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@
 helmholtz = ["scipy>=1.12", "pymetis", "threadpoolctl>=3.1"]
 helmholtz-mesh = ["dtcc-core[volume] @ git+https://github.com/dtcc-platform/dtcc-core.git@6f983244b630a2ac820e9e9734a8d653aece9f38"]
 test = ["pytest"]
+benchmarks = ["xlrd>=2.0", "scipy>=1.12", "matplotlib"]
 docs = ["sphinx", "sphinx-immaterial"]
 service = ["fastapi>=0.125.0", "uvicorn>=0.38.0", "celery[redis]>=5.4", "httpx>=0.27"]
 

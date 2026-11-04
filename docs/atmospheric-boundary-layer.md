@@ -5,8 +5,9 @@ algebraic eddy viscosity for the neutral atmospheric surface layer. The closure,
 the inflow, the ground treatment and the top boundary are chosen together so
 that the logarithmic wind profile is an exact solution of the continuous
 equations over flat, empty terrain. This is an algebraic RANS closure without
-turbulence transport equations. It has not been validated against wind-tunnel
-or urban measurements.
+turbulence transport equations. It is compared with wind-tunnel measurements
+around isolated buildings in the [AIJ benchmarks](../benchmarks/aij/README.md)
+and has not been validated against urban measurements.
 
 ```python
 from dtcc_sim import NavierStokesParameters, NavierStokesSolver
@@ -313,6 +314,18 @@ Times are from a two-core Linux container and are not comparable with the
 measurements in [wind verification](wind-verification.md). With `abl`, `ν_t`
 ranges from `κ u* z_w` at walls to about 19 m²/s at the top; the domain mean is
 about 9 m²/s, compared with the constant 2 m²/s of the earlier demos.
+
+## Validation
+
+The [AIJ benchmarks](../benchmarks/aij/README.md) compare the mixing-length
+closure with wind-tunnel measurements of the mean velocity around an isolated
+high-rise building (case A) and a slab normal to the wind (case B). For case A
+the VDI 3783-9 hit rate of the speed is 0.76 over 186 points, above the
+required 0.66; the roof separation is too weak and the reverse flow near the
+ground behind the building too strong. For case B it is 0.55 over 224 points:
+the wake behind the slab recovers too fast. Mesh independence has not been
+established. The `abl` closure does not reach a stationary solution for case
+A; its eddy viscosity depends on the wall distance alone.
 
 ## Limitations
 

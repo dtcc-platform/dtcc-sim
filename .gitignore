@@ -225,3 +225,6 @@ sandbox/output
 /output/
 
 /demos/output/
+
+# Benchmark reference data (downloaded separately; see benchmarks/README.md)
+/benchmarks/data/
