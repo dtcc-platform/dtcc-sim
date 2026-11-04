@@ -11,7 +11,9 @@ atmospheric boundary-layer eddy viscosity and the viscous term becomes
 `-div(2 ν_eff ε(u))`; see the [atmospheric boundary layer](atmospheric-boundary-layer.md).
 The viscosity and inlet forcing remain at the requested values. Density does
 not enter this kinematic-pressure equation. A stationary field is neither a time
-average nor a validated turbulence prediction. Some scenarios have no numerically
+average nor a validated turbulence prediction; the
+[AIJ benchmarks](../benchmarks/aij/README.md) measure the closures' accuracy
+around isolated buildings. Some scenarios have no numerically
 accessible stationary solution at the selected mesh and physical settings.
 
 ## Configuration

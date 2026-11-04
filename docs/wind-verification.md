@@ -169,3 +169,5 @@ General friction facets use weak normal enforcement and
 can fail leakage or divergence checks. High-Reynolds-number flows can fail to
 reach a stationary solution. The sensitivity probes and numerical convergence
 do not validate turbulence, weather representativeness or regulatory CFD use.
+Wind-tunnel comparisons for isolated buildings are in the
+[AIJ benchmarks](../benchmarks/aij/README.md).

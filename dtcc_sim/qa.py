@@ -68,10 +68,12 @@ VALIDATION_CASES: tuple[SimulationValidationCase, ...] = (
             "wind direction/profile math, VolumeMesh field contract checks, "
             "solver diagnostics, and stationary mixed-flow reference and failure tests"
         ),
-        test_reference="tests/test_urban_wind.py",
+        test_reference="tests/test_urban_wind.py; tests/test_benchmarks_aij.py",
         notes=(
-            "Tiny FEniCSx cases check finite fields and diagnostics; "
-            "city-scale CFD validation remains expensive/manual."
+            "Tiny FEniCSx cases check finite fields and diagnostics. The "
+            "mixing-length default is compared with AIJ wind-tunnel cases A and "
+            "B in benchmarks/aij: speed hit rates 0.76 (high-rise) and 0.53 "
+            "(slab wake); city-scale CFD validation remains expensive/manual."
         ),
     ),
     SimulationValidationCase(

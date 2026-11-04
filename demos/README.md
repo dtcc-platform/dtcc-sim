@@ -122,6 +122,9 @@ See the [linear-solver measurements](../docs/flow-linear-solvers.md). Their 12.5
 250 × 250 × 80 m Chalmers Johanneberg domain remain explicit. The city wind examples use the
 algebraic [atmospheric boundary-layer](../docs/atmospheric-boundary-layer.md)
 closure with log-law walls: mixing length for Navier–Stokes, the equilibrium
-profile for Stokes. They are stationary scenarios and do not validate city turbulence. The
+profile for Stokes. They are stationary scenarios: the mixing length is compared with
+wind-tunnel measurements around isolated buildings in the
+[AIJ benchmarks](../benchmarks/aij/README.md), where it overpredicts wind in building
+wakes, and is not validated for city areas. The
 cavity uses a smooth tangential lid that vanishes at its edges. Channel and
 bluff-body meshes use native Core geometry without Gmsh.
