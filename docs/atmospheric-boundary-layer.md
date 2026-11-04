@@ -106,6 +106,15 @@ limits leakage where the stagnation pressure is large compared with
 `ν_eff/h_F`; the normal height keeps flat cells next to small terrain facets
 coercive. `gamma_normal` overrides the penalty, as for `wall_model="friction"`.
 
+No penetration and wall drag act along an averaged wall normal `m`. Each wall
+vertex receives the area-weighted mean of the outward normals of its weak-wall
+facets, summed across MPI ranks, and `m` is the normalized P1 interpolant of
+these vertex normals. Where the facets at a vertex deviate more than 30° from
+their mean, as at building edges and wall–ground corners, and wherever the
+interpolant is short or more than 30° from the facet normal, the facet normal
+is used. On planar walls `m` is the facet normal. The traction in the Nitsche
+terms is `σ(u) n - p n` projected on `m`.
+
 On inlet edges shared with these walls, the inflow is projected onto the wall
 tangent planes. The log-law wall speed is nonzero, so the horizontal profile
 would otherwise cross sloping terrain there. Facets within 30° of each other
@@ -124,45 +133,49 @@ ground net is 7.5 m³/s (2.3 m³/s near the inlet) and the imbalance 2.4e-5.
 
 Weak enforcement lets some flow cross terrain and non-axis-aligned walls.
 Acceptance bounds it separately for ground and for building walls and roofs:
-`∫|u·n|` over each surface, divided by the inflow volume flux, must not
-exceed `ground_leakage_tolerance` and `building_leakage_tolerance` (default
-2 %). Diagnostics record these fractions, the absolute fluxes and the RMS
-normal velocity per surface. The net flux imbalance gate alone does not
-detect leakage, because inflow and outflow through walls largely cancel.
+`∫|u·m|` over each surface, along the normal `m` on which no penetration is
+imposed, divided by the inflow volume flux, must not exceed
+`ground_leakage_tolerance` and `building_leakage_tolerance` (default 2 %).
+Diagnostics record these fractions, the absolute fluxes, the RMS normal
+velocity per surface and the flux `∫|u·n|` through the facets themselves. The
+net flux imbalance gate alone does not detect leakage, because inflow and
+outflow through walls largely cancel.
 
-The gates are an explicit error allowance. They bound flow through the
-polyhedral walls; they do not establish accuracy, and 2 % per surface group
-is not a physically derived tolerance. On curved terrain the measure also
-contains geometry: the exact flow is tangent to the true surface and itself
-crosses the facets that approximate it.
+The gates are an explicit error allowance. They bound the flow across the
+walls; they do not establish accuracy, and 2 % per surface group is not a
+physically derived tolerance. On curved terrain the facet flux contains
+geometry: the exact flow is tangent to the true surface and itself crosses the
+facets that approximate it, which is why the gates use `m`.
 
 On planar terrain the leakage is negligible, below 2e-5 of the inflow with 20 m
-and 10 m cells on a plane rising 10 % along the wind. On curved terrain it
-did not decrease when mesh and geometry were refined together.
+and 10 m cells on a plane rising 10 % along the wind.
 `tools/verification/wall_leakage.py` solves 200 × 40 × 80 m of terrain
-`z = 4 sin(2πx/80) sin(2πy/80)` m with `mixing_length` and log-law walls:
+`z = 4 sin(2πx/80) sin(2πy/80)` m with `mixing_length` and log-law walls.
+Ground leakage fractions:
 
-| `nitsche_penalty` | 20 m cells | 10 m cells | 5 m cells |
+| Normal, `nitsche_penalty` | 20 m cells | 10 m cells | 5 m cells |
 | --- | ---: | ---: | ---: |
-| 100 (default) | 1.10 % | 1.19 % | 1.19 % |
-| 1000 | 0.27 % | 0.27 % | 0.32 % |
-| 10000 | | 0.078 % | |
+| averaged `m`, 100 (default) | 1.05 % | 0.39 % | 0.12 % |
+| facet, 100 | 1.10 % | 1.19 % | 1.19 % |
+| facet, 1000 | 0.27 % | 0.27 % | 0.32 % |
+| facet, 10000 | | 0.078 % | |
 
-The net flux imbalance converges, from 1.2e-4 to 2.0e-6 with the default
-penalty and from 1.4e-4 to 6.0e-7 with 1000. Raising the penalty from 100 to
-10000 reduces the mean tangential ground speed by 2.0 % and the volume-mean
-speed by 0.01 %. On the 27,211-tetrahedron Poseidon mesh, `nitsche_penalty=1000`
-lowers ground and building leakage from 0.72 % and 0.22 % to 0.26 % and
-0.026 %. It also makes the first `mixing_length` Newton system much harder
-for the default iterative solver: depending on the mesh and its ordering the
-FGMRES solve stalls at its 500-iteration limit, with ILU(0), ILU(1) or
-shifted ILU(1). Use larger penalties with an explicit direct solver.
+With averaged normals the leakage decreases at observed orders 1.5 and 1.7 and
+the net flux imbalance from 2.2e-4 to 1.0e-4 and 2.7e-5. With facet normals
+the leakage did not decrease under refinement and was controlled only by the
+penalty. Raising the facet-normal penalty from 100 to 10000 reduced the mean
+tangential ground speed by 2.0 % and the volume-mean speed by 0.01 %; a penalty
+of 1000 also made the first `mixing_length` Newton system stall the default
+iterative solver on some meshes and orderings. On the 27,474-tetrahedron Poseidon
+mesh with `mixing_length`, averaged normals lower the ground leakage from
+0.71 % to 0.17 % at the default penalty; building leakage stays at 0.23 %,
+since building walls are planar between sharp edges.
 
-This plateau does not show that convergence is impossible. Slip and
-no-penetration conditions on polyhedral approximations of curved walls have
-known geometric consistency and locking problems whose outcome depends on the
-formulation and the geometry approximation; strong imposition has its own
-difficulties ([Urquiza et al., 2014](https://www.sciencedirect.com/science/article/abs/pii/S0021999113005895)).
+Slip and no-penetration conditions on polyhedral approximations of curved
+walls have known geometric consistency and locking problems whose outcome
+depends on the formulation and the geometry approximation; strong imposition
+has its own difficulties
+([Urquiza et al., 2014](https://www.sciencedirect.com/science/article/abs/pii/S0021999113005895)).
 
 ### Curved-wall manufactured solution
 
@@ -170,33 +183,31 @@ difficulties ([Urquiza et al., 2014](https://www.sciencedirect.com/science/artic
 geometry refinement. The domain lies between `z = 0.05 sin(2πx)` and `z = 1`
 on `[0,2] × [0,0.5]`; the exact velocity comes from a stream function constant
 on both walls, so it is tangent to the true ground. Forcing, outflow and top
-tractions and log-law wall drag are derived from the exact solution (`ν = 0.05`,
-`U = 1`, maximum slope 0.31, `nitsche_penalty=100`, MUMPS LU). Geometry
-refinement places the ground nodes of each mesh on the curve; fixed geometry
-maps the coarsest mesh and refines it uniformly, keeping its polyhedral ground.
-Velocity L2 errors with `n` cells per unit height:
+tractions and log-law wall drag are derived from the exact solution and the
+enforced normal (`ν = 0.05`, `U = 1`, maximum slope 0.31,
+`nitsche_penalty=100`, MUMPS LU). Geometry refinement places the ground nodes
+of each mesh on the curve; fixed geometry maps the coarsest mesh and refines it
+uniformly, keeping its polyhedral ground. Velocity L2 errors with `n` cells per
+unit height:
 
 | Normal in the Nitsche terms | Refinement | n = 4 | n = 8 | n = 16 |
 | --- | --- | ---: | ---: | ---: |
-| facet (solver) | geometry | 1.38e-1 | 1.17e-1 | 5.90e-2 |
-| facet (solver) | fixed | 1.38e-1 | 9.79e-2 | 7.76e-2 |
-| vertex-averaged, P1 | geometry | 7.07e-2 | 2.24e-2 | 6.03e-3 |
-| vertex-averaged, P1 | fixed | 7.07e-2 | 3.81e-2 | 3.47e-2 |
+| averaged `m` (solver) | geometry | 6.66e-2 | 2.09e-2 | 5.66e-3 |
+| averaged `m` (solver) | fixed | 6.66e-2 | 3.87e-2 | 3.47e-2 |
+| facet | geometry | 1.38e-1 | 1.17e-1 | 5.90e-2 |
+| facet | fixed | 1.38e-1 | 9.79e-2 | 7.76e-2 |
 | exact curve normal | geometry | 1.56e-2 | 1.26e-3 | 1.41e-4 |
 | exact curve normal | fixed | 1.56e-2 | 3.80e-3 | 1.63e-3 |
 
 On flat ground the same construction gives 6.8e-3 and 4.5e-4 for n = 4 and 8.
-With facet normals the curved-wall error is about 400 times the exact-normal
-error at n = 16 and converges at observed orders 0.24 and 0.98. Vertex-averaged
-normals converge at about 1.7 and 1.9, and the exact normal at 3.6 and 3.2.
-With fixed geometry every variant stalls at its geometric error. The flux through
-the facets is not an error measure here: with the exact normal it equals the
-exact solution's own facet flux (5.9 % of the inflow at n = 16), while the flux
-along the true normal is 0.039 %. These results identify the facetwise normal
-as the dominant error source on curved terrain in the current formulation.
-Reconstructed wall normals, with leakage measured along the enforced normal,
-are the indicated next step; sharp building edges and wall–ground corners need
-separate normals.
+Under geometry refinement the averaged normals converge at observed orders 1.7
+and 1.9, facet normals at 0.24 and 0.98 and the exact normal at 3.6 and 3.2.
+At n = 16 the averaged-normal error is a tenth of the facet-normal error and
+40 times the exact-normal error; the P1 normal reconstruction now limits the
+accuracy. With fixed geometry every variant stalls at its geometric error.
+The facet flux is not an error measure here: with the exact normal it equals
+the exact solution's own facet flux (5.9 % of the inflow at n = 16), while the
+flux along the true normal is 0.039 %.
 
 ## Wall distance
 
@@ -289,12 +300,13 @@ with the default iterative solver:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | constant `nu_t=2`, no-slip (reference) | 6 | 86 s | 2.09e-3 | 4.5e-14 | 0 / 0 | 2 / 2 |
 | `abl`, no-slip | 7 | 101 s | 2.01e-3 | 1.5e-16 | 0 / 0 | 8.75 / 19.3 |
-| `abl`, log-law wall | 7 | 136 s | 2.24e-3 | 8.1e-6 | 0.56 % / 0.12 % | 8.80 / 18.7 |
+| `abl`, log-law wall | 7 | 171 s | 2.19e-3 | 5.9e-6 | 0.15 % / 0.13 % | 8.80 / 18.7 |
 | `mixing_length`, no-slip | 11 | 179 s | 1.69e-3 | 1.4e-14 | 0 / 0 | 10.3 / 22.7 |
-| `mixing_length`, log-law wall | 13 | 184 s | 1.93e-3 | 3.3e-5 | 0.71 % / 0.22 % | 11.1 / 25.0 |
+| `mixing_length`, log-law wall | 13 | 226 s | 1.87e-3 | 1.9e-5 | 0.17 % / 0.23 % | 11.0 / 24.8 |
 
-Leakage is `∫|u·n|` over the surface divided by the inflow volume flux; the
-gates are 2 %. The no-slip ABL rows were measured with ILU(0) velocity blocks.
+Leakage is `∫|u·m|` over the surface divided by the inflow volume flux; the
+gates are 2 %. The flux through the terrain facets themselves is 3.4 % and
+3.1 % of the inflow; on the planar building walls it equals the leakage. The no-slip ABL rows were measured with ILU(0) velocity blocks.
 All four city wind demos also pass on the 27,211-tetrahedron realization.
 
 Times are from a two-core Linux container and are not comparable with the
@@ -317,9 +329,10 @@ about 9 m²/s, compared with the constant 2 m²/s of the earlier demos.
   pedestrian-level wind are not validated by the flat-domain checks.
 - The domain stays aligned with the map axes. Oblique winds enter through two
   faces; the inflow at the corner between them has no upstream development.
-- Weak no penetration uses facet normals. On curved terrain this dominates the
-  wall error and the facet flux did not decrease with refinement: about 1.2 %
-  of the inflow on the hills case and 0.7 % on the Poseidon terrain.
+- Wall normals are reconstructed to second order from a P1 polyhedral surface.
+  On the curved-wall manufactured solution this limits the velocity to about
+  second-order convergence, 40 times the exact-normal error at the finest
+  level; higher-order geometry or normals would be needed beyond that.
 - The domain size, mesh sensitivity and wall-function height have not been
   studied for city cases. City runs do not establish physical validity.
 
