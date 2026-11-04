@@ -143,7 +143,7 @@ def solve(mesh, amplitude, wavelength, normal="averaged"):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--levels", type=int, nargs="+", default=[4, 8, 16])
-    parser.add_argument("--amplitude", type=float, default=.1)
+    parser.add_argument("--amplitude", type=float, default=.05)
     parser.add_argument("--wavelength", type=float, default=1.)
     parser.add_argument("--normals", nargs="+", default=["averaged"], choices=["averaged", "facet", "exact"])
     parser.add_argument("--output")
