@@ -184,6 +184,7 @@ def test_validation_cases_cover_major_simulation_families():
 
     assert {case.family for case in cases} == {
         "helmholtz",
+        "shallow_water",
         "urban_heat",
         "urban_wind",
         "air_quality_field",

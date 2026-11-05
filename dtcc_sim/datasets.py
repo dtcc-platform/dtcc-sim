@@ -22,6 +22,7 @@ from .helmholtz.dataset import (
     UrbanNoiseSimulationArgs,
     UrbanNoiseSimulationDataset,
 )
+from .shallow_water.dataset import UrbanFloodSimulationArgs, UrbanFloodSimulationDataset
 
 
 BoundaryConditionType = Literal["dirichlet", "neumann", "robin"]

@@ -1,0 +1,20 @@
+{
+  "backend": "cecilia-reference",
+  "experimental": true,
+  "upstream": "https://github.com/Elite-Luna2/shallow-water-rkdg-thesis",
+  "upstream_commit": "2cf10273eea2441137393b57040528b1c03e8725",
+  "reference": "equilibrium-terrain-20261028",
+  "sha256": {
+    "LICENSE": "4432356c9dc7e82b9ce3df55923e6bf11b73168dc1b6b6bd77c9354d7191776a",
+    "__init__.py": "ca5359362db72ce4d2efa9392b6f165f4af29d96baef971c181e61c543f3e688",
+    "__main__.py": "af7f0bbbf4af41f73e9c315250b7bca8848d10f807926bdb5e1017ab3c3625fd",
+    "backend.py": "03f814681813a0dec374a9529c510608f0f166d34599a11a8976a483694fd1f1",
+    "equilibrium_depth.py": "8a912f75a00bda83da3f356849ae47844fb3c09dc22a9e7095c6ce6fa1a53759",
+    "mesh_io.py": "5b9202d7e7089dc749f0c3a308f245c33dad5be7d70c6776dcd0ebe9dca6acfe",
+    "results.py": "1e1b318525dffb1d50f7c0cd142b3c484913d22771a893b835860b524efc2191",
+    "simulator.py": "f1e87994596e637ed8460991eded3134d897b8e0ab996bf0d1723e705e85d54b",
+    "terrain_flux.py": "41d5dcf40273895a8930fcd83b183c5df6bf5d6fc41a7ff90dda42384733ddaf",
+    "velocity_candidate.py": "f4756efd00917147d8cb3ad5b26757dd7b7f21f01c3ed9419139b54ed90a1602",
+    "wetdry_candidate.py": "109fd93fa18d3262b07efc40b8a3fd522177010d316ccbe66d19c8aabd276914"
+  }
+}

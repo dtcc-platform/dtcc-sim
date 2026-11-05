@@ -5,11 +5,14 @@ import os
 from ._version import __version__
 from .meshing import CityMeshParameters, CityMeshCache, CityMeshSettings
 from .helmholtz import HelmholtzSolver, HelmholtzParameters
+from .shallow_water import CeciliaSolver, ShallowWaterParameters
 from .traffic import (
     TrafficAssignmentSimulator,
     TrafficAssignmentParameters,
 )
 from .datasets import (
+    UrbanFloodSimulationArgs,
+    UrbanFloodSimulationDataset,
     UrbanNoiseSimulationArgs,
     UrbanNoiseSimulationDataset,
     UrbanHeatSimulationArgs,
@@ -78,8 +81,12 @@ __all__ = [
     "__version__",
     "HelmholtzSolver",
     "HelmholtzParameters",
+    "CeciliaSolver",
+    "ShallowWaterParameters",
     "TrafficAssignmentSimulator",
     "TrafficAssignmentParameters",
+    "UrbanFloodSimulationArgs",
+    "UrbanFloodSimulationDataset",
     "UrbanNoiseSimulationArgs",
     "UrbanNoiseSimulationDataset",
     "UrbanHeatSimulationArgs",
