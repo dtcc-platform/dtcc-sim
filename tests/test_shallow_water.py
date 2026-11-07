@@ -178,3 +178,81 @@ def test_runtime_rejects_incompatible_worker_before_preparation(tmp_path, monkey
     monkeypatch.setitem(sys.modules, "petsc4py", SimpleNamespace(PETSc=SimpleNamespace(ScalarType=np.complex128)))
     with pytest.raises(RuntimeError, match="real Float64 PETSc"):
         validate_runtime()
+
+
+@real_worker
+@pytest.mark.simulation
+def test_distant_dry_building_does_not_change_pulse(tmp_path):
+    mesh = RectangleMesh(8, 8)
+    mesh.markers = np.full(len(mesh.faces), -1, dtype=np.int32)
+    centers = mesh.vertices[mesh.faces, :2].mean(axis=1)
+    building_face = int(np.argmax(centers.sum(axis=1)))
+    params = ShallowWaterParameters(h0=0., amplitude=.2, compact_pulse=True,
+                                    x_center=.25, y_center=.25, sigma=.08,
+                                    final_time=.01, n_outputs=1)
+    states = []
+    velocities = []
+    for name in ("ground", "building"):
+        if name == "building":
+            mesh.markers[building_face] = 0
+        solver = ShallowWaterSolver(mesh=mesh, params=params, output_dir=tmp_path / name)
+        result = solver.run()
+        assert result.diagnostics["passed"]
+        assert result.diagnostics["rejected_attempts"] == 0
+        assert result.diagnostics["relative_mass_error"] < 1e-12
+        with np.load(result.case_dir / "solver/state.npz") as raw:
+            cells = raw["cell_dofs"]
+            coordinates = raw["coordinates"][cells, :2]
+            state = np.stack([raw["state"][raw[key]][cells]
+                              for key in ("h_dofs", "hu_dofs", "hv_dofs")], axis=-1)
+            states.append(state)
+            velocity = np.zeros_like(state[:, :, 1:])
+            np.divide(state[:, :, 1:], np.maximum(state[:, :, :1], params.h_floor),
+                      out=velocity)
+            velocities.append(velocity)
+            building = int(np.argmin(np.linalg.norm(coordinates.mean(axis=1)
+                                                     - centers[building_face], axis=1)))
+            assert np.all(raw["initial_state"][raw["h_dofs"]][cells[building]] == 0.)
+        if name == "building":
+            with np.load(result.case_dir / "solver/limiter-topology.npz") as topology:
+                assert len(topology["wall_facets"]) > 0
+                # No ground-cell stencil may include the enclosed building.
+                ground = np.arange(len(cells)) != building
+                assert not np.any(topology["neighbors"][ground] == building)
+                assert np.all(topology["neighbors"][building] == building)
+    near_pulse = np.all(coordinates.mean(axis=1) < .625, axis=1)
+    assert near_pulse.any() and not near_pulse[building]
+    np.testing.assert_allclose(states[1][near_pulse], states[0][near_pulse],
+                               rtol=0, atol=1e-12)
+    np.testing.assert_allclose(velocities[1][near_pulse], velocities[0][near_pulse],
+                               rtol=0, atol=1e-9)
+
+
+@real_worker
+@pytest.mark.simulation
+def test_building_and_ground_conserve_water_with_active_pulse(tmp_path):
+    mesh = RectangleMesh(8, 8)
+    triangles = mesh.vertices[mesh.faces, :2]
+    centers = triangles.mean(axis=1)
+    building = np.all((centers > .375) & (centers < .625), axis=1)
+    assert building.any() and (~building).any()
+    mesh.markers = np.where(building, 0, -1).astype(np.int32)
+    a = triangles[:, 1] - triangles[:, 0]
+    b = triangles[:, 2] - triangles[:, 0]
+    areas = abs(a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0]) / 2
+    params = ShallowWaterParameters(h0=.1, amplitude=.2, compact_pulse=True,
+                                    x_center=.25, y_center=.5, sigma=.15,
+                                    final_time=.01, n_outputs=2)
+    result = ShallowWaterSolver(mesh=mesh, params=params, output_dir=tmp_path).run()
+    assert result.diagnostics["passed"] and result.diagnostics["rejected_attempts"] == 0
+    volumes = []
+    for index in range(len(result.snapshot_times)):
+        fields = {field.name: field.values for field in result.to_dtcc(index).fields}
+        h = fields["water_depth"][:, 0]
+        assert np.all(h >= 0)
+        volumes.append([areas[region] @ h[region] for region in (building, ~building)])
+    volumes = np.array(volumes)
+    assert np.all(volumes[0] > 0)
+    np.testing.assert_allclose(volumes, np.broadcast_to(volumes[0], volumes.shape),
+                               rtol=0, atol=1e-12)
+    assert np.max(abs(fields["water_momentum"][~building])) > 1e-8

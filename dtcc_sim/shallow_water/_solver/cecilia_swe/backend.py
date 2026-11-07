@@ -197,28 +197,10 @@ def build_building_wall_facets(domain, cell_tags):
 
     return mesh.meshtags(domain, fdim, facet_indices, facet_values)
 
-def build_limiter_cell_mask(domain, wall_facets):
-    tdim = domain.topology.dim
-    fdim = tdim - 1
-
-    domain.topology.create_connectivity(fdim, tdim)
-    f_to_c = domain.topology.connectivity(fdim, tdim)
-
-    num_cells = domain.topology.index_map(tdim).size_local + domain.topology.index_map(tdim).num_ghosts
-    limit_cells = np.zeros(num_cells, dtype=bool)
-
-    if wall_facets is None:
-        limit_cells[:] = True
-        return limit_cells
-
-    # Limit only cells adjacent to building-wall facets when an urban mesh is used
-    for facet, marker in zip(wall_facets.indices, wall_facets.values):
-        if marker != 1:
-            continue
-        for cell in f_to_c.links(facet):
-            limit_cells[cell] = True
-
-    return limit_cells
+def build_limiter_cell_mask(domain):
+    """Keep every triangle eligible; reflecting walls restrict neighbor stencils."""
+    cells = domain.topology.index_map(domain.topology.dim)
+    return np.ones(cells.size_local + cells.num_ghosts, dtype=bool)
 
 
 # ===== TVB slope limiter helper functions ====================
@@ -456,7 +438,7 @@ def run(parameters, output_dir, mesh_data=None):
         limit_cells = None
 
 
-    limit_cells = build_limiter_cell_mask(domain, wall_facets)
+    limit_cells = build_limiter_cell_mask(domain)
 
     def initial_depth(x):
         sigma = p.sigma
@@ -498,6 +480,7 @@ def run(parameters, output_dir, mesh_data=None):
             adjacent = [int(c) for c in f_to_c.links(facet) if c != cell]
             if adjacent: neighbors[cell,edge+1] = adjacent[0]
     configure(neighbors)
+    # TVB and velocity limiting share the same wall-aware edge neighbors.
     limiter_data['cell_neighbors'] = [np.unique(row[row != cell]) for cell,row in enumerate(neighbors)]
     np.savez(output_dir/'limiter-topology.npz',neighbors=neighbors,
              wall_facets=np.array(sorted(walls),dtype=int),cell_dofs=Q_h.dofmap.list)

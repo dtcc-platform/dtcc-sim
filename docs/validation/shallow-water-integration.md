@@ -141,9 +141,36 @@ python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py
   --import-mode=importlib -o pythonpath= -p no:cacheprovider -q
 ```
 
-These checks do not resolve the reviewed city-mesh limiter defect, common city
+This first batch did not resolve the city-mesh limiter defect, common city
 demo domain/scenario, visualization, independent dynamic accuracy benchmark or
-backend cleanup. Those review requests remain outstanding.
+backend cleanup.
+
+## City-mesh limiter correction on 2026-11-07
+
+TVB limiting is enabled throughout the domain, with the same wall-aware edge
+neighbors used by velocity limiting. A building marker no longer disables
+TVB limiting away from its walls. Existing wet/dry restrictions on free-surface
+slope limiting remain in effect; building interfaces still reflect.
+
+A real-worker regression runs an 8-by-8 unit-square mesh for 0.01 seconds with
+a compact pulse centered at (0.25, 0.25), then repeats it with one distant,
+initially dry building triangle. Before the correction, both runs reported
+success but differed near the pulse by up to 0.0481 m in raw nodal depth. The
+new regression failed against that version. After the correction, depth,
+momentum and regularized velocity near the pulse matched exactly in this case.
+The test also verifies that ground-cell limiter stencils exclude the building.
+
+The broader real-worker selection above passed **56 tests**, with the opt-in
+live city demo skipped. Two installed-wheel checks then passed: the
+distant-building regression and an active-pulse conservation test with a wet,
+enclosed building region. Independent volume integration over the snapshots
+gave maximum building/ground drifts of `1.73e-18` and `9.71e-17`, respectively.
+Installed-package imports and pinned worker hashes were verified.
+
+The common city-demo domain/scenario, visualization, independent dynamic
+accuracy/refinement benchmark and backend cleanup remain outstanding. These
+regressions address the reviewed limiter defect; they do not establish general
+dynamic accuracy or flood-prediction validity.
 
 ## Limits
 

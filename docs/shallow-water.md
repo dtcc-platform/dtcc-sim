@@ -145,9 +145,13 @@ input frame.
 
 The shipped MIT-licensed source is identified in `reference.json`, including
 the original thesis repository, commit and every retained worker-file hash.
-The numerical operator, limiter and RK3 time integrator are unchanged from
-the retained reference; integration controls add runtime validation, a configurable
-step limit and scheduled output times, identified in the manifest. Local assembly and the public DTCC adapter do not
+The retained flux and RK3 time integrator are identified in the source manifest.
+TVB limiting applies throughout the domain, including on meshes with building
+markers; its neighbor stencils exclude reflecting building interfaces. The
+existing wet/dry treatment still restricts free-surface slope limiting in
+partially dry cells. Runtime validation, a configurable step limit, scheduled
+output times and the domain-wide TVB correction are recorded in the manifest.
+Local assembly and the public DTCC adapter do not
 claim to reproduce projected-coordinate floating-point results bitwise.
 Completed diagnostics and dataset-package processing provenance include the
 full `reference` identity, upstream commit and retained worker-file hashes.
