@@ -50,6 +50,10 @@ under `.shallow_water_runs`. The city example uses Core's `city_flat_mesh`,
 not the tetrahedral volume cache. It has a flat bed, reflecting boundaries,
 and an idealized pulse, not rainfall or a calibrated flood event. See
 [shallow-water scope and usage](../docs/shallow-water.md).
+Use `simulation.result.plot()` or reload `ShallowWaterResult` for filled face
+depths with time, metric axes, a scale bar and building-footprint context. The
+method returns a Matplotlib 2D axes; the generic Core mesh preview remains
+available separately.
 
 The shallow-water city demo uses Chalmers Johanneberg in EPSG:3006, centred at
 `(319970, 6397910)` with `L = 250` m and bounds

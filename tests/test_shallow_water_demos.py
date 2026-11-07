@@ -34,6 +34,10 @@ def _check_repeat(name, directory):
         assert (directory / "solution.dtcc").is_file()
         assert (directory / "notes.txt").read_text() == "keep"
         assert plt.get_fignums()
+        maps = [ax for number in plt.get_fignums() for ax in plt.figure(number).axes
+                if ax.get_gid() == "water_depth_map"]
+        assert len(maps) == 1 and maps[0].name == "rectilinear"
+        assert any(c.get_gid() == "water_depth" for c in maps[0].collections)
         if name == "dataset_urban_flood.py":
             assert (state["center_x"], state["center_y"], state["L"]) == (319970., 6397910., 250.)
             assert state["bounds"] == (319845., 6397785., 320095., 6398035.)

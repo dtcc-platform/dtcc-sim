@@ -48,6 +48,18 @@ class ShallowWaterResult:
         entries = json.loads((self.case_dir / "solver/snapshots.json").read_text())
         return tuple(entry["time"] for entry in entries)
 
+    def plot(self, snapshot=-1, *, ax=None, show=True, vmax=None, theme="light"):
+        """Plot ground depth as filled triangles, with time, scale and buildings.
+
+        Coordinates stay in the input frame. Building interiors are hidden by
+        footprint context. Set a common positive vmax to compare snapshots.
+        Return the Matplotlib 2D axes; show=False supports headless rendering.
+        """
+        from .plotting import _plot_depth
+
+        return _plot_depth(self.to_dtcc(snapshot), self.snapshot_times[snapshot],
+                          ax=ax, show=show, vmax=vmax, theme=theme)
+
     def to_dtcc(self, snapshot=-1):
         """Return conservative face means on the exact original input geometry."""
         from dtcc_core.io import load_mesh

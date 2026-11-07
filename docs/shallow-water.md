@@ -22,7 +22,7 @@ solver = ShallowWaterSolver(
 )
 water = solver.simulate()
 water.info()
-water.plot(field="water_depth")
+solver.result.plot()
 ```
 
 The input is a native triangular `Mesh`, rather than the tetrahedral
@@ -85,6 +85,7 @@ than continuing into numerical assembly or snapshot extraction.
 import dtcc_core as dtcc
 import dtcc_sim.datasets
 from dtcc_sim import ShallowWaterParameters
+from dtcc_sim.shallow_water import ShallowWaterResult
 
 center_x = 319970.
 center_y = 6397910.
@@ -92,18 +93,19 @@ L = 250.
 bounds = (center_x - L/2, center_y - L/2, center_x + L/2, center_y + L/2)
 pulse_x = center_x + 35.
 pulse_y = center_y - 20.
+output_dir = "output/city_water"
 
 water = dtcc.datasets.urban_flood_simulation(
     bounds=bounds,
     h=10., min_building_detail=.5, strict_live=True,
-    output_dir="output/city_water",
+    output_dir=output_dir,
     parameters=ShallowWaterParameters(
         h0=0., amplitude=.2, sigma=7., compact_pulse=True,
         x_center=pulse_x, y_center=pulse_y, final_time=20., cfl=.08, n_outputs=4,
     ),
 )
 water.info()
-water.plot(field="water_depth")
+ShallowWaterResult.load(output_dir).plot()
 ```
 
 The city demo uses the 250 × 250 m Chalmers Johanneberg domain in EPSG:3006,
@@ -147,7 +149,23 @@ result = ShallowWaterResult.load("output/water")
 print(result.snapshot_times, result.diagnostics)
 initial_water = result.to_dtcc(snapshot=0)
 result.export_series("output/water/series")
+axes = result.plot(snapshot=0, show=False, vmax=.2)
 ```
+
+`ShallowWaterResult.plot()` shows a filled, equal-scale XY depth map using the
+actual conservative face values, with no interpolation between cells. It labels
+the saved simulation time, metre axes, depth colour bar and a metric scale bar.
+Building triangles form neutral footprint context and their interiors are hidden
+from the depth scale. Coordinates and CRS stay in the input frame. The generic
+Core `Mesh.plot()` remains available as its standard model preview.
+
+The final snapshot is selected by default. Use `snapshot=` to select another
+saved state and a common positive `vmax` when comparing maps. `show=False`
+returns the Matplotlib 2D axes for headless rendering or customization; pass
+`ax=` to draw into an existing 2D axes, or `theme="dark"` for the Core dark
+theme. An all-dry map is labelled explicitly.
+Plotting a completed result needs Matplotlib in the caller environment and
+does not require another numerical-worker run.
 
 The series contains native DTCC/VTU snapshots and `times.json`; actual saved
 times are scheduled evenly and include the initial and final states. Repeated

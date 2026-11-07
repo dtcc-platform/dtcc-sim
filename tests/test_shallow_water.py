@@ -130,6 +130,9 @@ def test_real_worker_translation_and_core_plot(mesh, tmp_path, monkeypatch):
     assert second.diagnostics["coordinate_frame"]["input_crs"] == "EPSG:3006"
     result.info(); axis = result.plot(field="water_depth", show=False)
     assert axis is not None
+    depth_map = second.result.plot(snapshot=0, show=False, vmax=.2)
+    assert depth_map.name == "rectilinear" and "t = 0 s" in depth_map.get_title()
+    assert next(c for c in depth_map.collections if c.get_gid() == "water_depth").norm.vmax == .2
     plt.close("all")
 
 

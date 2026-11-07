@@ -226,6 +226,34 @@ accuracy/refinement benchmark and the remaining backend cleanup are separate
 outstanding review items. Verification images and raw outputs remain on the
 server; no visual-quality claim is made for the current Core preview.
 
+## Filled depth-map presentation on 2026-11-07
+
+`ShallowWaterResult.plot()` renders the conservative ground-face depths as
+filled triangles in the input coordinate frame. It adds saved time, metre axes,
+a metric scale bar, a depth colour bar and building footprints with perimeter
+outlines. It does not interpolate between faces or change numerical results.
+The demos use this reusable result method; native Core meshes and their generic
+preview remain available.
+
+The initial server selection passed 65 tests, with the long live-city case
+skipped. This includes eight renderer tests, real-worker result plotting and
+the updated offline demo executed twice. An isolated installed wheel passed
+all eight renderer tests and rendered a saved city result through the public
+method. Renderer checks cover actual polygon/value mapping, input-coordinate
+preservation, building exclusion from colour scaling, perimeter outlines,
+all-dry inputs, common colour limits and supplied 2D axes.
+
+All ten snapshots from the two completed Johanneberg runs were rendered with a
+common depth scale. Checks confirmed the 1,854 ground polygons, 50 m scale bar,
+CRS/time labels and displayed text bounds. The updated city script's plotting
+path was replayed twice against those completed results; the numerical city
+solves were not repeated. Saved numerical-state hashes remained unchanged.
+
+PNG images remain on the validation server. Programmatic rendering and layout
+checks passed; pixel-level visual inspection is pending. The independent
+dynamic accuracy/refinement benchmark and remaining backend cleanup are still
+outstanding review work.
+
 ## Limits
 
 These are integration and short numerical health checks, not flood prediction
