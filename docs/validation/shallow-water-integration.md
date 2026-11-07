@@ -221,10 +221,10 @@ regression selection passed 57 tests, with the opt-in live case tested separatel
 
 The bed remains flat and boundaries idealized and reflecting. These checks
 establish a more informative city demonstration, not general dynamic accuracy
-or flood calibration. Filled-map plotting support, an independent dynamic
-accuracy/refinement benchmark and the remaining backend cleanup are separate
-outstanding review items. Verification images and raw outputs remain on the
-server; no visual-quality claim is made for the current Core preview.
+or flood calibration. At that stage, filled-map plotting, independent dynamic
+accuracy/refinement checks and backend cleanup remained outstanding. Their
+completion is recorded in the following sections. Verification images and raw
+outputs remain on the server.
 
 ## Filled depth-map presentation on 2026-11-07
 
@@ -327,6 +327,11 @@ Reproduce the dynamic study from the repository root with the dedicated worker:
 DTCC_SWE_PYTHON=/path/to/real-worker/python \
   python -m tools.verification.shallow_water.wave --output output/verification/shallow-water-wave
 ```
+
+A further audit increased triangle error-integration quadrature from six to
+eight points per direction. The largest change in any normalized L2 error was
+`7.32e-10` on the coarsest mesh; changes on the finer meshes were below `1.13e-14`.
+This checks that the reported mesh errors are resolved by the integration rule.
 
 The [machine-readable final audit](shallow-water-wave.json) records exact errors,
 reference identity/hashes, verification-tool hash, wheel hash and server case
