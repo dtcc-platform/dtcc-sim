@@ -9,6 +9,7 @@ from ._solver.cecilia_swe.simulator import ShallowWaterParameters as _WorkerPara
 class ShallowWaterParameters:
     final_time: float = 0.05
     n_outputs: int = 5
+    max_steps: int | None = 5000
     cfl: float = 0.02
     gravity: float = 9.81
     bed_from_mesh: bool = False

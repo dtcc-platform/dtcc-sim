@@ -37,6 +37,7 @@ class ShallowWaterResult:
         manifest = json.loads((self.case_dir / "run.json").read_text())
         diagnostics.update(coordinate_frame=manifest["coordinate_frame"],
                            backend="cecilia-reference", experimental=True,
+                           reference=manifest["reference"],
                            assumptions=["Reflective outer boundaries and building walls",
                                         "Building interiors are separate simulated regions",
                                         "Terrain/wetting-drying extensions remain experimental"])

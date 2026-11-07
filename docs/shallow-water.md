@@ -1,6 +1,6 @@
 # Experimental shallow-water integration
 
-`CeciliaSolver` exposes Cecilia Huang's triangular DG1 shallow-water
+`ShallowWaterSolver` exposes Cecilia Huang's triangular DG1 shallow-water
 solver with explicit parameters and native Core face fields. The retained
 reference includes experimental terrain, wetting/drying and equilibrium-pressure
 extensions. It is not a calibrated flood forecast. The faster research variant
@@ -10,9 +10,9 @@ is not selected or switched to automatically.
 
 ```python
 from dtcc_core import RectangleMesh
-from dtcc_sim import CeciliaSolver, ShallowWaterParameters
+from dtcc_sim import ShallowWaterSolver, ShallowWaterParameters
 
-solver = CeciliaSolver(
+solver = ShallowWaterSolver(
     mesh=RectangleMesh(12, 12),
     params=ShallowWaterParameters(
         h0=0., compact_pulse=True, amplitude=.2, sigma=.12,
@@ -40,6 +40,13 @@ elevation in vertex Z, explicitly set `bed_from_mesh=True`; with
 `water_surface=H`, background depth becomes `max(H-bed, 0)` instead of `h0`.
 Nonhorizontal mesh input is rejected unless bed use is enabled.
 
+`max_steps` limits accepted time steps, defaults to 5,000, and accepts `None`
+to disable that limit. Exhaustion raises an explicit error with the current
+time and configured limit. `n_outputs` specifies evenly spaced output intervals:
+steps are capped at the next scheduled output time, yielding the initial state
+and `n_outputs` subsequent snapshots on a successful run. Output scheduling
+can therefore require more time steps than the CFL limit alone.
+
 The solver copies Float64 XY into a local computational frame and translates
 source coordinates consistently. Bed elevations retain their vertical datum.
 The supplied mesh is never translated in place, including on failure. Results
@@ -50,11 +57,15 @@ an otherwise unknown CRS, without reprojection. Diagnostics and
 ## Runtime
 
 DTCC Sim uses Python 3.12+. The isolated numerical worker needs real-valued
-PETSc and DOLFINx 0.10; the validated worker uses Python 3.11 and PETSc 3.24.5.
-If the caller uses a different runtime, configure once before running demos:
+Float64 PETSc and DOLFINx 0.10.x; the validated worker uses Python 3.11 and
+PETSc 3.24.5. The standard repository environment uses DOLFINx 0.11 and cannot
+serve as this worker. Create the dedicated environment from the checked-in
+[worker recipe](../shallow-water-worker.yml), then configure the worker while
+keeping the DTCC caller in its Python 3.12+ environment:
 
 ```sh
-export DTCC_SWE_PYTHON=/path/to/real-fenicsx-environment/bin/python
+conda env create -f shallow-water-worker.yml
+export DTCC_SWE_PYTHON="$(conda run -n dtcc-shallow-water-worker python -c 'import sys; print(sys.executable)')"
 python demos/shallow_water_pulse.py
 python demos/dataset_urban_flood.py
 ```
@@ -64,6 +75,9 @@ Otherwise, the caller's Python is used as the worker. Advanced callers can set
 No SSH login or server submission is hidden inside the solver API. The worker
 uses one MPI rank and one OMP/OpenBLAS thread; its source and equilibrium-pressure
 selection are pinned. Other equation solvers and their runtime defaults are unchanged.
+Before mesh preparation, the worker checks the DOLFINx version, PETSc scalar
+type and MPI size. Incompatible runtimes fail with setup instructions rather
+than continuing into numerical assembly or snapshot extraction.
 
 ## City dataset
 
@@ -121,7 +135,7 @@ result.export_series("output/water/series")
 ```
 
 The series contains native DTCC/VTU snapshots and `times.json`; actual saved
-times follow accepted steps and include the initial and final states. Repeated
+times are scheduled evenly and include the initial and final states. Repeated
 series exports replace owned snapshots and remove stale indexed snapshots,
 preserving unrelated files. Raw DG coordinates are local; use the recorded
 frame for independent numerical postprocessing. Presentation exports use the
@@ -132,8 +146,11 @@ input frame.
 The shipped MIT-licensed source is identified in `reference.json`, including
 the original thesis repository, commit and every retained worker-file hash.
 The numerical operator, limiter and RK3 time integrator are unchanged from
-the retained reference. Local assembly and the public DTCC adapter do not
+the retained reference; integration controls add runtime validation, a configurable
+step limit and scheduled output times, identified in the manifest. Local assembly and the public DTCC adapter do not
 claim to reproduce projected-coordinate floating-point results bitwise.
+Completed diagnostics and dataset-package processing provenance include the
+full `reference` identity, upstream commit and retained worker-file hashes.
 
 Synthetic-slope tests and short city runs check conservation and nonnegative
 depth. These checks do not establish shoreline accuracy or mesh convergence.

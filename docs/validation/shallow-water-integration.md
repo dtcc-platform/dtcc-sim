@@ -115,6 +115,36 @@ Raw snapshots, worker logs and numerical-experiment archives remain on the
 validation server; they are not repository fixtures. Core plotting was tested
 headlessly; interactive desktop viewer behavior was not checked.
 
+## API and worker-control checks on 2026-11-07
+
+The public entry point is `ShallowWaterSolver`. A server regression selection
+covering the shallow-water API/dataset/demos, Core contracts, timing, demo
+catalog and imports passed **55 tests**, with the opt-in live city demo skipped.
+The actual DOLFINx 0.10 real-valued worker was enabled. New regressions check
+explicit step-limit failure, all six snapshots for five requested intervals
+when a CFL step would otherwise span them, incompatible-runtime rejection
+before mesh preparation, and exact numerical reference metadata in a reloaded
+dataset package.
+
+An isolated wheel was then built and installed. Import assertions verified the
+new public name and pinned source manifest; two additional real-worker tests
+passed for scheduled output/step limits and dataset-package provenance. The
+dedicated `shallow-water-worker.yml` resolved successfully in a Linux Conda
+dry run; this was not a fresh installation of the resolved environment.
+
+The source selection used:
+
+```sh
+python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py \
+  tests/test_shallow_water_demos.py tests/test_dtcc_core_contract.py \
+  tests/test_timing.py tests/test_demo_catalog.py tests/test_import.py \
+  --import-mode=importlib -o pythonpath= -p no:cacheprovider -q
+```
+
+These checks do not resolve the reviewed city-mesh limiter defect, common city
+demo domain/scenario, visualization, independent dynamic accuracy benchmark or
+backend cleanup. Those review requests remain outstanding.
+
 ## Limits
 
 These are integration and short numerical health checks, not flood prediction
@@ -136,8 +166,9 @@ against observed flooding remain unresolved. The retained baseline remains
 experimental. These checks support an integration demonstration, not
 quantitative flood forecasting or an improved wet/dry algorithm.
 
-The numerical source is byte-preserved from the retained experimental reference;
-it is not an unmodified copy of the thesis commit. Its terrain, wetting/drying and
+The numerical source is pinned by the manifest, including integration controls
+for runtime validation, maximum steps and scheduled outputs. It is not an
+unmodified copy of the thesis commit. Its terrain, wetting/drying and
 equilibrium extensions are identified in the workflow and source manifest.
 Three inherited trailing-whitespace lines remain in the pinned backend; the
 adapter, tests and documentation pass the whitespace check.

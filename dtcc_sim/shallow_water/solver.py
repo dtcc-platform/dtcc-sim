@@ -31,7 +31,7 @@ def _reference():
     return metadata
 
 
-class CeciliaSolver:
+class ShallowWaterSolver:
     """Run the experimental DG1 reference on a native triangular Mesh."""
 
     def __init__(self, *, mesh, params=None, output_dir, solver_python=None, mesh_crs=None):
@@ -89,7 +89,9 @@ class CeciliaSolver:
                                          cwd=case, env=environment, stdout=log, stderr=subprocess.STDOUT,
                                          timeout=timeout, check=False)
             if process.returncode:
-                raise RuntimeError(f"Shallow-water worker exited with {process.returncode}; see {case / 'solver.log'}. Set DTCC_SWE_PYTHON to a real-PETSc FEniCSx Python if required.")
+                lines = (case / "solver.log").read_text().strip().splitlines()
+                detail = f" {lines[-1]}" if lines else ""
+                raise RuntimeError(f"Shallow-water worker exited with {process.returncode}.{detail} See {case / 'solver.log'}. Set DTCC_SWE_PYTHON to a real-PETSc DOLFINx 0.10 Python if required.")
             diagnostics = json.loads((case / "solver/diagnostics.json").read_text())
             worker = json.loads((case / "solver/configuration.json").read_text())
             if (not diagnostics["passed"] or not diagnostics["equilibrium_pressure"]

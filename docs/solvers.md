@@ -8,7 +8,7 @@ Use equation names for numerical APIs and application names for datasets:
 | `NavierStokesSolver` | `NavierStokesParameters` | `urban_wind_simulation` |
 | `StokesSolver` | `StokesParameters` | `urban_wind_simulation(equations="stokes")` |
 | `HeatSolver` | `HeatParameters` | `urban_heat_simulation` |
-| `CeciliaSolver` (experimental) | `ShallowWaterParameters` | `urban_flood_simulation` |
+| `ShallowWaterSolver` (experimental) | `ShallowWaterParameters` | `urban_flood_simulation` |
 
 Equation packages keep solver implementations in `solver.py` and configuration
 in `parameters.py`:

@@ -45,3 +45,7 @@ def test_native_file_dataset_and_package_use_real_solver(tmp_path):
     assert {field.name for field in restored.fields} == {field.name for field in result.fields}
     assert restored.dataset_context.metadata.crs == ["EPSG:3006"]
     assert any(isinstance(step, dict) and step.get("backend") == "cecilia-reference" for step in restored.dataset_context.provenance.processing_steps)
+    from dtcc_sim.shallow_water.solver import _reference
+    completed = next(step for step in restored.dataset_context.provenance.processing_steps
+                     if isinstance(step, dict) and step.get("backend") == "cecilia-reference")
+    assert completed["reference"] == _reference()

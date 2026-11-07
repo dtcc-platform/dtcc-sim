@@ -33,8 +33,11 @@ class ShallowWaterParameters:
     tvb_M: float = 0.5
     tvb_nu: float = 1.5
     n_outputs: int = 5
+    max_steps: int | None = 5000
 
     def __post_init__(self):
+        if self.max_steps is not None and (type(self.max_steps) is not int or self.max_steps <= 0):
+            raise ValueError("max_steps must be a positive integer or None")
         if self.mesh_data_path is not None and (not isinstance(self.mesh_data_path, str) or not self.mesh_data_path):
             raise ValueError("mesh_data_path must be an NPZ filename")
         if self.mesh_data_path and self.mesh_path:
@@ -81,14 +84,10 @@ class ShallowWaterSimulator:
             raise ValueError("Choose either a DTCC mesh object or a mesh file")
 
     def run(self):
-        from mpi4py import MPI
-        from petsc4py import PETSc
+        from .runtime import validate_runtime
+        validate_runtime()
         import numpy as np
 
-        if MPI.COMM_WORLD.size != 1:
-            raise RuntimeError("This interface currently supports one MPI rank")
-        if np.issubdtype(PETSc.ScalarType, np.complexfloating):
-            raise RuntimeError("Use a real-valued PETSc runtime")
         if self.parameters.mesh_path and not Path(self.parameters.mesh_path).is_file():
             raise FileNotFoundError(self.parameters.mesh_path)
         from . import backend

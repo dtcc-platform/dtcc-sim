@@ -621,10 +621,12 @@ def run(parameters, output_dir, mesh_data=None):
             h_min = min(Lx / nx, Ly / ny)
 
         while t < final_time - 1.0e-12:
+            if p.max_steps is not None and step >= p.max_steps:
+                raise RuntimeError(f"Maximum step count exhausted (max_steps={p.max_steps}) at t={t:.16g}; increase max_steps or set it to None")
             dt = compute_time_step(U_n, h_dofs, hu_dofs, hv_dofs, gravity, cfl, h_min, comm)
-            dt = min(dt, final_time - t)
-            if not np.isfinite(dt) or dt <= 0 or step >= 5000:
+            if not np.isfinite(dt) or dt <= 0:
                 raise RuntimeError("Nonfinite or nonpositive time step")
+            dt = min(dt, final_time - t, next_output_time - t)
 
             U_0.x.array[:] = U_n.x.array
 
@@ -678,12 +680,12 @@ def run(parameters, output_dir, mesh_data=None):
                     f"Fr_max={Fr_max:.6f}"
                 )
 
-            if t >= next_output_time or t >= final_time - 1.0e-12:
+            if t >= next_output_time - 1.0e-12 or t >= final_time - 1.0e-12:
                 update_depth_output()
                 print(f"write t={t:.5f}, h min={h_out.x.array.min()}, h max={h_out.x.array.max()}")
                 xdmf.write_function(h_out, t)
                 save_snapshot(t)
-                next_output_time += output_dt
+                next_output_time = min(final_time, len(snapshots) * output_dt)
 
     final_mass = float(fem.assemble_scalar(fem.form(U_n[0] * ufl.dx)))
     values = U_n.x.array

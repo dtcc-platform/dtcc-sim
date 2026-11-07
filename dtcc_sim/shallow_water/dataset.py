@@ -89,7 +89,7 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
         from dtcc_core import datasets
         from dtcc_core.io import load_mesh
         from dtcc_core.model import Bounds
-        from .solver import CeciliaSolver
+        from .solver import ShallowWaterSolver
 
         args._run_metadata = None
         if args.mesh_path is None:
@@ -104,7 +104,7 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
             mesh = load_mesh(args.mesh_path)
             crs = args.mesh_crs
             source = {"mesh_path": str(args.mesh_path.resolve())}
-        solver = CeciliaSolver(mesh=mesh, params=args.parameters, output_dir=args.output_dir,
+        solver = ShallowWaterSolver(mesh=mesh, params=args.parameters, output_dir=args.output_dir,
                                     solver_python=args.solver_python, mesh_crs=crs)
         result = solver.simulate()
         args._run_metadata = {"name": "Experimental shallow-water completed run", **solver.diagnostics,
