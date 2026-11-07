@@ -51,6 +51,14 @@ not the tetrahedral volume cache. It has a flat bed, reflecting boundaries,
 and an idealized pulse, not rainfall or a calibrated flood event. See
 [shallow-water scope and usage](../docs/shallow-water.md).
 
+The shallow-water city demo uses Chalmers Johanneberg in EPSG:3006, centred at
+`(319970, 6397910)` with `L = 250` m and bounds
+`(319845, 6397785, 320095, 6398035)`. Its compact 0.2 m pulse starts at
+`(320005, 6397890)` on open ground, with a 7 m width. The 20-second scenario
+uses CFL 0.08 and saves states every five seconds to show propagation towards
+the building interfaces. Expect a longer run than the offline unit-square demo;
+two complete executions took about 31 minutes on the validation server.
+
 For urban wind through the dataset API, run:
 
 ```bash
@@ -63,7 +71,8 @@ with `.info()`, then preview its field with `.plot(...)`. The Stokes wind exampl
 selects the linear equations explicitly. Direct solver examples expose parameter
 objects and solver diagnostics for custom scenarios.
 
-Geographic Gothenburg demos use a 200 × 200 m box centred on Poseidon
+The other geographic Gothenburg demos in this checkout use a 200 × 200 m box
+centred on Poseidon
 (EPSG:3006: 319995.962899, 6399009.716755). Each script defines `center_x`,
 `center_y` and `L`, with bounds at centre ± `L / 2`. The air-quality demo keeps
 its Stockholm domain and 100 m target size chosen for sensor coverage, using

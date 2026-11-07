@@ -292,9 +292,14 @@ def limit_scalar_component(component_array, limiter_data, tvb_M, tvb_nu, cell_si
     cell_values = component_array[cell_dofs]
     cell_means = np.mean(cell_values, axis=1)
     limited_values = cell_values.copy()
+    nonzero_cells = np.any(cell_values != 0., axis=1)
 
     for cell, local_dofs in enumerate(cell_dofs):
         if limit_cells is not None and not limit_cells[cell]:
+            continue
+        # An identically zero polynomial has no slope to limit, regardless of
+        # neighboring means; preserve it without solving local least squares.
+        if not nonzero_cells[cell]:
             continue
 
         local_points = dof_coords[local_dofs]

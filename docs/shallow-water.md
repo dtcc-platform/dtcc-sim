@@ -86,18 +86,33 @@ import dtcc_core as dtcc
 import dtcc_sim.datasets
 from dtcc_sim import ShallowWaterParameters
 
+center_x = 319970.
+center_y = 6397910.
+L = 250.
+bounds = (center_x - L/2, center_y - L/2, center_x + L/2, center_y + L/2)
+pulse_x = center_x + 35.
+pulse_y = center_y - 20.
+
 water = dtcc.datasets.urban_flood_simulation(
-    bounds=(319895.962899, 6398909.716755, 320095.962899, 6399109.716755),
+    bounds=bounds,
     h=10., min_building_detail=.5, strict_live=True,
     output_dir="output/city_water",
     parameters=ShallowWaterParameters(
-        h0=0., amplitude=.2, sigma=10., compact_pulse=True,
-        final_time=.5, n_outputs=4,
+        h0=0., amplitude=.2, sigma=7., compact_pulse=True,
+        x_center=pulse_x, y_center=pulse_y, final_time=20., cfl=.08, n_outputs=4,
     ),
 )
 water.info()
 water.plot(field="water_depth")
 ```
+
+The city demo uses the 250 × 250 m Chalmers Johanneberg domain in EPSG:3006,
+with bounds `(319845, 6397785, 320095, 6398035)`. The compact pulse is placed
+on open ground at `(320005, 6397890)`, offset from the domain centre to approach
+nearby buildings. It is 0.2 m high with a 7 m Gaussian width, truncated at three
+widths; the 20-second scenario saves the initial state and four five-second
+intervals. Its explicit CFL setting is 0.08. This is a longer numerical demo,
+not a rainfall-driven or calibrated flood scenario.
 
 Generated geometry comes from Core's `city_flat_mesh` in EPSG:3006, including
 building-footprint markers. It is flat, not measured terrain, and does not use
@@ -151,6 +166,8 @@ markers; its neighbor stencils exclude reflecting building interfaces. The
 existing wet/dry treatment still restricts free-surface slope limiting in
 partially dry cells. Runtime validation, a configurable step limit, scheduled
 output times and the domain-wide TVB correction are recorded in the manifest.
+Identically zero TVB polynomials bypass the local least-squares solves; nonzero
+polynomials retain the same limiting procedure and wall-aware stencils.
 Local assembly and the public DTCC adapter do not
 claim to reproduce projected-coordinate floating-point results bitwise.
 Completed diagnostics and dataset-package processing provenance include the

@@ -167,10 +167,64 @@ enclosed building region. Independent volume integration over the snapshots
 gave maximum building/ground drifts of `1.73e-18` and `9.71e-17`, respectively.
 Installed-package imports and pinned worker hashes were verified.
 
-The common city-demo domain/scenario, visualization, independent dynamic
-accuracy/refinement benchmark and backend cleanup remain outstanding. These
+At that stage the common city-demo domain/scenario, visualization, independent dynamic
+accuracy/refinement benchmark and backend cleanup remained outstanding. These
 regressions address the reviewed limiter defect; they do not establish general
 dynamic accuracy or flood-prediction validity.
+
+## Johanneberg city scenario on 2026-11-07
+
+The city demo and its workflow example use the requested Chalmers Johanneberg
+domain: EPSG:3006, centre `(319970, 6397910)`, `L = 250` m and bounds
+`(319845, 6397785, 320095, 6398035)`, derived as centre ± `L / 2`. The actual
+Core flat-city mesh has 1,621 vertices and 3,108 triangles. Core resolved real
+city data using its source-tile cache.
+
+The compact pulse starts on open ground at `(320005, 6397890)`, with amplitude
+0.2 m, width 7 m, zero background depth and zero initial momentum. The scenario
+runs for 20 seconds at CFL 0.08 and saves states at 0, 5, 10, 15 and 20 seconds.
+Its footprint initially excludes building interiors. Both complete runs
+took 1,006 accepted steps with no rejected attempts. Independent integration
+over all five snapshots in each run found maximum regional volume drift `7.11e-14 m³`
+across 19 reflecting regions with 450 building/ground interfaces.
+
+The saved states show propagation onto initially dry ground, including beside
+buildings. Counts below use face-mean depth greater than `1e-4 m`:
+
+| Time (s) | Wet ground faces | Newly wet ground faces | Newly wet beside buildings |
+|---:|---:|---:|---:|
+| 0 | 50 | 0 | 0 |
+| 5 | 63 | 10 | 4 |
+| 10 | 88 | 35 | 9 |
+| 15 | 132 | 79 | 21 |
+| 20 | 186 | 133 | 32 |
+
+The live-demo test explicitly checks the centre, bounds, CRS, duration, saved
+times, building exclusion and propagation to new ground next to buildings.
+The actual demo passed both executions and preserved an unrelated notes file.
+The opt-in test took about 31 minutes on the validation server, including city
+preparation and plotting; runtime depends on mesh detail and hardware.
+
+```sh
+DTCC_RUN_DEMOS=1 python -m pytest \
+  tests/test_shallow_water_demos.py::test_city_dataset_demo_runs_twice \
+  --run-expensive -q
+```
+
+To keep this longer scenario practical, identically zero TVB polynomials skip
+the local least-squares calculations. A 0.5-second comparison on the same city
+mesh produced byte-identical final state, initial state, bed, coordinates and
+DOF maps before and after this shortcut. Observed run times were 99.47 and
+14.46 seconds; this is a single-run comparison, not a scaling benchmark.
+The built wheel's short-case arrays also matched the source run. The wider
+regression selection passed 57 tests, with the opt-in live case tested separately.
+
+The bed remains flat and boundaries idealized and reflecting. These checks
+establish a more informative city demonstration, not general dynamic accuracy
+or flood calibration. Filled-map plotting support, an independent dynamic
+accuracy/refinement benchmark and the remaining backend cleanup are separate
+outstanding review items. Verification images and raw outputs remain on the
+server; no visual-quality claim is made for the current Core preview.
 
 ## Limits
 
