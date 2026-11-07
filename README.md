@@ -54,6 +54,7 @@ and employment data and plots the resulting flows.
 - [Equation solvers](docs/solvers.md): DTCC mesh inputs and application dataset mapping.
 
 - [Demo catalog](demos/README.md): dataset and solver examples with runtime requirements.
+- [Benchmarks](benchmarks/README.md): solver validation against wind-tunnel measurements.
 - [Installation guide](docs/installation.md): FEniCSx setup and local Core development.
 - [Simulation datasets](docs/datasets/simulations.md): available simulations and result formats.
 - [Shallow-water workflow](docs/shallow-water.md): native meshes, city dataset and real-PETSc worker setup.

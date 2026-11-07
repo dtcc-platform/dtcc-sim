@@ -179,40 +179,19 @@ class TestInletProfiles:
 # ---------------------------------------------------------------------------
 
 
-class _FakeDolfinxGeometry:
-    x = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
-
-
-class _FakeDolfinxMesh:
-    geometry = _FakeDolfinxGeometry()
-
-
 class _FakeVolumeMesh:
     vertices = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
 
 
-def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypatch):
-    from dtcc_sim._flow.solver import _dolfinx_to_volume_mesh
+def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths():
+    from dtcc_sim._flow.solver import _attach_wind_fields
 
-    def fake_evaluate(_mesh, solution):
-        if solution == "velocity":
-            return np.array([[3.0, 4.0, 0.0], [0.0, 0.0, 2.0]])
-        return np.array([[10.0], [20.0]])
-
-    monkeypatch.setattr(
-        "dtcc_sim._flow.solver._evaluate_function_at_vertices",
-        fake_evaluate,
-    )
-    monkeypatch.setattr(
-        "dtcc_sim._flow.solver._reorder_by_coords",
-        lambda _source_keys, values, _target_keys: values,
-    )
-
-    result = _dolfinx_to_volume_mesh(
-        _FakeDolfinxMesh(),
-        "velocity",
-        "pressure",
+    # finite-element vertices in another order and frame than the VolumeMesh
+    result = _attach_wind_fields(
         _FakeVolumeMesh(),
+        np.array([[11.0, 5.0, 2.0], [10.0, 5.0, 2.0]]),
+        np.array([[0.0, 0.0, 2.0], [3.0, 4.0, 0.0]]),
+        np.array([20.0, 10.0]),
     )
 
     fields = {field.name: field for field in result.fields}
@@ -226,6 +205,7 @@ def test_volume_mesh_output_fields_have_expected_units_dims_and_lengths(monkeypa
     assert fields["speed"].dim == 1
     assert fields["speed"].unit == "m/s"
     np.testing.assert_allclose(fields["speed"].values, np.array([5.0, 2.0]))
+    np.testing.assert_allclose(fields["pressure"].values, np.array([10.0, 20.0]))
 
 
 def test_volume_mesh_output_validation_rejects_inconsistent_speed():

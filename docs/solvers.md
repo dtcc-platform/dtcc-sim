@@ -41,7 +41,9 @@ result.info()
 
 Pass a DTCC `VolumeMesh` to a 3D solver; conversion to FEniCSx stays inside Sim.
 Heat and flow require tagged boundary faces, supplied by `BoxMesh`. Native DTCC
-mesh conversion currently uses one MPI rank. Heat and flow use the real PETSc
+mesh conversion currently uses one MPI rank. Flow solvers given bounds run
+under MPI and return the native result on rank zero; see
+[stationary flow](stationary-flow.md#mpi). Heat and flow use the real PETSc
 environment; Helmholtz uses the complex environment.
 
 All finite-element solvers and smooth reconstruction use Float64 local
@@ -75,7 +77,8 @@ See the [installation guide](installation.md#solver-output) for outputs and
 
 The [stationary flow guide](stationary-flow.md) covers Navier–Stokes and Stokes
 configuration, pressure gauges, traction boundaries, numerical acceptance and
-failure behavior.
+failure behavior. The [atmospheric boundary-layer guide](atmospheric-boundary-layer.md)
+covers the algebraic eddy-viscosity closures, log-law wall and equilibrium inflow.
 
 Every solver prints a wall-clock breakdown at the end of a run. See
 [run timings](timings.md) for phase meanings, diagnostics, saved reports and MPI
@@ -115,7 +118,9 @@ Bounds-based heat, flow and reconstruction solvers share `CityMeshSettings`.
 Their parameters and application datasets expose `mesh_lod`, `mesh_lod2_method`,
 `mesh_flat_ground`, `mesh_min_building_detail`, `mesh_repair_boundary_corners`
 and `mesh_cache_dir`, alongside target size, domain height and terrain raster
-controls. The general API default is LOD1; the city demos explicitly use
+controls. Corner repair is forwarded only when Core exposes that option;
+cache identity records the effective Core request. The general API default is
+LOD1; the city demos explicitly use
 `mesh_lod="lod2"`. The Stockholm sensor demo explicitly uses LOD1: its larger
 LOD2 volume currently fails inside TetGen. This is a geometry limitation, not
 an automatic runtime fallback. Catalogue reconstruction fits roof geometry to source points;

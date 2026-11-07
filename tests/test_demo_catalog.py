@@ -61,8 +61,17 @@ def test_dataset_wind_uses_same_scenario_as_direct_solver():
         return {item.arg: ast.literal_eval(item.value) for item in call.keywords
                 if item.arg != "bounds"}
 
-    direct = keywords("urban_wind_simulation.py", "NavierStokesParameters")
+    from dtcc_sim.datasets import UrbanWindSimulationArgs
+    from dtcc_sim.navierstokes.parameters import NavierStokesParameters
+
+    direct = NavierStokesParameters(**keywords("urban_wind_simulation.py", "NavierStokesParameters"))
     dataset = keywords("dataset_urban_wind.py", "urban_wind_simulation")
-    assert dataset.pop("equations") == "navier_stokes"
+    assert dataset["equations"] == "navier_stokes"
     assert dataset.pop("output_dir") == "output/dataset_urban_wind"
-    assert dataset == direct
+    args = UrbanWindSimulationArgs(bounds=(0, 0, 1, 1), **dataset)
+    resolved = NavierStokesParameters.model_validate({
+        name: getattr(args, name) for name in NavierStokesParameters.model_fields
+        if getattr(args, name) is not None
+    })
+    assert resolved == direct
+    assert (resolved.turbulence_model, resolved.wall_model) == ("mixing_length", "log_law")

@@ -6,9 +6,14 @@ Taylor–Hood P2/P1 elements. Its momentum equation is
 `(u · ∇)u - ν_eff Δu + ∇p = 0`, with `div(u) = 0` and
 `ν_eff = nu + nu_t`.
 
+With `turbulence_model="abl"` or `"mixing_length"`, `nu_t` is an algebraic
+atmospheric boundary-layer eddy viscosity and the viscous term becomes
+`-div(2 ν_eff ε(u))`; see the [atmospheric boundary layer](atmospheric-boundary-layer.md).
 The viscosity and inlet forcing remain at the requested values. Density does
 not enter this kinematic-pressure equation. A stationary field is neither a time
-average nor a validated turbulence prediction. Some scenarios have no numerically
+average nor a validated turbulence prediction; the
+[AIJ benchmarks](../benchmarks/aij/README.md) measure the closures' accuracy
+around isolated buildings. Some scenarios have no numerically
 accessible stationary solution at the selected mesh and physical settings.
 
 ## Configuration
@@ -29,9 +34,16 @@ result = solver.simulate()
 ```
 
 `StokesSolver` takes `StokesParameters` and omits convection. The dataset
-`urban_wind_simulation` selects it with `equations="stokes"`. Both APIs accept
+`urban_wind_simulation` selects it with `equations="stokes"`. The dataset
+defaults to the [atmospheric boundary-layer](atmospheric-boundary-layer.md)
+closure with log-law walls and inflow and slip sides and top. Both APIs accept
 native tagged DTCC volume meshes, tagged DOLFINx meshes, mesh paths or city bounds.
-Wind direction follows the meteorological FROM convention.
+Wind direction follows the meteorological FROM convention. Every lateral
+bounding-box face the wind enters through receives the inflow profile, every
+face it leaves through is a traction outlet, and faces parallel to the wind
+are side faces. An oblique wind therefore has two inflow and two outflow faces.
+Explicit `inlet_marker` and `outlet_marker` or `closed_cavity=True` select
+single faces.
 
 Time steps, CFL controls, ramps, statistical windows and pressure-correction
 options are invalid arguments. Configure nonlinear tolerances and
@@ -42,15 +54,23 @@ same dataset schema.
 ## Boundaries and pressure
 
 The natural open-boundary condition is gradient traction
-`ν_eff ∂u/∂n - p n = 0`. Pressure is determined by this condition; an outlet does
+`ν_eff ∂u/∂n - p n = 0`, also with the symmetric variable-viscosity stress. Pressure is determined by this condition; an outlet does
 not also receive a pressure Dirichlet constraint. Flat side/top slip imposes zero
 normal velocity and natural tangential traction. No-slip fixes all velocity
 components on buildings, roofs and ground.
 
-Friction walls use tangential Robin friction. Axis-aligned facets receive a
-strong normal constraint. Other facets use consistent normal Nitsche terms with
-a default penalty `100 ν_eff/h`; their measured normal leakage and mass checks
-still determine acceptance. `gamma_normal` explicitly controls that penalty.
+Friction walls use tangential Robin friction; `wall_model="log_law"` uses a
+rough-wall quadratic drag. Axis-aligned facets receive a strong normal
+constraint. Other facets use consistent normal Nitsche terms with a default
+penalty `nitsche_penalty (ν_eff/h_F + wind_speed)`, `nitsche_penalty=100`,
+where `h_F = 3|K|/|F|` is the cell height normal to the facet. The velocity term
+limits leakage under stagnation pressure; the normal height keeps flat cells
+next to small terrain facets coercive. No penetration acts along an averaged
+wall normal: area-weighted vertex means of the facet normals, interpolated
+linearly, with facet normals kept at sharp edges and corners. Ground and
+building leakage gates bound the flow across these walls along that normal.
+`gamma_normal` explicitly controls that penalty. On inlet edges shared with
+friction or log-law walls, the inflow is projected onto the wall tangent planes.
 
 The assembled Jacobian is tested for the constant-pressure nullspace. A true
 nullspace receives residual projection and zero-mean pressure export. Traction
@@ -97,13 +117,19 @@ for settings, comparisons and scaling limitations.
 
 Acceptance requires positive SNES and applicable KSP reasons, finite fields,
 an independently assembled residual including Dirichlet mismatch and pressure
-compatibility, dimensionless divergence and total boundary flux balance.
+compatibility, dimensionless divergence, total boundary flux balance and
+ground and building leakage.
 Defaults are:
 
 - Residual: `max(1e-9, 1e-8 × max(initial residual norm, 1))`, using the
   full-convection residual at the Stokes initial field for Navier–Stokes.
 - Dimensionless divergence: `hmin × RMS(div u) / max(RMS(u), 1e-14) <= 0.1`.
 - Flux imbalance: `abs(∫boundary u·n) / max(∫boundary abs(u·n), 1e-14) <= 1e-4`.
+- Ground leakage: `∫ground abs(u·m) / max(inflow volume flux, 1e-14) <= 0.02`,
+  with `m` the enforced wall normal,
+  and the same for building walls and roofs. Strong no-slip walls have none;
+  see the [atmospheric boundary layer](atmospheric-boundary-layer.md#impermeability)
+  for weak walls on curved terrain.
 
 Taylor–Hood incompressibility is weak. Pointwise divergence need not vanish.
 Underresolved cavity flows can fail the divergence gate despite a small
@@ -135,6 +161,21 @@ quality diagnostics use the P2 solution. Dataset byte output remains `dtcc`.
 Repeated successful runs replace owned outputs and preserve unrelated files.
 Numerical failures preserve existing solution files and propagate through the
 dataset and service as failures.
+
+### MPI
+
+Flow runs from bounds work unchanged under `mpirun`, for example
+`mpirun -n 4 python demos/dataset_urban_wind.py`. Rank zero generates or loads
+the city mesh, all ranks solve the distributed problem and write XDMF output
+collectively, and the vertex fields are gathered onto the native `VolumeMesh`
+on rank zero. The other ranks return a `RankZeroResult` whose `info`, `plot`
+and `save` do nothing, and dtcc-sim informational messages come from rank zero
+only. On a two-core container the 27,474-tetrahedron Poseidon mesh with the
+mixing-length closure took 76 s on two ranks against 133 s on one. Mesh
+generation does not speed up, and the one-level velocity preconditioner
+weakens as ranks are added. Limit threads to one per rank
+(`OMP_NUM_THREADS=1`), and use at most one rank per performance core. DTCC `VolumeMesh`
+input (`mesh=`) still requires one rank.
 
 See [numerical verification](wind-verification.md) for reference errors,
 measurements and city limitations.

@@ -7,6 +7,7 @@ automatically register themselves with dtcc_core.datasets.
 """
 
 from .meshing import CityMeshSettings
+from .output import RankZeroResult
 from .timing import phase as timing_phase, timed_run
 
 from typing import Optional, Literal
@@ -1223,6 +1224,14 @@ class UrbanWindSimulationArgs(DatasetBaseArgs, _FlowParameters):
         description="Solver output directory; owned files are replaced after acceptance",
     )
     equations: WindEquationSet = Field("navier_stokes", description="Stationary Navier–Stokes or linear Stokes")
+    turbulence_model: Literal["constant", "abl", "mixing_length"] = Field(
+        "mixing_length",
+        description="Eddy viscosity; default mixing_length for Navier–Stokes and abl for Stokes. "
+                    "constant uses the explicit nu_t",
+    )
+    wall_model: Literal["noslip", "friction", "log_law"] = Field("log_law", description="Building, roof and ground treatment")
+    inlet_profile: WindInletProfile = Field("log_law", description="Inflow profile; ABL closures require log_law")
+    side_top_boundary: Literal["open", "slip"] = Field("slip", description="Lateral non-inflow faces and top")
     nonlinear_rtol: Optional[float] = Field(None, gt=0, lt=1, description="SNES relative tolerance; default 1e-9")
     nonlinear_atol: Optional[float] = Field(None, gt=0, description="SNES absolute tolerance; default 1e-10")
     nonlinear_max_it: Optional[int] = Field(None, gt=0, description="SNES iteration limit; default 40")
@@ -1235,6 +1244,8 @@ class UrbanWindSimulationArgs(DatasetBaseArgs, _FlowParameters):
     @classmethod
     def equation_options(cls, data):
         if isinstance(data, dict):
+            if data.get("equations", "navier_stokes") == "stokes" and data.get("turbulence_model") is None:
+                data = {**data, "turbulence_model": "abl"}
             if data.get("equations", "navier_stokes") == "stokes":
                 invalid = {key for key in ("nonlinear_rtol", "nonlinear_atol", "nonlinear_max_it", "backflow_beta", "petsc_options") if data.get(key) is not None}
                 if invalid:
@@ -1267,7 +1278,8 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
     title = "Urban Wind Simulation"
     description = (
         "Incompressible urban wind simulation using FEniCSx. The default "
-        "solves stationary mixed Navier-Stokes with Newton iteration; "
+        "solves stationary mixed Navier-Stokes with Newton iteration and a "
+        "mixing-length eddy viscosity; "
         "linear Stokes is available through explicit equation selection. Output "
         "pressure is kinematic pressure p/rho in m^2/s^2. Returns a DTCC "
         "VolumeMesh with velocity, pressure, and speed Fields."
@@ -1296,8 +1308,22 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             "name": "Urban wind finite-element CFD model",
             "role": "simulation_model",
             "equation": (
-                "du/dt + (u dot grad)u = -grad(p/rho) + nu_eff Delta u; "
-                "div u = 0"
+                "(u dot grad)u = -grad(p/rho) + div(2 nu_eff eps(u)); div u = 0; "
+                "nu_eff = nu + nu_t; Stokes omits the convection term"
+            ),
+            "turbulence": (
+                "algebraic neutral atmospheric boundary-layer eddy viscosity: "
+                "Prandtl mixing length nu_t = l^2 |S| with l = kappa (d + z_w) "
+                "for Navier-Stokes, equilibrium profile nu_t = u* kappa (d + z_w) "
+                "for Stokes; log-law inflow and rough log-law walls"
+            ),
+            "validation": (
+                "AIJ wind-tunnel benchmarks for isolated buildings "
+                "(benchmarks/aij in dtcc-sim): with the mixing length, 76 % of "
+                "186 measured speeds around a 1:1:2 high-rise and 53 % of 224 "
+                "around a 4:4:1 slab meet the VDI 3783-9 tolerance of 25 % or "
+                "0.05 of the reference speed (66 % required); "
+                "not validated in urban areas or against field measurements"
             ),
             "unknowns": "velocity u and kinematic pressure p/rho",
             "units": {
@@ -1355,12 +1381,12 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             "Optionally fetch weather wind speed and direction; fail if "
             "use_weather=True and no usable wind data is returned"
         ),
-        "Select inlet and outlet bbox faces from meteorological wind direction",
+        "Classify lateral bbox faces as inflow, outflow or side from the meteorological wind direction",
         (
             "Collapse raw boundary markers into wall, roof, ground, inlet, "
             "outlet, side, and top categories"
         ),
-        "Build the selected uniform, power-law, or log-law inlet velocity profile",
+        "Build the selected uniform, power-law, or log-law inlet velocity profile; ABL closures use terrain-relative height",
         "Solve stationary mixed Navier-Stokes or explicitly selected linear Stokes",
         "Check nonlinear convergence, independent residual, divergence, boundary flux and fields",
         (
@@ -1393,9 +1419,29 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         {
             "heading": "How to interpret it",
             "body": (
-                "The result is an engineering scenario field for solver and "
-                "workflow validation. Use diagnostics and mesh-sensitivity "
-                "checks before treating a city-scale run as CFD evidence."
+                "The result is a stationary engineering scenario of the mean "
+                "wind, not a measurement or a certified CFD product. Wind along "
+                "streets, around building corners and in open areas is the most "
+                "reliable part; sheltered areas behind buildings tend to come out "
+                "too windy. Check diagnostics and mesh sensitivity before relying "
+                "on a city-scale run."
+            ),
+        },
+        {
+            "heading": "Validation status",
+            "body": (
+                "The Navier-Stokes default, a mixing-length eddy viscosity with "
+                "log-law walls, has been compared with AIJ wind-tunnel "
+                "measurements around isolated buildings. For a 1:1:2 high-rise, "
+                "76 % of the 186 measured speeds are within the VDI 3783-9 "
+                "tolerance of 25 %, above the 66 % it requires; the roof "
+                "separation is too weak and the reverse flow behind the building "
+                "too strong. For a 4:4:1 slab, 53 % of 224 are within it: the "
+                "wake recovers too fast, "
+                "so the wind in its shelter is overpredicted, and mesh refinement "
+                "does not change this. The benchmark meshes have 4 to 6 cells "
+                "per building height; the default 12.5 m city mesh has about one "
+                "or two. The Stokes default and urban areas are not validated."
             ),
         },
     ]
@@ -1403,8 +1449,10 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         "unknowns: velocity u and kinematic pressure p/rho",
         "fields: velocity dim=3 m/s, pressure dim=1 m^2/s^2, speed dim=1 m/s",
         "default wind convention: 270 degrees means wind from west, flowing east",
-        "default wall model: no-slip on buildings, roofs, and ground",
-        "city-scale CFD validation is expensive/manual until benchmarked",
+        "default turbulence: mixing-length (Navier–Stokes) or equilibrium ABL (Stokes) eddy viscosity",
+        "default walls: rough log-law wall function on buildings, roofs, and ground",
+        "validation: AIJ isolated-building wind-tunnel benchmarks; high-rise within the VDI 3783-9 hit rate, slab wake too windy",
+        "not validated in urban areas or against field measurements",
     ]
     presentation_legend = {
         "title": "Wind fields",
@@ -1419,7 +1467,7 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
                 "label": "inlet/outlet",
                 "meaning": "bbox faces selected from wind direction",
             },
-            {"label": "walls/ground", "meaning": "solid no-slip or friction surfaces"},
+            {"label": "walls/ground", "meaning": "solid log-law, no-slip or friction surfaces"},
         ],
     }
     view_hints = {
@@ -1440,21 +1488,26 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
             "settings can dominate the result."
         ),
         (
-            "The default nu_t=0 is a laminar/simplified setting. Urban "
-            "turbulence, atmospheric stratification, thermal buoyancy, and "
-            "rough-wall calibration are not validated by default."
+            "The default algebraic neutral-ABL eddy viscosity (mixing length "
+            "for Navier–Stokes, equilibrium profile for Stokes) with a log-law "
+            "inflow and rough-wall law is not a transport-equation RANS model. "
+            "In wind-tunnel benchmarks it overpredicts the wind in building "
+            "wakes. Atmospheric stratification, thermal buoyancy and rough-wall "
+            "calibration are neither represented nor validated."
         ),
         (
-            "City-scale runs can be slow and mesh-sensitive; treat them as "
-            "manual/expensive validation until benchmark and convergence "
-            "studies have been run."
+            "City-scale runs can be slow and their mesh sensitivity has not "
+            "been established; the default 12.5 m mesh is much coarser than "
+            "the benchmark meshes."
         ),
     ]
     presentation_limitations = [
         "Planning/scenario field, not a measured wind or regulatory CFD product.",
         "Output pressure is kinematic pressure p/rho, not absolute pressure in Pa.",
         "Default weather use is optional and requires usable upstream wind data.",
-        "Small solver smoke tests do not validate city-scale recirculation physics.",
+        "Compared only with wind-tunnel measurements around isolated buildings (AIJ cases A and B), not in urban areas or with field measurements.",
+        "Sheltered areas behind buildings tend to be too windy: the mixing-length closure lets wakes recover too fast.",
+        "Stokes mode omits convection and does not represent separation or wakes.",
         "Outputs inherit upstream city-volume-mesh source and geometry limitations.",
     ]
 
@@ -1472,6 +1525,8 @@ class UrbanWindSimulationDataset(DatasetDescriptor):
         })
         sim = solver_type(bounds=bounds, params=params, output_dir=args.output_dir)
         result = sim.simulate()
+        if isinstance(result, RankZeroResult):
+            return result  # rank zero holds and serializes the result
 
         with timing_phase("export"):
             if args.format:

@@ -111,6 +111,29 @@ and supplies **no valid city speed ratio**. IPCS pressure-correction outlet
 constraints also differ from the mixed traction boundary, so field agreement
 would not establish physical validation.
 
+## Atmospheric boundary layer
+
+Algebraic ABL closures, the log-law wall and the equilibrium inflow are
+verified separately: wall distance, Jacobians in serial and on two MPI ranks,
+weak and independently derived manufactured solutions, empty-domain horizontal
+homogeneity for aligned and oblique winds, weak-wall leakage, a curved-wall
+manufactured solution and city acceptance.
+See the [atmospheric boundary layer](atmospheric-boundary-layer.md).
+
+The default weak-wall penalty uses the normal cell height and a velocity term.
+With a `100 ν_eff/h` penalty using the cell diameter, the Poseidon case with
+`wall_model="friction"`, `nu_t=2` and MUMPS LU stalled after seven Newton
+iterations at residual 7.18 near small terrain facets beside building walls.
+With `100 (ν_eff/h_F + wind_speed)` it converged in six iterations but failed the
+flux-imbalance gate, 1.59e-4 against 1e-4, with 0.056 m/s RMS wall-normal
+leakage; penalty height alone gave 4.54e-4 and 0.17 m/s. Most of the net
+leakage entered through sloping ground at the inlet, where the horizontal
+inflow profile was imposed. With the inflow projected onto the wall tangent
+planes on those edges, the case converges in six iterations and passes:
+flux imbalance 1.69e-5, 0.029 m/s RMS wall-normal velocity. With
+`nitsche_penalty=1000` and MUMPS LU the imbalance is 4.6e-6, the RMS 0.016 m/s
+and the ground and building leakage 0.17 % and 0.013 % of the inflow.
+
 ## Verification scope
 
 The real-environment suite passes 335 tests, with six skips and three opt-in
@@ -146,3 +169,5 @@ General friction facets use weak normal enforcement and
 can fail leakage or divergence checks. High-Reynolds-number flows can fail to
 reach a stationary solution. The sensitivity probes and numerical convergence
 do not validate turbulence, weather representativeness or regulatory CFD use.
+Wind-tunnel comparisons for isolated buildings are in the
+[AIJ benchmarks](../benchmarks/aij/README.md).

@@ -7,6 +7,10 @@ conda activate fenicsx-env
 python demos/urban_heat_cooling.py
 ```
 
+The wind demos also run unchanged in parallel, for example
+`mpirun -n 4 python demos/dataset_urban_wind.py`; output comes from rank zero.
+See [stationary flow](../docs/stationary-flow.md#mpi).
+
 Follow the [demo guidelines](../docs/demo-guidelines.md) when adding or revising
 examples. See [CONTRIBUTING.md](../CONTRIBUTING.md#demos) for verification and
 [installation](../docs/installation.md) for dependencies. Close plots and viewers
@@ -75,25 +79,27 @@ with `.info()`, then preview its field with `.plot(...)`. The Stokes wind exampl
 selects the linear equations explicitly. Direct solver examples expose parameter
 objects and solver diagnostics for custom scenarios.
 
-The other geographic Gothenburg demos in this checkout use a 200 × 200 m box
-centred on Poseidon
-(EPSG:3006: 319995.962899, 6399009.716755). Each script defines `center_x`,
-`center_y` and `L`, with bounds at centre ± `L / 2`. The air-quality demo keeps
+Geographic Gothenburg demos use a 250 × 250 m box centred on Chalmers Johanneberg
+(EPSG:3006: 319970, 6397910). Each script defines `center_x`,
+`center_y` and `L`, with bounds at centre ± `L / 2`, giving
+`(319845, 6397785, 320095, 6398035)`. The air-quality demo keeps
 its Stockholm domain and 100 m target size chosen for sensor coverage, using
 LOD1 and the same cache infrastructure in a separate geometry entry.
 The Stockholm LOD2 volume currently fails inside TetGen; the demo selects LOD1
 explicitly. The Gothenburg LOD2 volume is supported.
 
 All Gothenburg volume-mesh demos use the same terrain-following
-200 × 200 × 80 m LOD2 geometry, 12.5 m target edge length and 0.5 m minimum
-building detail. Roofs use Core's catalogue reconstruction and boundary corners
-are repaired before solving. The demos share `output/city-mesh-cache` across
+250 × 250 × 80 m LOD2 geometry, 12.5 m target edge length and 0.5 m minimum
+building detail. Roofs use Core's catalogue reconstruction and request
+boundary-corner repair when the Core meshing API exposes it. The demos share
+`output/city-mesh-cache` across
 the real and complex solver environments. The first run generates the mesh;
 subsequent demos verify and reuse the same files. Results retain map coordinates
 in previews and exports, so geometry and fields overlay without translation.
 Local geometry and quality constraints also affect actual element sizes.
+The noise source is at the domain centre, 2 m above sampled terrain.
 Traffic uses a road network rather than a volume mesh. The direct reconstruction
-example uses reproducible synthetic temperatures at approximate elevations;
+example uses reproducible synthetic temperatures 5–15 m above sampled terrain;
 observations outside the air volume are excluded. The air-quality dataset example
 uses a 750 × 750 m Stockholm domain containing street stations; rooftop stations
 with missing elevations cannot be placed above the ground mesh. It requires
@@ -141,7 +147,12 @@ The wind examples use the [stationary mixed solver](../docs/stationary-flow.md)
 and preview `speed` through `result.plot(...)`. City wind examples request corner
 repair during mesh generation and use the default iterative block solver.
 See the [linear-solver measurements](../docs/flow-linear-solvers.md). Their 12.5 m target size and
-200 × 200 × 80 m Poseidon domain remain explicit. These are stationary scenarios
-with specified effective viscosity; they do not validate city turbulence. The
+250 × 250 × 80 m Chalmers Johanneberg domain remain explicit. The city wind examples use the
+algebraic [atmospheric boundary-layer](../docs/atmospheric-boundary-layer.md)
+closure with log-law walls: mixing length for Navier–Stokes, the equilibrium
+profile for Stokes. They are stationary scenarios: the mixing length is compared with
+wind-tunnel measurements around isolated buildings in the
+[AIJ benchmarks](../benchmarks/aij/README.md), where it overpredicts wind in building
+wakes, and is not validated for city areas. The
 cavity uses a smooth tangential lid that vanishes at its edges. Channel and
 bluff-body meshes use native Core geometry without Gmsh.

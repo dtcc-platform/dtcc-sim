@@ -35,7 +35,7 @@ use `workers=1`: the parallel backend uses multiprocessing `spawn`, which
 re-executes top-level scripts. Teach parallel execution through the launcher.
 Helmholtz amplitude is not sound-pressure level or dB.
 
-City volume examples use the Poseidon domain and common LOD2/cache settings
+City volume examples use the Chalmers Johanneberg domain and common LOD2/cache settings
 listed in the [demo catalog](../demos/README.md). The Stockholm sensor example
 keeps its coverage-driven bounds and resolution. Analytical equation demos keep
 their synthetic meshes. Keep changes to shared city settings consistent across

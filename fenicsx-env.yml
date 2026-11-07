@@ -13,6 +13,8 @@ dependencies:
   - ninja
   - pyvista
   - matplotlib
+  - scipy
+  - xlrd
   - h5py
   - numpy
   - uv

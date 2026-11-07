@@ -43,6 +43,13 @@ require `DTCC_WIND_CITY_MESH` pointing to a tagged city XDMF mesh and
 exercises heat, reconstruction, air-quality and traffic examples with live data.
 For solver verification, use the numerical tests below.
 
+## Benchmarks
+
+[Benchmarks](benchmarks/README.md) compare solvers with measurements. They
+need reference data downloaded separately and the `benchmarks` extra, and
+write results below `output/benchmarks/`; for example
+`python -m benchmarks.aij.run --case A` in the real-number FEniCSx environment.
+
 ## Tests
 
 For a quick development check:

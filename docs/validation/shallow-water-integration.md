@@ -243,6 +243,12 @@ method. Renderer checks cover actual polygon/value mapping, input-coordinate
 preservation, building exclusion from colour scaling, perimeter outlines,
 all-dry inputs, common colour limits and supplied 2D axes.
 
+After integrating `develop` at `497f4d26aa5cc7ce3797945e069b861402523b59`,
+the affected selection including shared city-domain checks passed 87 tests,
+with the opt-in long city solve skipped. The merge retained the pinned Core
+dependency and the numerical worker; it resolved the demo-catalog conflict
+using the shared Johanneberg convention.
+
 All ten snapshots from the two completed Johanneberg runs were rendered with a
 common depth scale. Checks confirmed the 1,854 ground polygons, 50 m scale bar,
 CRS/time labels and displayed text bounds. The updated city script's plotting
