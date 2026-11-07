@@ -23,110 +23,6 @@ def build_state_space(domain, degree=1):
     element = basix.ufl.element("DG", domain.basix_cell(), degree, shape=(3,))
     return fem.functionspace(domain, element)
 
-def split_state(U):
-    return U[0], U[1], U[2]
-
-
-# ===== Physical SWE fluxes ===================================
-def effective_state(U, floor):
-    h = ufl.max_value(U[0], 0.)
-    return ufl.as_vector([h,h*U[1]/ufl.max_value(h,floor),h*U[2]/ufl.max_value(h,floor)])
-
-def flux_x(U, gravity, h_floor):
-    h, hu, hv = split_state(effective_state(U,h_floor))
-    u = U[1]/ufl.max_value(U[0],h_floor)
-    return ufl.as_vector([hu,hu*u+.5*gravity*h*h,hv*u])
-
-def flux_y(U, gravity, h_floor):
-    h, hu, hv = split_state(effective_state(U,h_floor))
-    v = U[2]/ufl.max_value(U[0],h_floor)
-    return ufl.as_vector([hv,hu*v,hv*v+.5*gravity*h*h])
-
-def normal_flux(U, normal, gravity, h_floor):
-    normal_xy = ufl.as_vector([normal[0], normal[1]])
-    return flux_x(U, gravity, h_floor) * normal_xy[0] + flux_y(U, gravity, h_floor) * normal_xy[1]
-
-def max_wave_speed(U, normal, gravity, h_floor):
-    h, hu, hv = split_state(U)
-    h_safe = ufl.max_value(h, h_floor)
-    normal_xy = ufl.as_vector([normal[0], normal[1]])
-    un = (hu * normal_xy[0] + hv * normal_xy[1]) / h_safe
-    c = ufl.sqrt(gravity * h_safe)
-    return abs(un) + c
-
-def lax_friedrichs_flux(U_minus, U_plus, normal, gravity, h_floor):
-    flux_avg = 0.5 * (
-        normal_flux(U_minus, normal, gravity, h_floor)
-        + normal_flux(U_plus, normal, gravity, h_floor)
-    )
-    lambda_max = ufl.max_value(
-        max_wave_speed(U_minus, normal, gravity, h_floor),
-        max_wave_speed(U_plus, normal, gravity, h_floor),
-    )
-    return flux_avg - 0.5 * lambda_max * (effective_state(U_plus,h_floor) - effective_state(U_minus,h_floor))
-
-
-# ===== Boundary/Reflective state =============================
-def reflective_exterior_state(U, normal):
-    h, hu, hv = split_state(U)
-    momentum = ufl.as_vector([hu, hv])
-    normal_xy = ufl.as_vector([normal[0], normal[1]])
-    normal_momentum = ufl.dot(momentum, normal_xy)
-    reflected_momentum = momentum - 2.0 * normal_momentum * normal_xy
-    return ufl.as_vector([h, reflected_momentum[0], reflected_momentum[1]])
-
-
-# DG weak form
-def build_rhs_form(domain, V, U_state, gravity, h_floor, wall_facets=None):
-    W = ufl.TestFunction(V)
-    n = ufl.FacetNormal(domain)
-
-    fx = flux_x(U_state, gravity, h_floor)
-    fy = flux_y(U_state, gravity, h_floor)
-    physical_flux = ufl.as_tensor(
-        [
-            [fx[0], fy[0]],
-            [fx[1], fy[1]],
-            [fx[2], fy[2]],
-        ]
-    )
-
-    grad_xy = ufl.as_tensor(
-        [
-            [W[0].dx(0), W[0].dx(1)],
-            [W[1].dx(0), W[1].dx(1)],
-            [W[2].dx(0), W[2].dx(1)],
-        ]
-    )
-
-    exterior_state = reflective_exterior_state(U_state, n)
-    boundary_flux = lax_friedrichs_flux(U_state, exterior_state, n, gravity, h_floor)
-
-    form = ufl.inner(physical_flux, grad_xy) * ufl.Measure('dx', domain=domain, metadata={"quadrature_degree":6}) - ufl.inner(boundary_flux, W) * ufl.Measure('ds', domain=domain, metadata={"quadrature_degree":6})
-
-    if wall_facets is None:
-        interior_flux = lax_friedrichs_flux(U_state("-"), U_state("+"), n("-"), gravity, h_floor)
-        form += -ufl.inner(interior_flux, W("-") - W("+")) * ufl.Measure('dS', domain=domain, metadata={"quadrature_degree":6})
-    else:
-        dS_all = ufl.Measure("dS", domain=domain, subdomain_data=wall_facets, metadata={"quadrature_degree":6})
-
-        # Regular interior facets: marker 0
-        interior_flux = lax_friedrichs_flux(U_state("-"), U_state("+"), n("-"), gravity, h_floor)
-        form += -ufl.inner(interior_flux, W("-") - W("+")) * dS_all(0)
-
-        # Building wall facets: marker 1
-        wall_state_minus = reflective_exterior_state(U_state("-"), n("-"))
-        wall_state_plus = reflective_exterior_state(U_state("+"), -n("-"))
-
-        wall_flux_minus = lax_friedrichs_flux(U_state("-"), wall_state_minus, n("-"), gravity, h_floor)
-        wall_flux_plus = lax_friedrichs_flux(U_state("+"), wall_state_plus, -n("-"), gravity, h_floor)
-
-        form += -ufl.inner(wall_flux_minus, W("-")) * dS_all(1)
-        form += -ufl.inner(wall_flux_plus, W("+")) * dS_all(1)
-
-    return form
-
-
 # ===== Time stepping =========================================
 def compute_time_step(U, h_dofs, hu_dofs, hv_dofs, gravity, cfl, h_min, comm):
     h_vals = U.x.array[h_dofs]
@@ -339,17 +235,6 @@ def limit_scalar_component(component_array, limiter_data, tvb_M, tvb_nu, cell_si
         limited_values[cell] = mean_value + deviation
 
     component_array[cell_dofs.reshape(-1)] = limited_values.reshape(-1)
-
-def apply_tvb_limiter(U, limiter_data, component_dofs, tvb_M, tvb_nu, cell_size, limit_cells=None):
-    for dofs in component_dofs:
-        component_values = U.x.array[dofs].copy()
-        limit_scalar_component(
-            component_values, limiter_data, tvb_M, tvb_nu, cell_size, limit_cells=limit_cells
-        )
-        U.x.array[dofs] = component_values
-    U.x.scatter_forward()
-    return U
-
 
 # ===== Main Simulation =======================================
 def run(parameters, output_dir, mesh_data=None):

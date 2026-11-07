@@ -36,13 +36,14 @@ def _plot_depth(mesh, time, *, ax=None, show=True, vmax=None, theme="light"):
     colors = get_theme(theme)
     cmap = plt.get_cmap("Blues")
     water = PolyCollection(xy[faces[ground]], array=depth[ground], cmap=cmap,
-                           norm=Normalize(vmin=0., vmax=limit), edgecolors="none")
+                           norm=Normalize(vmin=0., vmax=limit), edgecolors="none",
+                           antialiaseds=False)
     water.set_gid("water_depth")
     ax.add_collection(water)
     handles = [Patch(facecolor=cmap(0.), label="Dry ground")]
     if building.any():
         footprints = PolyCollection(xy[faces[building]], facecolors=colors["muted"],
-                                    edgecolors="none")
+                                    edgecolors="none", antialiaseds=False)
         footprints.set_gid("buildings")
         ax.add_collection(footprints)
         edges = np.sort(np.concatenate([faces[building][:, pair]

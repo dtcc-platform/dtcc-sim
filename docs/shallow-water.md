@@ -178,7 +178,21 @@ input frame.
 
 The shipped MIT-licensed source is identified in `reference.json`, including
 the original thesis repository, commit and every retained worker-file hash.
-The retained flux and RK3 time integrator are identified in the source manifest.
+The active spatial operator is `terrain_flux.build_rhs_form`: hydrostatic
+reconstruction with a Rusanov (local Lax–Friedrichs) interface flux and
+hydrostatic pressure corrections. Outer edges and building interfaces use
+reflected normal momentum. Volume terms include the bed-slope source; partially
+dry cells use the retained local equilibrium-depth pressure/source correction.
+The state is triangular DG1 in conservative depth and both momenta.
+
+Each stage applies wall-aware TVB limiting to momentum and, on fully wet cells,
+free-surface slopes. Mean-preserving depth scaling enforces nodal positivity;
+dry-node momentum is zeroed and the convex neighbor-velocity limiter bounds
+momentum. The time integrator is three-stage SSPRK3 with a CFL step capped at
+the next output time. Negative cell means trigger step halving, with at most
+13 attempts. The accepted-step limit is independent of those retries.
+Unused alternative flat-bed flux and worker export implementations are removed;
+`ShallowWaterResult` owns supported native result conversion and export.
 TVB limiting applies throughout the domain, including on meshes with building
 markers; its neighbor stencils exclude reflecting building interfaces. The
 existing wet/dry treatment still restricts free-surface slope limiting in
@@ -192,7 +206,10 @@ Completed diagnostics and dataset-package processing provenance include the
 full `reference` identity, upstream commit and retained worker-file hashes.
 
 Synthetic-slope tests and short city runs check conservation and nonnegative
-depth. These checks do not establish shoreline accuracy or mesh convergence.
+depth. The independent [reflecting-basin wave benchmark](../tools/verification/shallow_water/README.md)
+checks smooth evolving depth and momentum with mesh and time refinement, plus
+reference-resolution and amplitude-halving checks. This does not establish
+shoreline accuracy or convergence for real city flooding.
 Measured terrain, flood observations and quantitative city-flood prediction
 remain unvalidated. See the [integration validation record](validation/shallow-water-integration.md)
 for runtime versions, test commands and the city-output audit.

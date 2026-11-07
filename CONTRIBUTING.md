@@ -94,7 +94,10 @@ Shallow-water tests launch a separate real-PETSc FEniCSx worker. Set
 `DTCC_SWE_PYTHON` to that environment's Python and run
 `python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py tests/test_shallow_water_demos.py`.
 The city demo additionally requires `DTCC_RUN_DEMOS=1` and `--run-expensive`.
-See the [shallow-water runtime setup](docs/shallow-water.md).
+See the [shallow-water runtime setup](docs/shallow-water.md). The independent
+[wave verification study](tools/verification/shallow_water/README.md) runs
+mesh/time refinement through that worker; its full study is separate from the
+lightweight reference-equation tests in the default suite.
 
 Passing tests with mocked solvers does not validate the numerical solvers.
 The [dataset QA matrix](docs/datasets/qa-matrix.md) describes validation scope.

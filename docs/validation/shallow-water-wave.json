@@ -1,0 +1,229 @@
+{
+  "date": "2026-11-07",
+  "host": "sahakyan",
+  "core_commit": "6f983244b630a2ac820e9e9734a8d653aece9f38",
+  "reference": {
+    "backend": "cecilia-reference",
+    "experimental": true,
+    "upstream": "https://github.com/Elite-Luna2/shallow-water-rkdg-thesis",
+    "upstream_commit": "2cf10273eea2441137393b57040528b1c03e8725",
+    "reference": "equilibrium-terrain-20261028+integration-controls+domain-tvb-zero-skip+active-backend-cleanup",
+    "sha256": {
+      "LICENSE": "4432356c9dc7e82b9ce3df55923e6bf11b73168dc1b6b6bd77c9354d7191776a",
+      "__init__.py": "ca5359362db72ce4d2efa9392b6f165f4af29d96baef971c181e61c543f3e688",
+      "__main__.py": "af7f0bbbf4af41f73e9c315250b7bca8848d10f807926bdb5e1017ab3c3625fd",
+      "backend.py": "d3df63d0f662a96e68475f2490c3166668002d6e6e09d527e79c260d5bdf7a47",
+      "equilibrium_depth.py": "8a912f75a00bda83da3f356849ae47844fb3c09dc22a9e7095c6ce6fa1a53759",
+      "mesh_io.py": "5b9202d7e7089dc749f0c3a308f245c33dad5be7d70c6776dcd0ebe9dca6acfe",
+      "simulator.py": "6276f7db8def86262804e4bf1237fb9457251498ce0a28cd77dcd4bd700846f7",
+      "terrain_flux.py": "41d5dcf40273895a8930fcd83b183c5df6bf5d6fc41a7ff90dda42384733ddaf",
+      "velocity_candidate.py": "f4756efd00917147d8cb3ad5b26757dd7b7f21f01c3ed9419139b54ed90a1602",
+      "wetdry_candidate.py": "109fd93fa18d3262b07efc40b8a3fd522177010d316ccbe66d19c8aabd276914",
+      "runtime.py": "465fdfaa13b89791602958716f13c52ff973a03dc43d27e163caede7f46297e1"
+    },
+    "base_reference": "equilibrium-terrain-20261028",
+    "integration_changes": [
+      "Configurable step limit and exact scheduled output times",
+      "Early dedicated-worker runtime validation",
+      "Apply TVB limiting throughout the domain with wall-aware neighbors",
+      "Skip identically zero TVB polynomials without changing their values",
+      "Remove unused flat-bed flux/limiter wrapper and duplicate worker exports"
+    ]
+  },
+  "verification_tool_sha256": "39ddf239230b853f26d2bcf9f71a40dc51a0cfe51d080f8d670cba21e50bf6a6",
+  "wave": {
+    "mesh": [
+      {
+        "n": 8,
+        "cfl": 0.02,
+        "amplitude": 0.0001,
+        "normalized_l2": [
+          0.0285806271931279,
+          0.033615816566055695,
+          0.03361581649270849
+        ],
+        "relative_l2": [
+          0.2616961427092786,
+          0.3405415456563619,
+          0.3405415450964916
+        ],
+        "frozen_relative_l2": [
+          1.2534118688127591,
+          1.0,
+          1.0
+        ],
+        "reference_uncertainty": 9.728942974851496e-08,
+        "steps": 71,
+        "relative_mass_error": 6.661296293201625e-16,
+        "case_dir": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/review-final-20261107/wave/mesh-8/.shallow_water_runs/run-dbo9uw1t"
+      },
+      {
+        "n": 16,
+        "cfl": 0.02,
+        "amplitude": 0.0001,
+        "normalized_l2": [
+          0.014176516344819272,
+          0.013924070072299758,
+          0.013924070072809434
+        ],
+        "relative_l2": [
+          0.1298060966868844,
+          0.1410563488578242,
+          0.1410563488629878
+        ],
+        "frozen_relative_l2": [
+          1.253411869737586,
+          1.0,
+          1.0
+        ],
+        "reference_uncertainty": 9.878686912240253e-08,
+        "steps": 142,
+        "relative_mass_error": 1.3322592587350984e-15,
+        "case_dir": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/review-final-20261107/wave/mesh-16/.shallow_water_runs/run-fdqevz44"
+      },
+      {
+        "n": 24,
+        "cfl": 0.02,
+        "amplitude": 0.0001,
+        "normalized_l2": [
+          0.0091452400012677,
+          0.008346093010245121,
+          0.008346093010253654
+        ],
+        "relative_l2": [
+          0.08373763193685538,
+          0.0845492302997691,
+          0.08454923029985553
+        ],
+        "frozen_relative_l2": [
+          1.2534118697375465,
+          1.0,
+          1.0
+        ],
+        "reference_uncertainty": 9.743374964482632e-08,
+        "steps": 213,
+        "relative_mass_error": 1.9983888880970635e-15,
+        "case_dir": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/review-final-20261107/wave/mesh-24/.shallow_water_runs/run-f2nqf5t2"
+      }
+    ],
+    "time": [
+      {
+        "n": 12,
+        "cfl": 0.08,
+        "amplitude": 0.0001,
+        "normalized_l2": [
+          0.017968563335689247,
+          0.0197077286770772,
+          0.019707728675019274
+        ],
+        "relative_l2": [
+          0.1645276606066564,
+          0.19964710296896288,
+          0.19964710294785215
+        ],
+        "frozen_relative_l2": [
+          1.253411869802813,
+          1.0,
+          1.0
+        ],
+        "reference_uncertainty": 9.62142324041626e-08,
+        "steps": 27,
+        "relative_mass_error": 0.0,
+        "case_dir": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/review-final-20261107/wave/time-0.08/.shallow_water_runs/run-4veb4w86"
+      },
+      {
+        "n": 12,
+        "cfl": 0.04,
+        "amplitude": 0.0001,
+        "normalized_l2": [
+          0.017968235524037125,
+          0.019706468675004165,
+          0.019706468673112223
+        ],
+        "relative_l2": [
+          0.16452465902643904,
+          0.19963433864854127,
+          0.19963433862911206
+        ],
+        "frozen_relative_l2": [
+          1.253411869802813,
+          1.0,
+          1.0
+        ],
+        "reference_uncertainty": 9.62142324041626e-08,
+        "steps": 54,
+        "relative_mass_error": 2.220432097899311e-16,
+        "case_dir": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/review-final-20261107/wave/time-0.04/.shallow_water_runs/run-zw6y_mer"
+      },
+      {
+        "n": 12,
+        "cfl": 0.02,
+        "amplitude": 0.0001,
+        "normalized_l2": [
+          0.017968605448748568,
+          0.019706192490282604,
+          0.019706192487809353
+        ],
+        "relative_l2": [
+          0.16452804621139297,
+          0.19963154078784165,
+          0.19963154076252357
+        ],
+        "frozen_relative_l2": [
+          1.253411869802813,
+          1.0,
+          1.0
+        ],
+        "reference_uncertainty": 9.62142324041626e-08,
+        "steps": 107,
+        "relative_mass_error": 4.440864195798622e-16,
+        "case_dir": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/review-final-20261107/wave/time-0.02/.shallow_water_runs/run-scx2nhel"
+      }
+    ],
+    "timestep_differences": [
+      [
+        9.730071398219434e-06,
+        1.13551803270206e-05,
+        1.1355179978981526e-05
+      ],
+      [
+        5.614027371018292e-06,
+        6.732605332626599e-06,
+        6.732605972874539e-06
+      ]
+    ],
+    "amplitude_difference": [
+      1.4551981775713253e-06,
+      1.188260958504826e-06,
+      1.188260126366091e-06
+    ],
+    "checks": {
+      "finest_relative_error": true,
+      "mesh_errors_decrease": true,
+      "timestep_differences_decrease": true,
+      "small_amplitude": true,
+      "resolved_reference": true
+    },
+    "passed": true
+  },
+  "cleanup": {
+    "passed": true,
+    "baseline": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/city-domain-review-20261107/optimized-short/.shallow_water_runs/run-sjd626kg",
+    "cleaned": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/review-final-20261107/cleanup-city/.shallow_water_runs/run-evhaaf4f",
+    "comparison": "All arrays in initial/final snapshots and full raw DG state bitwise identical"
+  },
+  "installed_wheel": {
+    "passed": 89,
+    "skipped": 1,
+    "skip": "Opt-in long live city demo; two full live runs recorded separately",
+    "sha256": "d7e7b66e7d7a8d4ff5be8f434dc6942e743515b6fee9342c9bffb77f6dbc5b59"
+  },
+  "plotting": {
+    "visual_inspection": "City and offline PNGs inspected in chat; readable labels, time and scale, no building-fill seams",
+    "images": [
+      "city.png",
+      "offline.png"
+    ]
+  },
+  "raw_evidence": "/scratch/sahakyan/cecilia-swe-dtcc-20261025/review-final-20261107"
+}

@@ -256,14 +256,86 @@ path was replayed twice against those completed results; the numerical city
 solves were not repeated. Saved numerical-state hashes remained unchanged.
 
 PNG images remain on the validation server. Programmatic rendering and layout
-checks passed; pixel-level visual inspection is pending. The independent
-dynamic accuracy/refinement benchmark and remaining backend cleanup are still
-outstanding review work.
+checks passed at that stage. Final visual inspection and numerical verification
+are recorded below.
+
+## Dynamic verification and backend cleanup on 2026-11-07
+
+The independent [reflecting-basin wave study](../../tools/verification/shallow_water/README.md)
+passed all mesh, time, amplitude and reference-resolution checks. It uses a
+1 m square, 1 m background depth, a `1e-4 m` Gaussian perturbation and zero
+initial momentum, with reflecting walls and final time 0.04 s. A cosine-series
+solution of the linearized shallow-water equations provides the evolving
+reference independently of DG assembly. Errors integrate the full DG1
+polynomials, rather than just exported face means.
+
+| Subdivisions per direction | Steps | Relative depth L2 error | Relative momentum-x/y L2 error |
+|---:|---:|---:|---:|
+| 8 | 71 | 26.17% | 34.05% |
+| 16 | 142 | 12.98% | 14.11% |
+| 24 | 213 | 8.37% | 8.45% |
+
+CFL is fixed at 0.02 in this mesh study. All component errors decrease at
+each refinement and satisfy the finest-grid 25% accuracy requirement. A frozen
+initial Gaussian would have 125% depth error and 100% momentum error, so the
+criterion distinguishes evolution from a stationary, conservative result.
+These limited resolutions show convergence; they do not establish a formal
+DG1 accuracy order or convergence for city shorelines.
+
+The time study fixes 12 subdivisions and uses CFL 0.08, 0.04 and 0.02,
+requiring 27, 54 and 107 accepted steps. Successive normalized depth differences
+shrink from `9.73e-6` to `5.61e-6`; momentum differences shrink from `1.14e-5`
+to `6.73e-6` in both directions. Reference errors are spatially dominated and
+are not strictly monotone in time-step size; no third-order claim is made for
+the stage-limited algorithm.
+
+At 16 subdivisions, halving the amplitude changes normalized depth/momentum
+by only `1.46e-6`, `1.19e-6`, `1.19e-6`, each below 0.011% of its discretization
+error. This supports comparison with a linear reference in this small-amplitude
+regime; the finite-amplitude nonlinear solution is not claimed to be exact.
+Increasing reference modes/quadrature from 48/96 to 64/128 changes normalized
+point values by less than `9.88e-8`, below the stated absolute and relative
+reference-resolution budgets. Maximum relative mass error in the mesh study
+is `2.00e-15`. Two lightweight tests check the reference initial condition,
+reflecting walls, evolution equations and nonstationary behavior.
+
+The unused alternative flat-bed RHS/flux functions, unused TVB wrapper and
+duplicate worker result-export module were removed. The active hydrostatic
+Rusanov flux, TVB/positivity/velocity treatment and SSPRK3 method are documented
+in the [solver guide](../shallow-water.md). The retained source manifest was
+updated. A fresh 0.5-second Johanneberg run produced bitwise-identical arrays
+in both snapshots and the full raw DG state compared with the preserved
+pre-cleanup run.
+
+City and offline depth PNGs were visually inspected in chat. Disabling triangle
+antialiasing removed raster seams inside building fills; labels, scales, time
+and building context are readable. This inspection concerns saved Agg images,
+not an interactive desktop viewer.
+
+An isolated wheel passed **89 tests**, with **one opt-in live city test skipped**,
+using the actual real-valued worker. Import assertions excluded the source
+checkout; the worker manifest and absence of deleted code were checked. The
+selection includes the affected shallow-water, Core, timing, demo catalog,
+shared-domain and import tests, plus the two reference-equation tests. The
+source selection's transfer-metadata catalog failures were resolved by removing
+macOS AppleDouble files from the server copy; the catalog/reference rerun
+passed all 21 tests. No numerical change was needed for those failures.
+
+Reproduce the dynamic study from the repository root with the dedicated worker:
+
+```sh
+DTCC_SWE_PYTHON=/path/to/real-worker/python \
+  python -m tools.verification.shallow_water.wave --output output/verification/shallow-water-wave
+```
+
+The [machine-readable final audit](shallow-water-wave.json) records exact errors,
+reference identity/hashes, verification-tool hash, wheel hash and server case
+locations. Raw solves, logs, PNGs and archives remain on sahakyan.
 
 ## Limits
 
-These are integration and short numerical health checks, not flood prediction
-validation. The generated-city case used a flat bed; the saved-input case used
+These are integration, conservation and smooth-wave accuracy checks, not flood
+prediction validation. The generated-city case used a flat bed; the saved-input case used
 a synthetic slope. The pulse is synthetic; building interiors
 are simulated regions. Rainfall, infiltration, drainage, observed flood data,
 measured terrain accuracy and shoreline convergence remain outside this result.
