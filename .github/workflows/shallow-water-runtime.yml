@@ -39,9 +39,6 @@ jobs:
   real-runtime:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
-    defaults:
-      run:
-        shell: bash -el {0}
     env:
       UCX_TLS: self,sm,tcp
       MPLBACKEND: Agg
@@ -49,18 +46,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: conda-incubator/setup-miniconda@v3
-        with:
-          environment-file: fenicsx-env.yml
-          activate-environment: fenicsx-env
-          miniforge-version: latest
+      - name: Create the common real runtime
+        run: |
+          "$CONDA/bin/conda" env create \
+            --prefix "$RUNNER_TEMP/shallow-water-env" --file fenicsx-env.yml
       - name: Install declared Sim and Core dependencies
-        run: uv pip install --python "$CONDA_PREFIX/bin/python" -e '.[test]'
+        run: |
+          "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/shallow-water-env" \
+            uv pip install --python "$RUNNER_TEMP/shallow-water-env/bin/python" -e '.[test]'
       - name: Verify the default real runtime
         run: |
           unset DTCC_SWE_PYTHON
-          python -c 'from dtcc_sim.shallow_water._solver.cecilia_swe.runtime import validate_runtime; validate_runtime()'
-          python -m pytest -q --junitxml=shallow-water-tests.xml \
+          "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/shallow-water-env" \
+            python -c 'from dtcc_sim.shallow_water._solver.cecilia_swe.runtime import validate_runtime; validate_runtime()'
+          "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/shallow-water-env" \
+            python -m pytest -q --junitxml=shallow-water-tests.xml \
             tests/test_shallow_water.py tests/test_shallow_water_dataset.py \
             tests/test_shallow_water_demos.py tests/test_shallow_water_plotting.py \
             tests/test_shallow_water_wave_reference.py
