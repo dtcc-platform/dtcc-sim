@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from dtcc_core import BoxMesh
-from dtcc_core.model import VolumeMesh
+from dtcc_core.model import Mesh, VolumeMesh
 from dtcc_sim.output import _export_city_surface
 
 
@@ -49,6 +49,24 @@ def test_native_surface_preserves_map_coordinates_and_excludes_outer_boundary(tm
     np.testing.assert_array_equal(native.vertices, vertices)
     np.testing.assert_array_equal(native.boundary_faces, faces)
     np.testing.assert_array_equal(native.boundary_markers, markers)
+    assert native.transform.srs == "EPSG:3006"
+
+
+def test_surface_mesh_retains_flat_ground_buildings_and_markers(tmp_path):
+    vertices = np.array([[319845., 6397785., 0.], [319846., 6397785., 0.],
+                         [319845., 6397786., 0.], [319845., 6397785., 12.]])
+    faces = np.array([[0, 1, 2], [0, 1, 3]])
+    native = Mesh(vertices=vertices.copy(), faces=faces.copy(), markers=np.array([-2, 0]))
+    native.transform.srs = "EPSG:3006"
+    frame = {"input_crs": "EPSG:3006", "local_to_input_translation": [319845., 6397785., 0.]}
+    path = _export_city_surface(tmp_path / "solution.vtu", native_mesh=native, frame=frame)
+    city = meshio.read(path)
+    np.testing.assert_array_equal(city.points, vertices)
+    np.testing.assert_array_equal(city.cells_dict["triangle"], faces)
+    np.testing.assert_array_equal(city.cell_data_dict["markers"]["triangle"], [-2, 0])
+    assert json.loads(path.with_suffix(".coordinates.json").read_text()) == frame
+    np.testing.assert_array_equal(native.vertices, vertices)
+    np.testing.assert_array_equal(native.faces, faces)
     assert native.transform.srs == "EPSG:3006"
 
 

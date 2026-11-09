@@ -3,6 +3,21 @@
 import numpy as np
 
 
+def triangle_corner_order(target, source):
+    """Map scalar DG1 nodes to each input triangle's XY vertex order."""
+    target = np.asarray(target)[..., :2]
+    source = np.asarray(source)[..., :2]
+    if target.shape != source.shape or target.ndim != 3 or target.shape[1:] != (3, 2):
+        raise ValueError("Expected matching triangular DG1 coordinates")
+    distances = np.linalg.norm(target[:, :, None] - source[:, None, :], axis=-1)
+    order = distances.argmin(axis=2)
+    if (not np.isfinite(distances).all()
+            or np.any(np.take_along_axis(distances, order[..., None], axis=2) > 1e-8)
+            or not np.all(np.sort(order, axis=1) == np.arange(3))):
+        raise ValueError("DG1 nodes must match the input triangle vertices")
+    return order
+
+
 def triangle_geometry(domain):
     maps = domain.geometry.dofmaps
     if len(maps) != 1 or domain.topology.cell_type.name != "triangle":

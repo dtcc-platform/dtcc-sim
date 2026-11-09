@@ -102,35 +102,6 @@ def build_limiter_cell_mask(domain):
 
 
 # ===== TVB slope limiter helper functions ====================
-def minmod(values):
-    if np.all(values > 0.0):
-        return np.min(values)
-    if np.all(values < 0.0):
-        return np.max(values)
-    return 0.0
-
-def tvb_minmod(a0, a1, M, h):
-    if abs(a0) <= M * h * h:
-        return a0
-    return minmod(np.array([a0, a1], dtype=float))
-
-def fit_cell_gradient(points, values):
-    local_points = points - np.mean(points, axis=0)
-    vandermonde = np.column_stack([np.ones(points.shape[0]), local_points])
-    coeffs, _, rank, _ = np.linalg.lstsq(vandermonde, values, rcond=None) # More robust than solve, returns zero gradient if singular cell
-    if rank < vandermonde.shape[1]:
-        return np.zeros(points.shape[1])
-    return coeffs[1:]
-
-def fit_neighbor_gradient(center, neighbors, mean_value, cell_means, centers, gdim):
-    if neighbors.size < gdim:
-        return np.zeros(gdim)
-
-    displacements = centers[neighbors] - center
-    mean_differences = cell_means[neighbors] - mean_value
-    gradient, *_ = np.linalg.lstsq(displacements, mean_differences, rcond=None)
-    return gradient
-
 def build_tvb_limiter_data(domain, scalar_space):
     tdim = domain.topology.dim
     fdim = tdim - 1
@@ -179,64 +150,63 @@ def build_tvb_limiter_data(domain, scalar_space):
         "gdim": domain.geometry.dim,
     }
 
-def limit_scalar_component(component_array, limiter_data, tvb_M, tvb_nu, cell_size, limit_cells=None):
-    cell_dofs = limiter_data["cell_dofs"]
-    dof_coords = limiter_data["dof_coords"]
-    cell_centers = limiter_data["cell_centers"]
-    edge_midpoints = limiter_data["edge_midpoints"]
-    cell_neighbors = limiter_data["cell_neighbors"]
+def prepare_tvb_limiter(limiter_data):
+    """Cache fixed least-squares maps for wall-aware DG1 slope limiting."""
+    cells = limiter_data["cell_dofs"]
+    centers = limiter_data["cell_centers"]
+    points = limiter_data["dof_coords"][cells]
+    offsets = points - centers[:, None, :]
+    midpoints = limiter_data["edge_midpoints"] - centers[:, None, :]
     gdim = limiter_data["gdim"]
+    count = len(cells)
+    local_maps = np.zeros((count, 3, 3))
+    neighbor_maps = np.zeros_like(local_maps)
+    nodal_maps = np.zeros_like(local_maps)
+    neighbors = np.repeat(np.arange(count)[:, None], 3, axis=1)
+    for cell in range(count):
+        vandermonde = np.column_stack([np.ones(3), offsets[cell]])
+        coefficients, _, rank, _ = np.linalg.lstsq(vandermonde, np.eye(3), rcond=None)
+        if rank == gdim + 1:
+            local_maps[cell] = midpoints[cell] @ coefficients[1:]
+        adjacent = limiter_data["cell_neighbors"][cell]
+        neighbors[cell, :len(adjacent)] = adjacent
+        if len(adjacent) >= gdim:
+            displacements = centers[adjacent] - centers[cell]
+            gradient, *_ = np.linalg.lstsq(displacements, np.eye(len(adjacent)), rcond=None)
+            neighbor_maps[cell, :, :len(adjacent)] = midpoints[cell] @ gradient
+        gradient, *_ = np.linalg.lstsq(midpoints[cell], np.eye(3), rcond=None)
+        nodal_maps[cell] = offsets[cell] @ gradient
+    limiter_data.update(local_maps=local_maps, neighbor_maps=neighbor_maps,
+                        nodal_maps=nodal_maps, neighbor_table=neighbors)
 
-    cell_values = component_array[cell_dofs]
-    cell_means = np.mean(cell_values, axis=1)
-    limited_values = cell_values.copy()
-    nonzero_cells = np.any(cell_values != 0., axis=1)
 
-    for cell, local_dofs in enumerate(cell_dofs):
-        if limit_cells is not None and not limit_cells[cell]:
-            continue
-        # An identically zero polynomial has no slope to limit, regardless of
-        # neighboring means; preserve it without solving local least squares.
-        if not nonzero_cells[cell]:
-            continue
-
-        local_points = dof_coords[local_dofs]
-        local_values = cell_values[cell]
-        mean_value = cell_means[cell]
-        center = cell_centers[cell]
-
-        gradient = fit_cell_gradient(local_points, local_values)
-        midpoint_offsets = edge_midpoints[cell] - center
-        midpoint_deviation = midpoint_offsets @ gradient
-
-        neighbor_gradient = fit_neighbor_gradient(
-            center, cell_neighbors[cell], mean_value, cell_means, cell_centers, gdim
-        )
-        estimated_deviation = midpoint_offsets @ neighbor_gradient
-
-        limited_midpoint_deviation = np.array(
-            [
-                tvb_minmod(midpoint_deviation[i], tvb_nu * estimated_deviation[i], tvb_M, cell_size)
-                for i in range(3)
-            ]
-        )
-
-        if abs(np.sum(limited_midpoint_deviation)) > 1.0e-14:
-            positive = np.sum(np.maximum(limited_midpoint_deviation, 0.0))
-            negative = -np.sum(np.minimum(limited_midpoint_deviation, 0.0))
-            theta_pos = min(1.0, negative / positive) if positive > 0.0 else 1.0
-            theta_neg = min(1.0, positive / negative) if negative > 0.0 else 1.0
-            limited_midpoint_deviation = (
-                theta_pos * np.maximum(limited_midpoint_deviation, 0.0)
-                + theta_neg * np.minimum(limited_midpoint_deviation, 0.0)
-            )
-
-        limited_gradient, *_ = np.linalg.lstsq(midpoint_offsets, limited_midpoint_deviation, rcond=None)
-        deviation = (local_points - center) @ limited_gradient
-        deviation -= deviation.mean()
-        limited_values[cell] = mean_value + deviation
-
-    component_array[cell_dofs.reshape(-1)] = limited_values.reshape(-1)
+def limit_scalar_component(component_array, limiter_data, tvb_M, tvb_nu, cell_size, limit_cells=None):
+    cells = limiter_data["cell_dofs"]
+    values = component_array[cells]
+    means = values.mean(axis=1)
+    active = np.any(values != 0., axis=1)
+    if limit_cells is not None:
+        active &= limit_cells
+    active = np.flatnonzero(active)
+    if not len(active):
+        return
+    midpoint = np.einsum("cij,cj->ci", limiter_data["local_maps"][active], values[active])
+    differences = means[limiter_data["neighbor_table"][active]] - means[active, None]
+    estimated = tvb_nu * np.einsum("cij,cj->ci", limiter_data["neighbor_maps"][active], differences)
+    minmod = np.where(np.sign(midpoint) == np.sign(estimated),
+                      np.sign(midpoint)*np.minimum(abs(midpoint), abs(estimated)), 0.)
+    limited = np.where(abs(midpoint) <= tvb_M*cell_size**2, midpoint, minmod)
+    positive = np.maximum(limited, 0.).sum(axis=1)
+    negative = -np.minimum(limited, 0.).sum(axis=1)
+    theta_pos = np.ones(len(active)); theta_neg = np.ones(len(active))
+    np.divide(negative, positive, out=theta_pos, where=positive > 0.)
+    np.divide(positive, negative, out=theta_neg, where=negative > 0.)
+    corrected = (np.minimum(1., theta_pos)[:, None]*np.maximum(limited, 0.)
+                 + np.minimum(1., theta_neg)[:, None]*np.minimum(limited, 0.))
+    limited = np.where(abs(limited.sum(axis=1))[:, None] > 1e-14, corrected, limited)
+    deviation = np.einsum("cij,cj->ci", limiter_data["nodal_maps"][active], limited)
+    deviation -= deviation.mean(axis=1)[:, None]
+    component_array[cells[active].reshape(-1)] = (means[active, None]+deviation).reshape(-1)
 
 # ===== Main Simulation =======================================
 def run(parameters, output_dir, mesh_data=None):
@@ -373,6 +343,8 @@ def run(parameters, output_dir, mesh_data=None):
     configure(neighbors)
     # TVB and velocity limiting share the same wall-aware edge neighbors.
     limiter_data['cell_neighbors'] = [np.unique(row[row != cell]) for cell,row in enumerate(neighbors)]
+    prepare_tvb_limiter(limiter_data)
+    depth_forms = {id(state): fem.form(state[0]*ufl.dx) for state in (U_1, U_2, U_n)}
     np.savez(output_dir/'limiter-topology.npz',neighbors=neighbors,
              wall_facets=np.array(sorted(walls),dtype=int),cell_dofs=cell_dofs)
     wetdry_events = []
@@ -396,7 +368,7 @@ def run(parameters, output_dir, mesh_data=None):
         solve_stage(ksp,rhs_form,dt,U_eval,U_in,U_out,rhs_vec)
 
     def limit_stage(state):
-        before = float(fem.assemble_scalar(fem.form(state[0]*ufl.dx)))
+        before = float(fem.assemble_scalar(depth_forms[id(state)]))
         # Limit free-surface slopes only where a wholly wet polynomial is valid.
         # Preserve skipped depths exactly; avoid h+b-b cancellation near dry nodes.
         surface=state.x.array[h_dofs]+bed.x.array
@@ -414,7 +386,7 @@ def run(parameters, output_dir, mesh_data=None):
         for k,dofs in enumerate(component_dofs):
             state.x.array[dofs[cells.reshape(-1)]] = limited[:,:,k].reshape(-1)
         state.x.scatter_forward()
-        after = float(fem.assemble_scalar(fem.form(state[0]*ufl.dx)))
+        after = float(fem.assemble_scalar(depth_forms[id(state)]))
         stats['mass_change_including_tvb'] = after-before
         return stats
 
@@ -430,12 +402,25 @@ def run(parameters, output_dir, mesh_data=None):
         mesh_data_out = mesh_data
     np.savez(output_dir / "mesh.npz", **mesh_data_out)
     snapshots = []
+    from .layout import triangle_corner_order
+    corner_order = triangle_corner_order(
+        mesh_data_out["vertices"][mesh_data_out["faces"]],
+        Q_h.tabulate_dof_coordinates()[cell_dofs][face_order],
+    )
+
+    def input_nodes(values):
+        return np.take_along_axis(values[cell_dofs][face_order], corner_order, axis=1)
 
     def save_snapshot(time):
         cells = limiter_data["cell_dofs"]
         means = [U_n.x.array[dofs][cells].mean(axis=1)[face_order] for dofs in component_dofs]
         filename = f"snapshot_{len(snapshots):05d}.npz"
-        np.savez(output_dir / filename, depth=means[0], momentum=np.column_stack(means[1:]), bed_elevation=bed.x.array[cells].mean(axis=1)[face_order])
+        np.savez(output_dir / filename, depth=means[0], momentum=np.column_stack(means[1:]),
+                 bed_elevation=bed.x.array[cells].mean(axis=1)[face_order],
+                 dg_depth=input_nodes(U_n.x.array[h_dofs]),
+                 dg_momentum=np.stack([input_nodes(U_n.x.array[dofs])
+                                       for dofs in (hu_dofs, hv_dofs)], axis=-1),
+                 dg_bed_elevation=input_nodes(bed.x.array))
         snapshots.append({"time": float(time), "file": filename})
         (output_dir / "snapshots.json").write_text(json.dumps(snapshots, indent=2) + "\n")
 
@@ -445,7 +430,7 @@ def run(parameters, output_dir, mesh_data=None):
     U_n.x.scatter_forward()
 
     initial_state = U_n.x.array.copy()
-    initial_mass = float(fem.assemble_scalar(fem.form(U_n[0] * ufl.dx)))
+    initial_mass = float(fem.assemble_scalar(depth_forms[id(U_n)]))
 
     trial = ufl.TrialFunction(V)
     test = ufl.TestFunction(V)
@@ -561,7 +546,7 @@ def run(parameters, output_dir, mesh_data=None):
                 save_snapshot(t)
                 next_output_time = min(final_time, len(snapshots) * output_dt)
 
-    final_mass = float(fem.assemble_scalar(fem.form(U_n[0] * ufl.dx)))
+    final_mass = float(fem.assemble_scalar(depth_forms[id(U_n)]))
     values = U_n.x.array
     mass_error = abs(final_mass - initial_mass) / max(abs(initial_mass),1e-30)
     state_change = float(np.max(np.abs(values - initial_state)))

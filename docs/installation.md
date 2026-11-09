@@ -56,6 +56,7 @@ existing environment to the checked-in recipe:
 
 ```bash
 conda env update -f fenicsx-env.yml
+conda activate fenicsx-env
 ```
 
 Keep this environment separate from `.venv`. After activating Conda, use
@@ -95,8 +96,9 @@ conda activate fenicsx-env-complex  # Complex-number environment
 ```
 
 To update the complex environment, run
-`conda env update -f fenicsx-env-complex.yml`. Restart Python or the notebook
-kernel when changing environments.
+`conda env update -f fenicsx-env-complex.yml`, then reactivate it with
+`conda activate fenicsx-env-complex`. Restart Python or the notebook kernel
+when changing environments.
 
 The readiness command imports libraries, verifies complex PETSc, the supported
 DOLFINx version, one MPI rank, and whether the current process can start the
@@ -110,28 +112,22 @@ launchers. It is excluded from the queued service registry; the general worker
 and Docker/Compose deployment do not supply its dedicated complex runtime.
 See the [Helmholtz quick start](helmholtz-quickstart.md) for a complete run.
 
-## MPI on macOS
+## MPI transport
 
-MPICH's default OFI provider can fail during initialization or finalization on
-macOS. If the error mentions `OFI poll failed`, try the TCP provider:
+Both Conda recipes select libfabric's TCP provider for MPICH with
+`FI_PROVIDER=tcp`. Conda supplies this setting on activation, restores the
+previous shell setting on deactivation, and passes it to numerical workers.
+Ordinary demo commands need no additional environment settings.
 
-```bash
-FI_PROVIDER=tcp python -c "from mpi4py import MPI; print(MPI.COMM_WORLD.size)"
-```
+TCP is the portable default for these environments. It avoids an OFI provider
+failure observed during MPI initialization or finalization on macOS; see the
+[MPICH issue](https://github.com/pmodels/mpich/issues/7760). An existing
+environment receives the setting through `conda env update` followed by
+reactivation. See [Conda environment variables](https://docs.conda.io/projects/conda/en/stable/user-guide/tasks/manage-environments.html#setting-environment-variables).
 
-If that succeeds, save the setting for both environments and reactivate the one
-you want to use:
-
-```bash
-conda env config vars set -n fenicsx-env FI_PROVIDER=tcp
-conda env config vars set -n fenicsx-env-complex FI_PROVIDER=tcp
-conda deactivate
-conda activate fenicsx-env-complex
-```
-
-The setting applies to these environments, rather than to every shell. See the
-[MPICH macOS issue](https://github.com/pmodels/mpich/issues/7760) and
-[provider configuration](https://github.com/pmodels/mpich#runtime-configuration-more-flexible).
+For a cluster with a site-specific MPI transport, use `conda env config vars set`
+to select the site's provider in the chosen environment, then reactivate it. See
+[MPICH provider configuration](https://github.com/pmodels/mpich#runtime-configuration-more-flexible).
 
 ## Core dependency and local development
 
@@ -193,6 +189,10 @@ excluding the artificial domain top and sides. Open it alongside the solution
 in ParaView; both use the original input coordinates. `city.coordinates.json`
 records the frame and CRS. Untagged reconstruction inputs produce no context
 surface. See [city geometry output](solvers.md#city-geometry-output).
+
+The generated flood dataset also saves `city.vtu` and its coordinate sidecar.
+Its LOD1 building context uses estimated heights above a flat z=0 ground,
+matching the 2D water mesh. Supplied 2D meshes have no inferred 3D city context.
 
 Omitting `output_dir` keeps other solvers' results in memory; Helmholtz requires
 it for numerical artifacts. An explicit `output_path` remains available for

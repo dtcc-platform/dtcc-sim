@@ -95,33 +95,69 @@ Use small offline contract tests and real numerical regression tests in the
 appropriate environment. Mocked tests do not validate solvers. Live-data and
 expensive runs are explicit opt-ins. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+For transient solvers, cache fixed geometry maps and compiled forms outside
+time-stepping loops. Profile representative meshes and preserve numerical
+behavior when optimizing. Validate larger CFL settings against smaller steps,
+including conservation, wetting/drying and wave evolution.
+
+## Demo contract
+
+- Geographic Gothenburg demos use the same 250 × 250 m Johanneberg domain,
+  centred at `(319970, 6397910)` in EPSG:3006. Keep geometry settings explicit;
+  document model-specific choices and the Stockholm sensor-domain exception.
+- Mesh-based demos save ParaView-readable fields under `output/<demo-name>/`.
+  Export `city.vtu` beside city results. Geometry and fields must overlay directly
+  in the same horizontal CRS and vertical reference, including any flat-bed model.
+  Preserve finite-element variation and discontinuities in visualization exports;
+  DG1 triangles use unshared vertices with Point Data for direct scalar warping.
+  Keep conservative cell means available separately.
+  Transient demos export initial, intermediate and final states with physical
+  times in a ParaView animation index and enough snapshots to show evolution.
+  Keep the animation index at the output root and its frames under `series/`.
+- Reuse physical simulation boundaries for context where available. A 2D
+  footprint solver needs a corresponding city surface with the same footprint
+  conditioning and bed level. Do not invent city context for synthetic inputs
+  or supplied meshes that contain no building-height information.
+- Keep demos short and linear: settings, public API call, `.info()` and Core
+  `.plot(...)`. Show progress during long solves. The library creates output
+  directories, replaces its own artifacts and preserves unrelated files.
+
+See the [demo guidelines](docs/demo-guidelines.md) and
+[catalog](demos/README.md) for scenarios, outputs and documented exceptions.
+
 ## Shared city meshes
 
 City mesh settings and the validated mesh cache belong in `dtcc_sim.meshing`.
-Equation solvers and application datasets use the same Core volume-mesh API,
+Volume-based solvers and application datasets use the same Core volume-mesh API,
 fully resolved geometry settings and cache identity. Cache identity includes
 LOD, roof reconstruction method, terrain settings, corner repair and mesher
 versions; files are verified before reuse. An explicit `mesh_cache_dir` shares
 meshes across runs and numerical runtimes without sharing solution artifacts.
 Generated meshes retain their request and cache-reuse provenance.
 
-The Gothenburg city demos use a terrain-following 250 × 250 × 80 m domain,
+The Gothenburg volume-mesh demos use a terrain-following 250 × 250 × 80 m domain,
 12.5 m target size, 0.5 m minimum building detail, catalogue LOD2 roofs and
 boundary-corner repair when exposed by Core. They share
 `output/city-mesh-cache`. The air-quality
 sensor demo retains its Stockholm bounds, observation-coverage settings and
 LOD1 geometry. Its larger LOD2 volume currently fails during TetGen generation;
 meshing failures remain explicit, without automatic LOD fallback.
-Synthetic equation-verification demos retain their analytical domains.
+Offline equation and workflow examples retain their synthetic domains.
+The flood demo uses a 10 m target size on a flat 2D mesh and LOD1 city context
+at z=0, with estimated building heights and the same 0.5 m footprint detail.
+It does not use the tetrahedral volume cache.
 
 ## City geometry output
 
 Spatial solvers export `city.vtu` beside saved solution fields when physical
 boundary tags are available. Reuse the simulation mesh's ground and building
-faces; exclude the artificial domain sides and top. Keep geometry in the input
-coordinate frame and retain boundary markers and CRS metadata. Native and
-backend mesh inputs use the same surface selection. Distributed backend meshes
-collect owned exterior facets on rank zero for one serial surface export.
+faces; exclude the artificial domain sides and top. The generated flood dataset
+exports Core's corresponding flat-ground city surface, with ground at z=0 and
+LOD1 building walls and roofs. A supplied 2D mesh has no inferred 3D context.
+Keep geometry in the input coordinate frame and retain boundary markers and
+CRS metadata. Native and backend volume meshes use the same surface selection.
+Distributed backend meshes collect owned exterior facets on rank zero for one
+serial surface export.
 Untagged inputs produce no context surface; repeated runs remove stale owned
 context files. Surface export belongs to the run's export timing.
 

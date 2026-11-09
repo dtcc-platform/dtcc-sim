@@ -28,8 +28,28 @@ def _check_repeat(name, directory):
         result = state.get("result", state.get("flood"))
         assert any(f.name == "water_depth" for f in result.fields)
         assert result.simulation_diagnostics["passed"]
-        assert (directory / "solution.vtu").is_file()
+        assert (directory / "solution_finaly.vtu").is_file()
+        import meshio
+        water = meshio.read(directory / "solution_finaly.vtu")
+        assert len(water.points) == 3*len(result.faces)
+        assert "water_depth" in water.point_data
+        np.testing.assert_array_equal(water.cell_data_dict["water_depth"]["triangle"],
+                                      next(f.values[:, 0] for f in result.fields if f.name == "water_depth"))
         assert (directory / "solution.dtcc").is_file()
+        from xml.etree import ElementTree as ET
+        index = ET.parse(directory / "solution.pvd").findall("./Collection/DataSet")
+        count = 101 if name == "dataset_urban_flood.py" else 51
+        assert len(index) == count
+        assert len({entry.attrib["file"] for entry in index}) == count
+        assert all(entry.attrib["file"].startswith("series/") for entry in index)
+        assert not (directory / "solution.vtu").exists()
+        assert not (directory / "series/water.pvd").exists()
+        times = np.array([float(entry.attrib["timestep"]) for entry in index])
+        assert times[0] == 0. and np.all(np.diff(times) > 0.)
+        first = meshio.read(directory / index[0].attrib["file"])
+        last = meshio.read(directory / index[-1].attrib["file"])
+        assert not np.array_equal(first.point_data["water_depth"], last.point_data["water_depth"])
+        np.testing.assert_array_equal(last.point_data["water_depth"], water.point_data["water_depth"])
         assert (directory / "notes.txt").read_text() == "keep"
         assert plt.get_fignums()
         maps = [ax for number in plt.get_fignums() for ax in plt.figure(number).axes
@@ -37,14 +57,28 @@ def _check_repeat(name, directory):
         assert len(maps) == 1 and maps[0].name == "rectilinear"
         assert any(c.get_gid() == "face_field" for c in maps[0].collections)
         if name == "dataset_urban_flood.py":
+            import json
+            import meshio
+            city = meshio.read(directory / "city.vtu")
+            assert city.points[:, 2].min() == 0. and city.points[:, 2].max() > 0.
+            np.testing.assert_allclose(city.points[:, :2].min(axis=0), result.vertices[:, :2].min(axis=0))
+            np.testing.assert_allclose(city.points[:, :2].max(axis=0), result.vertices[:, :2].max(axis=0))
+            assert json.loads((directory / "city.coordinates.json").read_text()) == json.loads(
+                (directory / "solution.coordinates.json").read_text())
+            from shapely import polygons, union_all
+            city_faces = city.cells_dict["triangle"]
+            city_buildings = city.cell_data_dict["markers"]["triangle"] >= 0
+            context_footprint = union_all(polygons(city.points[city_faces[city_buildings], :2]))
+            water_footprint = union_all(polygons(result.vertices[result.faces[result.markers >= 0], :2]))
+            assert context_footprint.symmetric_difference(water_footprint).area < 1e-6
             assert (state["center_x"], state["center_y"], state["L"]) == (319970., 6397910., 250.)
             assert state["bounds"] == (319845., 6397785., 320095., 6398035.)
             assert result.transform.srs == "EPSG:3006"
-            assert result.simulation_diagnostics["time"] == 20.
+            assert result.simulation_diagnostics["time"] == 100.
             assert result.simulation_diagnostics["rejected_attempts"] == 0
             from dtcc_sim.shallow_water import ShallowWaterResult
             transient = ShallowWaterResult.load(directory)
-            np.testing.assert_allclose(transient.snapshot_times, [0., 5., 10., 15., 20.],
+            np.testing.assert_allclose(transient.snapshot_times, np.linspace(0., 100., 101),
                                        rtol=0, atol=1e-12)
             initial = {field.name: field.values for field in transient.to_dtcc(0).fields}
             final = {field.name: field.values for field in result.fields}
@@ -118,6 +152,6 @@ def test_dataset_demo_plots_returned_native_mesh(monkeypatch, tmp_path):
     assert settings["bounds"] == (319845., 6397785., 320095., 6398035.)
     assert (settings["h"], settings["min_building_detail"], settings["strict_live"]) == (10., .5, True)
     parameters = settings["parameters"]
-    assert (parameters.final_time, parameters.cfl, parameters.n_outputs) == (20., .08, 4)
+    assert (parameters.final_time, parameters.cfl, parameters.n_outputs) == (100., .24, 100)
     assert (parameters.x_center, parameters.y_center) == (320005., 6397890.)
     plt.close("all")

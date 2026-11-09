@@ -30,6 +30,9 @@ geometric execution for the claims it demonstrates.
 
 ## Sim specifics
 
+Follow the common [demo contract](../DESIGN.md#demo-contract) for geographic
+domains, ParaView output, city context and visible solver progress.
+
 Import the Core and solver APIs needed for the example. Linear Helmholtz demos
 use `workers=1`: the parallel backend uses multiprocessing `spawn`, which
 re-executes top-level scripts. Teach parallel execution through the launcher.

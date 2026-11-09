@@ -11,8 +11,8 @@ from pydantic import Field, PrivateAttr, field_validator, model_validator
 from dtcc_core.datasets import DatasetBaseArgs, DatasetDescriptor
 
 from .._version import __version__
-from ..output import _output_directory
-from ..timing import timed_run
+from ..output import _output_directory, _export_city_surface
+from ..timing import phase, timed_run
 from .parameters import ShallowWaterParameters
 
 
@@ -92,6 +92,7 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
         from .solver import ShallowWaterSolver
 
         args._run_metadata = None
+        city_surface = None
         if args.mesh_path is None:
             mesh = datasets.city_flat_mesh(bounds=Bounds(*args.bounds), max_mesh_size=args.h,
                                            min_building_detail=args.min_building_detail,
@@ -100,6 +101,15 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
             source = {"dataset": "city_flat_mesh", "bounds": list(args.bounds),
                       "max_mesh_size": args.h, "min_building_detail": args.min_building_detail,
                       "bed": "flat", "strict_live": args.strict_live}
+            context_arguments = dict(
+                bounds=list(args.bounds), lod="lod1", flat_ground=True, ground_level=0.,
+                max_mesh_size=args.h, min_building_detail=args.min_building_detail,
+                center_on_origin=False, strict_live=args.strict_live,
+            )
+            with phase("city_geometry"):
+                city_surface = datasets.city_surface_mesh(**context_arguments)
+            city_surface.transform.srs = crs
+            source["city_surface"] = {"dataset": "city_surface_mesh", **context_arguments}
         else:
             mesh = load_mesh(args.mesh_path)
             crs = args.mesh_crs
@@ -110,7 +120,10 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
         args._run_metadata = {"name": "Experimental shallow-water completed run", **solver.diagnostics,
                               "parameters": asdict(args.parameters), "mesh_source": source}
         result.dataset_context = self.create_context(args)
-        result.save(args.output_dir / "solution.dtcc")
+        with phase("export"):
+            result.save(args.output_dir / "solution.dtcc")
+            _export_city_surface(args.output_dir / "solution_finaly.vtu", native_mesh=city_surface,
+                                 frame=solver.diagnostics["coordinate_frame"])
         if args.format == "dtccpkg":
             from dtcc_core.datasets.package import export_model_package
             with tempfile.TemporaryDirectory() as directory:
@@ -118,5 +131,6 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
                 export_model_package(result, path, canonical=True)
                 return path.read_bytes()
         if args.format:
-            return self.export_to_bytes(result, args.format)
+            model = solver.result.to_visualization_mesh() if args.format == "vtu" else result
+            return self.export_to_bytes(model, args.format)
         return result

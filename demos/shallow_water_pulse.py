@@ -7,7 +7,7 @@ output_dir = "output/shallow_water_pulse"
 mesh = RectangleMesh(12, 12)
 parameters = ShallowWaterParameters(
     h0=0., amplitude=.2, sigma=.12, compact_pulse=True,
-    final_time=.04, cfl=.02, n_outputs=4,
+    final_time=.04, cfl=.02, n_outputs=50,
 )
 simulation = ShallowWaterSolver(mesh=mesh, params=parameters, output_dir=output_dir)
 result = simulation.simulate()

@@ -50,7 +50,7 @@ common real DOLFINx 0.11 environment. Activate `fenicsx-env`, then run
 `python demos/shallow_water_pulse.py` or `python demos/dataset_urban_flood.py`.
 They need no arguments or interpreter override. Complex-PETSc callers can
 explicitly select a real 0.11 worker as described in the runtime guide. The
-library replaces `solution.dtcc`, `solution.vtu` and coordinate sidecars on
+library replaces `solution.dtcc`, `solution_finaly.vtu` and coordinate sidecars on
 repeated calls, preserves unrelated files, and retains raw runs
 under `.shallow_water_runs`. The city example uses Core's `city_flat_mesh`,
 not the tetrahedral volume cache. It has a flat bed, reflecting boundaries,
@@ -61,16 +61,28 @@ on the returned native Mesh. Core fills conservative face values; tagged
 building faces provide neutral context. Explicit titles supply simulation time,
 and known metric coordinates support metre axes and a scale bar. A reopened
 native dataset package supports the same plot without its numerical run files.
+The generated city dataset also saves `city.vtu` and `city.coordinates.json`:
+LOD1 buildings with estimated heights and a flat ground at z=0 matching the
+water mesh. Load it beside `solution.pvd` in ParaView. The solution includes DG1
+Point Data for direct Warp By Scalar with `water_depth`, alongside conservative
+Cell Data; see the [visualization settings](../docs/shallow-water.md).
+Supplied 2D mesh inputs
+do not supply building heights, so they produce no inferred city surface.
 Use `ShallowWaterResult.load(...)` separately for transient inspection/export or
 its snapshot-plot convenience method.
+Both demos automatically export `solution.pvd` at the output root, referencing
+frames under `series/`. The city demo saves 101 physical time states; the offline
+demo saves 51. Open that index with `city.vtu` for city context;
+`solution_finaly.vtu` is a static final state. The finite pulse spreads into shallow
+water; a warp scale above 1 exaggerates height without changing depth values.
 
 The shallow-water city demo uses Chalmers Johanneberg in EPSG:3006, centred at
 `(319970, 6397910)` with `L = 250` m and bounds
 `(319845, 6397785, 320095, 6398035)`. Its compact 0.2 m pulse starts at
-`(320005, 6397890)` on open ground, with a 7 m width. The 20-second scenario
-uses CFL 0.08 and saves states every five seconds to show propagation towards
-the building interfaces. Expect a longer run than the offline unit-square demo;
-two complete executions took about 31 minutes on the validation server.
+`(320005, 6397890)` on open ground, with a 7 m width. The 100-second scenario
+uses CFL 0.24 and saves states every second to show propagation around
+the building interfaces. Runtime depends on mesh size and hardware; the city
+scenario takes longer than the offline unit-square example.
 
 For urban wind through the dataset API, run:
 
@@ -119,9 +131,9 @@ station workflows may download data and need access to their upstream services.
 All demos specify `output_dir="output/<demo-name>"`; the library creates it.
 Heat and reconstruction write `solution.xdmf` and its HDF5 companion. Wind
 writes `solution_velocity.xdmf` and `solution_pressure.xdmf` with companions.
-Open these files in ParaView. Heat, wind and reconstruction demos with tagged
-city meshes also save `city.vtu` and `city.coordinates.json`. Load the city as a
-grey surface alongside a solution slice; the files share map coordinates.
+Open these files in ParaView. City simulations also save `city.vtu` and
+`city.coordinates.json` when context geometry is available. Load the city as a
+grey surface alongside the solution field; the files share map coordinates.
 Traffic exports `solution.dtcc` when given an
 output directory. Dataset requests also accept `output_dir`.
 

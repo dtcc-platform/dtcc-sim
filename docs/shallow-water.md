@@ -16,7 +16,7 @@ solver = ShallowWaterSolver(
     mesh=RectangleMesh(12, 12),
     params=ShallowWaterParameters(
         h0=0., compact_pulse=True, amplitude=.2, sigma=.12,
-        final_time=.04, n_outputs=4,
+        final_time=.04, n_outputs=50,
     ),
     output_dir="output/water",
 )
@@ -49,6 +49,26 @@ time and configured limit. `n_outputs` specifies evenly spaced output intervals:
 steps are capped at the next scheduled output time, yielding the initial state
 and `n_outputs` subsequent snapshots on a successful run. Output scheduling
 can therefore require more time steps than the CFL limit alone.
+
+The three-stage explicit SSP Runge–Kutta method selects a new time step from
+
+```text
+signal_speed = max_nodes(sqrt(u² + v²) + sqrt(g h))
+dt_CFL = cfl * minimum_triangle_altitude / signal_speed
+```
+
+The minimum altitude and maximum signal speed are global bounds. Small triangles
+near building corners can restrict the entire solve even when the target mesh
+size is 10 m. Depth denominators use a small positive floor. Each accepted step
+is also capped at the next output time and final time; a negative cell-mean
+attempt is retried at half its time step.
+
+Increasing `cfl` increases the proposed step, reducing work until output times
+become limiting. The API default is 0.02; the city demo explicitly uses 0.24,
+checked against smaller time steps. Stability and accuracy depend on the mesh
+and scenario, so increased CFL settings need comparison with a smaller-step
+solution. The worker caches geometry-dependent TVB least-squares maps and
+compiled mass forms outside time stepping; limiting uses batched NumPy operations.
 
 The solver copies Float64 XY into a local computational frame and translates
 source coordinates consistently. Bed elevations retain their vertical datum.
@@ -105,13 +125,13 @@ water = dtcc.datasets.urban_flood_simulation(
     output_dir=output_dir,
     parameters=ShallowWaterParameters(
         h0=0., amplitude=.2, sigma=7., compact_pulse=True,
-        x_center=pulse_x, y_center=pulse_y, final_time=20., cfl=.08, n_outputs=4,
+        x_center=pulse_x, y_center=pulse_y, final_time=100., cfl=.24, n_outputs=100,
     ),
 )
 water.info()
 water.plot(
     projection="xy", field="water_depth", context_mask=water.markers >= 0,
-    title="Water depth · t = 20 s", coordinate_unit="m", scale_bar=True,
+    title="Water depth · t = 100 s", coordinate_unit="m", scale_bar=True,
     xlabel="Easting [m]", ylabel="Northing [m]", vmin=0., cmap="Blues",
 )
 ```
@@ -120,9 +140,9 @@ The city demo uses the 250 × 250 m Chalmers Johanneberg domain in EPSG:3006,
 with bounds `(319845, 6397785, 320095, 6398035)`. The compact pulse is placed
 on open ground at `(320005, 6397890)`, offset from the domain centre to approach
 nearby buildings. It is 0.2 m high with a 7 m Gaussian width, truncated at three
-widths; the 20-second scenario saves the initial state and four five-second
-intervals. Its explicit CFL setting is 0.08. This is a longer numerical demo,
-not a rainfall-driven or calibrated flood scenario.
+widths. The 100-second scenario saves the initial state and 100 one-second
+intervals, with CFL 0.24. This is an idealized numerical demo, without rainfall
+or flood calibration.
 
 Generated geometry comes from Core's `city_flat_mesh` in EPSG:3006, including
 building-footprint markers. It is flat, not measured terrain, and does not use
@@ -145,8 +165,43 @@ Face fields are `water_depth` (m), `water_momentum` (m²/s), `water_velocity`
 Depth and momentum are conservative DG1 cell means. Velocity is mean momentum
 divided by mean depth, with zero at zero depth; dry water-surface values equal bed.
 
-The library creates output directories. Repeated runs replace `solution.vtu`,
-`solution.dtcc`, diagnostics, coordinate sidecars and the latest-run pointer,
+The solver reports each accepted time step through the `dtcc-sim` INFO logger,
+including simulation time, time-step size and depth diagnostics. The complete
+worker output is also retained in the run's `solver.log`.
+
+The generated city dataset also saves `city.vtu` and `city.coordinates.json`.
+This context uses the same bounds and footprint conditioning, a flat ground at
+z=0 and LOD1 walls and roofs with estimated building heights. Open `city.vtu`
+alongside `solution.pvd` in ParaView to animate the saved states.
+`solution_finaly.vtu` contains only the final state. The index stays at the output
+root and references frames under `series/`. The city demo saves 101 states
+covering 0–100 s in one-second intervals; the offline demo saves 51 states.
+Use **Snap To TimeSteps** to play the recorded times, as described in the
+[ParaView animation guide](https://docs.paraview.org/en/latest/UsersGuide/animation.html).
+Select the water series and apply **Warp By Scalar**
+directly with the Point Data array `water_depth`. Set **Scale Factor** to `1`,
+enable **Use Normal**, and set **Normal** to `(0, 0, 1)` to lift the surface
+vertically above its bed. Colour by Point Data `water_depth`; see the
+[ParaView filtering guide](https://docs.paraview.org/en/latest/UsersGuide/filteringData.html).
+VTU exports retain all three DG1 values per triangle as Point Data, using
+unshared vertices to preserve jumps across edges. They also carry the native
+conservative means as Cell Data with the same field names. No Cell Data to
+Point Data filter is needed. `water_surface_elevation` is absolute bed plus
+depth; warping by depth avoids adding the bed elevation twice on terrain.
+Native DTCC meshes and dataset packages retain the original mesh and face means.
+The city scenario releases an idealized compact pulse with a 0.2 m peak on dry
+ground, without rain or inflow to replenish it. Depth decreases as this finite
+volume spreads. Centimetre-scale depths are expected; use a larger warp scale
+for a visibly exaggerated surface, keeping the colour scale in metres.
+VTU coordinates use Float64. VTK scripts should set the warp filter's
+`SetOutputPointsPrecision(vtkAlgorithm.DOUBLE_PRECISION)` to retain full map
+coordinate precision; [VTK's default warp output uses single precision](https://vtk.org/doc/nightly/release/9.2/html/classvtkWarpScalar.html).
+Supplied `mesh_path` inputs do not carry
+building-height information and produce no inferred city surface.
+
+The library creates output directories. Repeated runs replace `solution_finaly.vtu`,
+`solution.dtcc`, `solution.pvd`, the `series/` snapshots, diagnostics,
+coordinate sidecars and the latest-run pointer,
 while preserving unrelated files. Each raw run and worker log is retained
 under `.shallow_water_runs` for inspection; failed runs are marked failed and
 are not published as the latest successful result.
@@ -156,7 +211,7 @@ from dtcc_sim.shallow_water import ShallowWaterResult
 result = ShallowWaterResult.load("output/water")
 print(result.snapshot_times, result.diagnostics)
 initial_water = result.to_dtcc(snapshot=0)
-result.export_series("output/water/series")
+result.export_series("output/water/series", index_path="output/water/solution.pvd")
 axes = result.plot(snapshot=0, show=False, vmax=.2)
 ```
 
@@ -182,7 +237,7 @@ from dtcc_core.datasets import load_model_package
 water = load_model_package("flood.dtccpkg")
 water.plot(
     projection="xy", field="water_depth", context_mask=water.markers >= 0,
-    title="Water depth · t = 20 s", coordinate_unit="m", scale_bar=True,
+    title="Water depth · t = 100 s", coordinate_unit="m", scale_bar=True,
     vmin=0., cmap="Blues",
 )
 ```
@@ -192,12 +247,19 @@ Its convenience `plot(snapshot=...)` selects a saved Mesh and delegates to the
 same native Core plotting API, supplying the recorded snapshot time and
 building context. Plotting needs Matplotlib in the caller, with no worker run.
 
-The series contains native DTCC/VTU snapshots and `times.json`; actual saved
+The series contains native DTCC snapshots, DG1 VTU snapshots, `times.json` and
+`solution.pvd` at the output root. Open the index in ParaView for time-dependent
+visualization with the recorded simulation times. Calling `export_series` without
+`index_path` places a `water.pvd` index inside the requested series directory. Actual saved
 times are scheduled evenly and include the initial and final states. Repeated
 series exports replace owned snapshots and remove stale indexed snapshots,
 preserving unrelated files. Raw DG coordinates are local; use the recorded
 frame for independent numerical postprocessing. Presentation exports use the
 input frame.
+`result.export_vtu("output/water/solution_finaly.vtu")` exports a single DG1 snapshot;
+`result.to_visualization_mesh(snapshot=0)` returns its native Point Data mesh.
+Runs with cell-only snapshots can recover the initial and final DG1 states
+from their retained worker state; intermediate DG1 snapshots require a new run.
 
 ## Numerical scope and source
 

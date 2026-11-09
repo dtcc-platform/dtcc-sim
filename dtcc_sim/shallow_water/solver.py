@@ -1,6 +1,7 @@
 """Shallow-water solver with local assembly and native DTCC output."""
 
 from copy import deepcopy
+from contextlib import contextmanager
 from dataclasses import asdict
 import hashlib
 import json
@@ -10,8 +11,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from threading import Event, Thread
 
 import numpy as np
+from dtcc_core.common import get_python_logger
 
 from ..coordinates import MeshCoordinateFrame, input_crs, write_coordinate_frame
 from ..output import _output_directory
@@ -21,6 +24,37 @@ from .results import ShallowWaterResult
 from ._solver.cecilia_swe.mesh_io import validate_mesh
 
 _PACKAGE = Path(__file__).resolve().parent
+_logger = get_python_logger("dtcc-sim")
+
+
+@contextmanager
+def _worker_progress(path):
+    """Report time steps while retaining complete worker output in its log."""
+    finished = Event()
+
+    def report():
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            pending = ""
+            while True:
+                final = finished.is_set()
+                pending += stream.read()
+                *lines, pending = pending.split("\n")
+                for line in lines:
+                    if line.startswith("step="):
+                        _logger.info(line)
+                if final:
+                    if pending.startswith("step="):
+                        _logger.info(pending)
+                    return
+                finished.wait(.1)
+
+    reporter = Thread(target=report, name="shallow-water-progress")
+    reporter.start()
+    try:
+        yield
+    finally:
+        finished.set()
+        reporter.join()
 
 
 def _reference():
@@ -83,7 +117,9 @@ class ShallowWaterSolver:
         environment.update(PYTHONPATH=str(_PACKAGE / "_solver"), PYTHONNOUSERSITE="1",
                            OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", CECILIA_EQUILIBRIUM_PRESSURE="1")
         try:
-            with phase("solve"), (case / "solver.log").open("w") as log:
+            log_path = case / "solver.log"
+            _logger.info("Shallow-water solve: t=0 to %g s", self.parameters.final_time)
+            with phase("solve"), log_path.open("w") as log, _worker_progress(log_path):
                 process = subprocess.run([executable, "-u", "-m", "cecilia_swe", str(config),
                                           "--output-dir", str(case / "solver")],
                                          cwd=case, env=environment, stdout=log, stderr=subprocess.STDOUT,
@@ -118,9 +154,14 @@ class ShallowWaterSolver:
         with phase("postprocessing"):
             mesh = self.result.to_dtcc()
         with phase("export"):
-            for suffix in ("vtu", "dtcc"):
-                path = self.output_dir / ("solution."+suffix)
-                mesh.save(path)
-                write_coordinate_frame(path, self.diagnostics["coordinate_frame"])
+            self.result.export_vtu(self.output_dir / "solution_finaly.vtu")
+            self.result.export_series(self.output_dir / "series",
+                                      index_path=self.output_dir / "solution.pvd")
+            (self.output_dir / "solution.vtu").unlink(missing_ok=True)
+            _logger.info("ParaView animation: %s (%d time states)",
+                         self.output_dir / "solution.pvd", len(self.result.snapshot_times))
+            path = self.output_dir / "solution.dtcc"
+            mesh.save(path)
+            write_coordinate_frame(path, self.diagnostics["coordinate_frame"])
             (self.output_dir / "diagnostics.json").write_text(json.dumps(self.diagnostics, indent=2)+"\n")
         return mesh

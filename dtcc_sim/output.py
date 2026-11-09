@@ -80,7 +80,11 @@ def _save_city_surface(mesh, path):
     import numpy as np
     from dtcc_core.model import Mesh
 
-    if isinstance(mesh.boundary_markers, dict):
+    surface_input = isinstance(mesh, Mesh)
+    if surface_input:
+        faces = np.asarray(mesh.faces)
+        markers = np.asarray(mesh.markers)
+    elif isinstance(mesh.boundary_markers, dict):
         faces = np.asarray(list(mesh.boundary_markers), dtype=np.int64)
         markers = np.asarray(list(mesh.boundary_markers.values()))
     else:
@@ -96,8 +100,12 @@ def _save_city_surface(mesh, path):
         raise ValueError("City boundary faces must reference valid mesh vertices")
     if np.any(markers < -6):
         raise ValueError("City boundary markers must use the DTCC city mesh convention")
-    # Ground is -1; building facets are nonnegative. -2 through -6 are artificial boundaries.
-    keep = (markers == -1) | (markers >= 0)
+    # Surface meshes already contain physical faces; their ground marker is -2.
+    # Volume boundaries use -1 for ground and -2 through -6 for the outer box.
+    keep = (
+        np.ones(len(faces), dtype=bool)
+        if surface_input else (markers == -1) | (markers >= 0)
+    )
     if not keep.any():
         raise ValueError("City mesh has no tagged ground or building faces to export")
     vertices, indices = np.unique(faces[keep], return_inverse=True)
@@ -190,6 +198,7 @@ def _export_city_surface_impl(
     output_path, *, native_mesh, mesh, markers, mesh_path, frame
 ):
     import numpy as np
+    from dtcc_core.model import Mesh
     from .coordinates import write_coordinate_frame
 
     comm = getattr(mesh, "comm", None)
@@ -231,11 +240,12 @@ def _export_city_surface_impl(
     exported = False
     if rank == 0 and failure is None:
         try:
-            tags = getattr(native, "boundary_markers", ())
+            surface_input = isinstance(native, Mesh)
+            tags = getattr(native, "markers" if surface_input else "boundary_markers", ())
             if tags is None:
                 tags = ()
             values = np.asarray(list(tags.values()) if isinstance(tags, dict) else tags)
-            if values.size and np.any((values == -1) | (values >= 0)):
+            if values.size and (surface_input or np.any((values == -1) | (values >= 0))):
                 _save_city_surface(native, path)
                 if frame is not None:
                     write_coordinate_frame(path, frame)

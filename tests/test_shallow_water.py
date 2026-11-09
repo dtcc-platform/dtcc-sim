@@ -101,8 +101,12 @@ def test_real_worker_repeats_preserves_files_and_conserves_water(mesh, tmp_path)
     assert len(entries) == 3
     (destination / "notes.txt").write_text("keep")
     solver.parameters = replace(params, n_outputs=1)
-    solver.simulate(); solver.result.export_series(destination)
+    solver.simulate()
     assert not (destination / "water_00002.dtcc").exists()
+    assert not (destination / "water_00002.vtu").exists()
+    from xml.etree import ElementTree as ET
+    datasets = ET.parse(tmp_path / "solution.pvd").findall("./Collection/DataSet")
+    assert [float(e.attrib["timestep"]) for e in datasets] == [0., params.final_time]
     assert (destination / "notes.txt").read_text() == "keep"
 
 

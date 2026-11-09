@@ -37,6 +37,10 @@ def test_chalmers_demo_domain(name, height_parameter):
         "center_y": 6397910.0,
         "L": 250.0,
     }
+    bounds, = [node.value for node in tree.body if isinstance(node, ast.Assign)
+               and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "bounds"]
+    resolved = eval(compile(ast.Expression(bounds), str(path), "eval"), {"__builtins__": {}}, constants)
+    assert resolved == (319845., 6397785., 320095., 6398035.)
     heights = [
         ast.literal_eval(keyword.value)
         for node in ast.walk(tree)

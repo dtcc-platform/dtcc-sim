@@ -19,3 +19,6 @@ dependencies:
   - pymetis
   - threadpoolctl
   - uv
+
+variables:
+  FI_PROVIDER: tcp

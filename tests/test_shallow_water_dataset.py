@@ -24,6 +24,66 @@ def test_flood_dataset_contract(tmp_path):
 
 @pytest.mark.usefixtures("real_worker")
 @pytest.mark.simulation
+def test_generated_city_exports_aligned_context_and_supplied_mesh_clears_it(tmp_path, monkeypatch):
+    import json
+    import meshio
+    import numpy as np
+    from dtcc_core.model import Mesh
+
+    flat = RectangleMesh(4, 4)
+    flat.vertices[:, :2] += [319845., 6397785.]
+    flat.transform.srs = "EPSG:3006"
+    surface = Mesh(
+        vertices=np.array([[319845., 6397785., 0.], [319846., 6397785., 0.],
+                           [319845., 6397786., 0.], [319845., 6397785., 12.]]),
+        faces=np.array([[0, 1, 2], [0, 1, 3]]), markers=np.array([-2, 0]),
+    )
+    original = surface.vertices.copy()
+    requests = []
+
+    def city_flat_mesh(**kwargs):
+        requests.append(("flat", kwargs))
+        return flat
+
+    def city_surface_mesh(**kwargs):
+        requests.append(("surface", kwargs))
+        return surface
+
+    monkeypatch.setattr(datasets, "city_flat_mesh", city_flat_mesh)
+    monkeypatch.setattr(datasets, "city_surface_mesh", city_surface_mesh)
+    output = tmp_path / "result"
+    arguments = dict(bounds=[319845., 6397785., 319846., 6397786.], output_dir=output,
+                     h=10., min_building_detail=.5, strict_live=True,
+                     parameters=dict(amplitude=0., final_time=.001, n_outputs=1))
+    for _ in range(2):
+        result = datasets.urban_flood_simulation(**arguments)
+        city = meshio.read(output / "city.vtu")
+        np.testing.assert_array_equal(city.points, original)
+        np.testing.assert_array_equal(city.cell_data_dict["markers"]["triangle"], [-2, 0])
+        assert json.loads((output / "city.coordinates.json").read_text()) == json.loads(
+            (output / "solution.coordinates.json").read_text())
+        assert any(row["path"] == ["export", "city_surface"]
+                   for row in result.simulation_diagnostics["run_timings"]["stages"])
+        (output / "notes.txt").write_text("keep")
+    assert [name for name, _ in requests] == ["flat", "surface", "flat", "surface"]
+    flat_request, surface_request = requests[0][1], requests[1][1]
+    for key in ("max_mesh_size", "min_building_detail", "center_on_origin", "strict_live"):
+        assert surface_request[key] == flat_request[key]
+    assert surface_request["bounds"] == arguments["bounds"]
+    assert (surface_request["lod"], surface_request["flat_ground"], surface_request["ground_level"]) == ("lod1", True, 0.)
+    np.testing.assert_array_equal(surface.vertices, original)
+
+    source = tmp_path / "input.dtcc"
+    flat.save(source)
+    datasets.urban_flood_simulation(**arguments, mesh_path=source)
+    assert len(requests) == 4
+    assert not (output / "city.vtu").exists()
+    assert not (output / "city.coordinates.json").exists()
+    assert (output / "notes.txt").read_text() == "keep"
+
+
+@pytest.mark.usefixtures("real_worker")
+@pytest.mark.simulation
 def test_native_file_dataset_and_package_use_real_solver(tmp_path):
     from dtcc_core.datasets import load_model_package
 
@@ -47,6 +107,14 @@ def test_native_file_dataset_and_package_use_real_solver(tmp_path):
     completed = next(step for step in restored.dataset_context.provenance.processing_steps
                      if isinstance(step, dict) and step.get("backend") == "cecilia-reference")
     assert completed["reference"] == _reference()
+    import meshio
+    payload = datasets.urban_flood_simulation(**arguments, format="vtu")
+    vtu = tmp_path / "download.vtu"
+    vtu.write_bytes(payload)
+    downloaded = meshio.read(vtu)
+    assert "water_depth" in downloaded.point_data
+    assert "water_depth" in downloaded.cell_data_dict
+    assert len(downloaded.points) == 3*len(downloaded.cells_dict["triangle"])
 
 
 @pytest.mark.usefixtures("real_worker")
