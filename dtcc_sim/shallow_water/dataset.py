@@ -17,10 +17,12 @@ from .parameters import ShallowWaterParameters
 
 
 class UrbanFloodSimulationArgs(DatasetBaseArgs):
-    """Water settings and a native input mesh or a flat city-mesh request."""
+    """Water settings and a native input mesh or a generated city-mesh request."""
 
     h: float = Field(10., gt=0, allow_inf_nan=False, description="Generated mesh target size in meters")
     min_building_detail: float = Field(.5, gt=0, allow_inf_nan=False)
+    raster_cell_size: float = Field(2., gt=0, allow_inf_nan=False, description="Terrain raster spacing in meters")
+    raster_radius: float = Field(3., gt=0, allow_inf_nan=False, description="Ground-point raster interpolation radius in meters")
     output_dir: Path
     mesh_path: Path | None = Field(None, description="Native .dtcc triangular mesh instead of live city generation")
     mesh_crs: str | None = None
@@ -55,7 +57,7 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
 
     name = "urban_flood_simulation"
     title = "Experimental Urban Flood Simulation"
-    description = "Transient shallow-water fields on a supplied native mesh or generated flat city mesh."
+    description = "Transient shallow-water fields on a supplied mesh or generated city mesh, with optional measured terrain."
     ArgsModel = UrbanFloodSimulationArgs
     data_category = "simulation"
     result_kind = "mesh"
@@ -63,14 +65,15 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
     timeout_hint = 3600
     generated_by = {"package": "dtcc-sim", "version": __version__}
     default_crs = "EPSG:3006"
-    source = [{"name": "city_flat_mesh or supplied native DTCC mesh", "role": "computational_domain"},
+    source = [{"name": "Core city mesh and optional ground-point terrain, or supplied native DTCC mesh", "role": "computational_domain"},
               {"name": "Experimental shallow-water reference", "role": "simulation_model"}]
     data_types = ["triangular_mesh", "water_depth", "water_velocity"]
     presentation_headline = "Experimental Water Depth"
     presentation_summary = "Depth and depth-weighted velocity from an idealized transient shallow-water scenario."
     presentation_warnings = ["Experimental terrain/wetting-drying extensions; not a validated flood forecast.",
                              "Reflective outer and building boundaries; building interiors remain separate simulated regions."]
-    presentation_limitations = ["Generated city geometry has a flat bed, not measured terrain.",
+    presentation_limitations = ["Generated terrain follows bed_from_mesh; flat-bed mode omits topography.",
+                               "Point-cloud terrain is interpolated; sub-grid hydraulic features are unresolved.",
                                "No observed flood calibration; mesh-sensitive shoreline behavior remains."]
     view_hints = {"preferred_geometry": "mesh", "default_color_attribute": "water_depth",
                   "fields": [{"name": "water_depth", "unit": "m", "dim": 1},
@@ -93,17 +96,27 @@ class UrbanFloodSimulationDataset(DatasetDescriptor):
 
         args._run_metadata = None
         city_surface = None
-        if args.mesh_path is None:
+        if args.mesh_path is None and args.parameters.bed_from_mesh:
+            from ._terrain import _build_terrain_city
+
+            with phase("city_geometry"):
+                mesh, city_surface, source = _build_terrain_city(args)
+            crs = "EPSG:3006"
+        elif args.mesh_path is None:
             mesh = datasets.city_flat_mesh(bounds=Bounds(*args.bounds), max_mesh_size=args.h,
                                            min_building_detail=args.min_building_detail,
+                                           raster_cell_size=args.raster_cell_size,
+                                           raster_radius=args.raster_radius,
                                            center_on_origin=False, strict_live=args.strict_live)
             crs = "EPSG:3006"
             source = {"dataset": "city_flat_mesh", "bounds": list(args.bounds),
                       "max_mesh_size": args.h, "min_building_detail": args.min_building_detail,
+                      "raster_cell_size": args.raster_cell_size, "raster_radius": args.raster_radius,
                       "bed": "flat", "strict_live": args.strict_live}
             context_arguments = dict(
                 bounds=list(args.bounds), lod="lod1", flat_ground=True, ground_level=0.,
                 max_mesh_size=args.h, min_building_detail=args.min_building_detail,
+                raster_cell_size=args.raster_cell_size, raster_radius=args.raster_radius,
                 center_on_origin=False, strict_live=args.strict_live,
             )
             with phase("city_geometry"):

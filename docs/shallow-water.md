@@ -64,7 +64,7 @@ is also capped at the next output time and final time; a negative cell-mean
 attempt is retried at half its time step.
 
 Increasing `cfl` increases the proposed step, reducing work until output times
-become limiting. The API default is 0.02; the city demo explicitly uses 0.24,
+become limiting. The API default is 0.02; the city demo explicitly uses 0.12,
 checked against smaller time steps. Stability and accuracy depend on the mesh
 and scenario, so increased CFL settings need comparison with a smaller-step
 solution. The worker caches geometry-dependent TVB least-squares maps and
@@ -121,11 +121,11 @@ output_dir = "output/city_water"
 
 water = dtcc.datasets.urban_flood_simulation(
     bounds=bounds,
-    h=10., min_building_detail=.5, strict_live=True,
+    h=10., min_building_detail=.5, raster_cell_size=2., strict_live=True,
     output_dir=output_dir,
     parameters=ShallowWaterParameters(
-        h0=0., amplitude=.2, sigma=7., compact_pulse=True,
-        x_center=pulse_x, y_center=pulse_y, final_time=100., cfl=.24, n_outputs=100,
+        h0=0., amplitude=.2, sigma=7., compact_pulse=True, bed_from_mesh=True,
+        x_center=pulse_x, y_center=pulse_y, final_time=100., cfl=.12, n_outputs=100, max_steps=None,
     ),
 )
 water.info()
@@ -141,12 +141,27 @@ with bounds `(319845, 6397785, 320095, 6398035)`. The compact pulse is placed
 on open ground at `(320005, 6397890)`, offset from the domain centre to approach
 nearby buildings. It is 0.2 m high with a 7 m Gaussian width, truncated at three
 widths. The 100-second scenario saves the initial state and 100 one-second
-intervals, with CFL 0.24. This is an idealized numerical demo, without rainfall
-or flood calibration.
+intervals, with CFL 0.12. This is an idealized numerical demo, without rainfall
+or flood calibration. Downhill acceleration can require more than the default
+5,000 accepted steps, so the demo explicitly sets `max_steps=None` while
+retaining the final-time bound and numerical acceptance checks.
 
-Generated geometry comes from Core's `city_flat_mesh` in EPSG:3006, including
-building-footprint markers. It is flat, not measured terrain, and does not use
-the 3D volume-mesh cache. A supplied native `.dtcc` input can be selected with
+With `bed_from_mesh=True`, generated geometry uses one Core city model and one
+ground-classified point-cloud raster in EPSG:3006. Core supplies the
+building-conforming XY triangulation; bilinear pixel-center interpolation adds
+the bed elevation at each vertex, with clamped half-pixel margins at raster
+edges. `raster_cell_size` defaults to 2 m and `raster_radius` to 3 m. Missing
+raster cells use Core's nearest-neighbor fill; missing or nonfinite elevations
+remaining after raster construction fail explicitly. The computational problem
+remains two-dimensional in XY, with terrain entering as bed elevation and slope.
+
+The source point-cloud Z reference is retained without vertical transformation.
+Provenance records raster settings, shape, georeference, elevation-array hash and
+bed range. This is interpolated ground topography, not direct measurement at
+every computational node; features finer than the raster and hydraulic mesh are
+unresolved. `bed_from_mesh=False` retains the explicit flat z=0 city mode. Neither
+mode uses the 3D volume-mesh cache. A supplied native `.dtcc` input can be
+selected with
 `mesh_path=` and, if needed, `mesh_crs=`; it does not download or regenerate
 geometry. The dataset returns a native Mesh when `format` is omitted.
 `format="dtccpkg"` preserves fields and request/provenance context;
@@ -170,8 +185,10 @@ including simulation time, time-step size and depth diagnostics. The complete
 worker output is also retained in the run's `solver.log`.
 
 The generated city dataset also saves `city.vtu` and `city.coordinates.json`.
-This context uses the same bounds and footprint conditioning, a flat ground at
-z=0 and LOD1 walls and roofs with estimated building heights. Open `city.vtu`
+This context uses the exact simulation ground triangles and elevations, plus
+Core LOD1 walls and roofs from the same terrain and conditioned footprints.
+Building foundations may extend below the displayed terrain. In flat-bed mode
+the ground is at z=0. Open `city.vtu`
 alongside `solution.pvd` in ParaView to animate the saved states.
 `solution_finaly.vtu` contains only the final state. The index stays at the output
 root and references frames under `series/`. The city demo saves 101 states
@@ -296,6 +313,7 @@ depth. The independent [reflecting-basin wave benchmark](../tools/verification/s
 checks smooth evolving depth and momentum with mesh and time refinement, plus
 reference-resolution and amplitude-halving checks. This does not establish
 shoreline accuracy or convergence for real city flooding.
-Measured terrain, flood observations and quantitative city-flood prediction
-remain unvalidated. See the [integration validation record](validation/shallow-water-integration.md)
+A measured-terrain demo checks downhill flow, wetting/drying, conservation and
+smaller-step sensitivity. Quantitative shoreline accuracy on measured terrain,
+flood observations and predictive city-flood validity remain unvalidated. See the [integration validation record](validation/shallow-water-integration.md)
 for runtime versions, test commands and the city-output audit.

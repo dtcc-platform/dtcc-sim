@@ -25,7 +25,7 @@ to continue where provided.
 | [dataset_urban_wind_stokes.py](dataset_urban_wind_stokes.py) | Stokes wind through the dataset API | Real FEniCSx; city data |
 | [dataset_air_quality_field.py](dataset_air_quality_field.py) | Air-quality field reconstruction through the dataset API | Real FEniCSx; live data |
 | [dataset_urban_noise.py](dataset_urban_noise.py) | City noise wave amplitude through the dataset API | Complex FEniCSx; city data |
-| [dataset_urban_flood.py](dataset_urban_flood.py) | Experimental shallow-water pulse on flat city geometry | Real FEniCSx 0.11; live city data |
+| [dataset_urban_flood.py](dataset_urban_flood.py) | Experimental shallow-water pulse over point-cloud-derived city terrain | Real FEniCSx 0.11; live city data |
 | [dataset_traffic.py](dataset_traffic.py) | Traffic assignment using road and population/employment data | Standard Python environment; live data |
 
 ## Solver examples
@@ -52,9 +52,10 @@ They need no arguments or interpreter override. Complex-PETSc callers can
 explicitly select a real 0.11 worker as described in the runtime guide. The
 library replaces `solution.dtcc`, `solution_finaly.vtu` and coordinate sidecars on
 repeated calls, preserves unrelated files, and retains raw runs
-under `.shallow_water_runs`. The city example uses Core's `city_flat_mesh`,
-not the tetrahedral volume cache. It has a flat bed, reflecting boundaries,
-and an idealized pulse, not rainfall or a calibrated flood event. See
+under `.shallow_water_runs`. The city example uses a building-conforming
+2D triangulation with elevations sampled from a shared ground-point terrain
+raster, not the tetrahedral volume cache. It has reflecting boundaries and
+an idealized pulse, not rainfall or a calibrated flood event. See
 [shallow-water scope and usage](../docs/shallow-water.md).
 Both demos call `.info()` and `.plot(projection="xy", field="water_depth", ...)`
 on the returned native Mesh. Core fills conservative face values; tagged
@@ -62,8 +63,8 @@ building faces provide neutral context. Explicit titles supply simulation time,
 and known metric coordinates support metre axes and a scale bar. A reopened
 native dataset package supports the same plot without its numerical run files.
 The generated city dataset also saves `city.vtu` and `city.coordinates.json`:
-LOD1 buildings with estimated heights and a flat ground at z=0 matching the
-water mesh. Load it beside `solution.pvd` in ParaView. The solution includes DG1
+LOD1 buildings with estimated heights and the exact ground triangles and bed
+elevations of the water mesh. Load it beside `solution.pvd` in ParaView. The solution includes DG1
 Point Data for direct Warp By Scalar with `water_depth`, alongside conservative
 Cell Data; see the [visualization settings](../docs/shallow-water.md).
 Supplied 2D mesh inputs
@@ -80,8 +81,8 @@ The shallow-water city demo uses Chalmers Johanneberg in EPSG:3006, centred at
 `(319970, 6397910)` with `L = 250` m and bounds
 `(319845, 6397785, 320095, 6398035)`. Its compact 0.2 m pulse starts at
 `(320005, 6397890)` on open ground, with a 7 m width. The 100-second scenario
-uses CFL 0.24 and saves states every second to show propagation around
-the building interfaces. Runtime depends on mesh size and hardware; the city
+uses `bed_from_mesh=True`, a 2 m terrain raster and CFL 0.12, saving states every
+second to show downhill propagation around the building interfaces. Runtime depends on mesh size and hardware; the city
 scenario takes longer than the offline unit-square example.
 
 For urban wind through the dataset API, run:

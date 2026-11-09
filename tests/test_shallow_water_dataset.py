@@ -16,6 +16,7 @@ def test_flood_dataset_contract(tmp_path):
     assert set(description["supported_formats"]) == {"dtccpkg", "dtcc", "vtu"}
     args = UrbanFloodSimulationArgs(bounds=[0, 0, 1, 1], output_dir=tmp_path)
     assert args.parameters.gravity == 9.81
+    assert (args.raster_cell_size, args.raster_radius) == (2., 3.)
     with pytest.raises(ValidationError):
         UrbanFloodSimulationArgs(bounds=[0, 0, 1, 1], output_dir=tmp_path, parameters={"gravity": -1})
     with pytest.raises(ValidationError, match="Invalid bounds"):
@@ -67,7 +68,7 @@ def test_generated_city_exports_aligned_context_and_supplied_mesh_clears_it(tmp_
         (output / "notes.txt").write_text("keep")
     assert [name for name, _ in requests] == ["flat", "surface", "flat", "surface"]
     flat_request, surface_request = requests[0][1], requests[1][1]
-    for key in ("max_mesh_size", "min_building_detail", "center_on_origin", "strict_live"):
+    for key in ("max_mesh_size", "min_building_detail", "raster_cell_size", "raster_radius", "center_on_origin", "strict_live"):
         assert surface_request[key] == flat_request[key]
     assert surface_request["bounds"] == arguments["bounds"]
     assert (surface_request["lod"], surface_request["flat_ground"], surface_request["ground_level"]) == ("lod1", True, 0.)
@@ -187,3 +188,82 @@ def test_moved_package_plots_without_numerical_run(tmp_path):
     assert np.unique(pixels.reshape(-1, 3), axis=0).shape[0] > 100
     assert moved.read_bytes() == before
     plt.close(ax.figure)
+
+
+@pytest.mark.usefixtures('real_worker')
+@pytest.mark.simulation
+def test_generated_terrain_shares_one_dem_and_preserves_partly_wet_lake(tmp_path, monkeypatch):
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from affine import Affine
+    import numpy as np
+    import meshio
+    from dtcc_core import builder, io
+    from dtcc_core.model import Mesh, Raster
+
+    flat=RectangleMesh(4,4)
+    flat.vertices[:,:2]+=[319845.,6397785.]
+    flat.markers=np.full(len(flat.faces),-2,dtype=np.int32)
+    surface=Mesh(vertices=np.array([[319845.,6397785.,8.],[319846.,6397785.,8.],
+                                   [319845.,6397786.,8.],[319845.,6397785.,20.]]),
+                 faces=np.array([[0,1,2],[0,1,3]]),markers=np.array([-2,0]))
+    raster=Raster(data=np.array([[10.,10.1],[10.,10.1]]),
+                  georef=Affine(.5,0.,319845.,0.,-.5,6397786.),crs='EPSG:3006')
+    calls=[]
+    pointcloud=SimpleNamespace(remove_global_outliers=lambda threshold:pointcloud)
+    def download_pc(**kwargs):
+        calls.append(('pointcloud',kwargs));return pointcloud
+    def download_footprints(**kwargs):
+        calls.append(('footprints',kwargs));return []
+    def build_raster(pc,**kwargs):
+        assert pc is pointcloud
+        assert kwargs['ground_only'] is True
+        calls.append(('raster',kwargs));return raster
+    def flat_mesh(city,**kwargs):
+        assert city.terrain.raster is raster
+        calls.append(('flat',city));return deepcopy(flat)
+    def city_surface(city,**kwargs):
+        assert kwargs['flat_ground'] is False and kwargs['smoothing']==0
+        assert city.terrain.raster is raster
+        calls.append(('surface',city));return surface
+    monkeypatch.setattr(io.data,'download_pointcloud',download_pc)
+    monkeypatch.setattr(io.data,'download_footprints',download_footprints)
+    monkeypatch.setattr(builder,'build_terrain_raster',build_raster)
+    monkeypatch.setattr(builder,'extract_roof_points',lambda buildings,pc:buildings)
+    monkeypatch.setattr(builder,'compute_building_heights',lambda buildings,dem,**kwargs:buildings)
+    monkeypatch.setattr(datasets.city_flat_mesh,'build_from_city',flat_mesh)
+    monkeypatch.setattr(datasets.city_surface_mesh,'build_from_city',city_surface)
+    output=tmp_path/'terrain'
+    for _ in range(2):
+        result=datasets.urban_flood_simulation(bounds=[319845.,6397785.,319846.,6397786.],
+            output_dir=output,parameters=dict(bed_from_mesh=True,water_surface=10.06,
+                amplitude=0.,final_time=.02,n_outputs=1))
+        assert result.simulation_diagnostics['max_state_change']<1e-10
+        assert result.simulation_diagnostics['relative_mass_error']<1e-12
+        np.testing.assert_array_equal(result.faces,flat.faces)
+        np.testing.assert_array_equal(result.vertices[:,:2],flat.vertices[:,:2])
+        assert np.ptp(result.vertices[:,2])>.09
+        city=meshio.read(output/'city.vtu')
+        tags=city.cell_data_dict['markers']['triangle']
+        np.testing.assert_array_equal(city.points[city.cells_dict['triangle'][tags<0]],result.vertices[result.faces])
+        completed=next(step for step in result.dataset_context.provenance.processing_steps
+                       if isinstance(step,dict) and step.get('backend')=='cecilia-reference')
+        source=completed['mesh_source']
+        assert source['terrain']['ground_only'] is True
+        assert source['terrain']['raster_cell_size']==2.
+        assert source['terrain']['bed_min']==10.
+        assert source['terrain']['bed_max']==10.1
+        assert len(source['terrain']['raster_sha256'])==64
+        assert source['city_surface']['ground']=='exact simulation mesh'
+    assert [name for name,_ in calls]==['pointcloud','footprints','raster','flat','surface']*2
+    assert calls[3][1] is calls[4][1]
+    np.testing.assert_array_equal(flat.vertices[:,2],0.)
+    np.testing.assert_array_equal(surface.vertices[:,2],[8.,8.,8.,20.])
+    supplied=tmp_path/'terrain.dtcc'
+    result.save(supplied)
+    datasets.urban_flood_simulation(bounds=[319845.,6397785.,319846.,6397786.],
+        mesh_path=supplied,output_dir=output,parameters=dict(bed_from_mesh=True,
+            water_surface=10.06,amplitude=0.,final_time=.02,n_outputs=1))
+    assert len(calls)==10
+    assert not (output/'city.vtu').exists()
+    assert not (output/'city.coordinates.json').exists()

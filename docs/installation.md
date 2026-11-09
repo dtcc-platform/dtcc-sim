@@ -191,8 +191,9 @@ records the frame and CRS. Untagged reconstruction inputs produce no context
 surface. See [city geometry output](solvers.md#city-geometry-output).
 
 The generated flood dataset also saves `city.vtu` and its coordinate sidecar.
-Its LOD1 building context uses estimated heights above a flat z=0 ground,
-matching the 2D water mesh. Supplied 2D meshes have no inferred 3D city context.
+The demo uses point-cloud-derived terrain. Its LOD1 building context shares
+the same terrain source and exact ground triangles as the 2D water mesh;
+explicit flat-bed requests use z=0. Supplied 2D meshes have no inferred 3D city context.
 
 Omitting `output_dir` keeps other solvers' results in memory; Helmholtz requires
 it for numerical artifacts. An explicit `output_path` remains available for

@@ -1,4 +1,4 @@
-"""Simulate a water pulse through the experimental flat-city flood dataset."""
+"""Simulate a water pulse over measured terrain between city buildings."""
 
 import dtcc_core as dtcc
 import dtcc_sim.datasets
@@ -15,11 +15,11 @@ output_dir = "output/dataset_urban_flood"
 T = 100.
 
 flood = dtcc.datasets.urban_flood_simulation(
-    bounds=bounds, h=10., min_building_detail=.5, strict_live=True,
+    bounds=bounds, h=10., min_building_detail=.5, raster_cell_size=2., strict_live=True,
     output_dir=output_dir,
     parameters=ShallowWaterParameters(
-        h0=0., amplitude=.2, sigma=7., compact_pulse=True,
-        x_center=pulse_x, y_center=pulse_y, final_time=T, cfl=.24, n_outputs=100,
+        h0=0., amplitude=.2, sigma=7., compact_pulse=True, bed_from_mesh=True,
+        x_center=pulse_x, y_center=pulse_y, final_time=T, cfl=.12, n_outputs=100, max_steps=None,
     ),
 )
 flood.info()

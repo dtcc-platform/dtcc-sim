@@ -60,7 +60,7 @@ def _check_repeat(name, directory):
             import json
             import meshio
             city = meshio.read(directory / "city.vtu")
-            assert city.points[:, 2].min() == 0. and city.points[:, 2].max() > 0.
+            assert np.ptp(result.vertices[:, 2]) > 1.
             np.testing.assert_allclose(city.points[:, :2].min(axis=0), result.vertices[:, :2].min(axis=0))
             np.testing.assert_allclose(city.points[:, :2].max(axis=0), result.vertices[:, :2].max(axis=0))
             assert json.loads((directory / "city.coordinates.json").read_text()) == json.loads(
@@ -68,6 +68,8 @@ def _check_repeat(name, directory):
             from shapely import polygons, union_all
             city_faces = city.cells_dict["triangle"]
             city_buildings = city.cell_data_dict["markers"]["triangle"] >= 0
+            np.testing.assert_array_equal(city.points[city_faces[~city_buildings]],
+                                          result.vertices[result.faces[result.markers < 0]])
             context_footprint = union_all(polygons(city.points[city_faces[city_buildings], :2]))
             water_footprint = union_all(polygons(result.vertices[result.faces[result.markers >= 0], :2]))
             assert context_footprint.symmetric_difference(water_footprint).area < 1e-6
@@ -75,6 +77,7 @@ def _check_repeat(name, directory):
             assert state["bounds"] == (319845., 6397785., 320095., 6398035.)
             assert result.transform.srs == "EPSG:3006"
             assert result.simulation_diagnostics["time"] == 100.
+            assert result.simulation_diagnostics["bed_from_mesh"]
             assert result.simulation_diagnostics["rejected_attempts"] == 0
             from dtcc_sim.shallow_water import ShallowWaterResult
             transient = ShallowWaterResult.load(directory)
@@ -152,6 +155,8 @@ def test_dataset_demo_plots_returned_native_mesh(monkeypatch, tmp_path):
     assert settings["bounds"] == (319845., 6397785., 320095., 6398035.)
     assert (settings["h"], settings["min_building_detail"], settings["strict_live"]) == (10., .5, True)
     parameters = settings["parameters"]
-    assert (parameters.final_time, parameters.cfl, parameters.n_outputs) == (100., .24, 100)
+    assert (parameters.final_time, parameters.cfl, parameters.n_outputs) == (100., .12, 100)
+    assert parameters.bed_from_mesh and settings["raster_cell_size"] == 2.
+    assert parameters.max_steps is None
     assert (parameters.x_center, parameters.y_center) == (320005., 6397890.)
     plt.close("all")

@@ -143,17 +143,20 @@ sensor demo retains its Stockholm bounds, observation-coverage settings and
 LOD1 geometry. Its larger LOD2 volume currently fails during TetGen generation;
 meshing failures remain explicit, without automatic LOD fallback.
 Offline equation and workflow examples retain their synthetic domains.
-The flood demo uses a 10 m target size on a flat 2D mesh and LOD1 city context
-at z=0, with estimated building heights and the same 0.5 m footprint detail.
-It does not use the tetrahedral volume cache.
+The flood demo uses a 10 m target size on a building-conforming XY mesh,
+with vertex elevations sampled from a 2 m ground-point terrain raster and
+LOD1 city context. It uses the same 0.5 m footprint detail and does not use
+the tetrahedral volume cache.
 
 ## City geometry output
 
 Spatial solvers export `city.vtu` beside saved solution fields when physical
 boundary tags are available. Reuse the simulation mesh's ground and building
 faces; exclude the artificial domain sides and top. The generated flood dataset
-exports Core's corresponding flat-ground city surface, with ground at z=0 and
-LOD1 building walls and roofs. A supplied 2D mesh has no inferred 3D context.
+prepares one terrain raster and city model for both meshes. With bed_from_mesh
+enabled, sample terrain elevations onto the computational vertices and reuse
+those exact ground triangles alongside Core LOD1 walls and roofs in city.vtu.
+Flat-bed mode uses ground at z=0. A supplied 2D mesh has no inferred 3D context.
 Keep geometry in the input coordinate frame and retain boundary markers and
 CRS metadata. Native and backend volume meshes use the same surface selection.
 Distributed backend meshes collect owned exterior facets on rank zero for one
