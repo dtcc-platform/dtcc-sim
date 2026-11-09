@@ -1,6 +1,7 @@
-# Flow verification
+# Solver verification
 
-Run from the repository root in the real-number FEniCSx environment.
+Run from the repository root. The flow checks below use the real-number
+FEniCSx environment; the shallow-water study uses its separate worker setup.
 
 `abl_homogeneity.py` checks horizontal homogeneity of the atmospheric
 boundary layer: an equilibrium log-law inflow should cross a flat, empty
@@ -30,3 +31,6 @@ OMP_NUM_THREADS=1 python tools/verification/curved_wall_mms.py --levels 4 8 16 \
 
 Results and interpretation are in the
 [atmospheric boundary-layer guide](../../docs/atmospheric-boundary-layer.md).
+
+[Shallow-water wave verification](shallow_water/README.md) checks an independent
+reflecting-basin reference with mesh, time and amplitude refinement.

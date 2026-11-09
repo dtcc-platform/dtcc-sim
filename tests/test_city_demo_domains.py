@@ -19,6 +19,7 @@ import pytest
         ("urban_heat_heatwave", "mesh_domain_height"),
         ("smooth_reconstruction", "mesh_domain_height"),
         ("dataset_traffic", None),
+        ("dataset_urban_flood", None),
     ],
 )
 def test_chalmers_demo_domain(name, height_parameter):

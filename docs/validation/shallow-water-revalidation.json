@@ -1,0 +1,46 @@
+{
+  "validation_date": "2026-10-30",
+  "scope": "Saved final installed wheel; integration and short-run numerical health",
+  "wheel_sha256": "3940ccff82cb7b3819b59f618b0f9fb384d9ceb76ed495a48dd2d70e036ddd2b",
+  "installed_package_files_verified": 65,
+  "pinned_worker_files_verified": 11,
+  "runtime": {
+    "caller_python": "3.12.15",
+    "worker_python": "3.11",
+    "dolfinx": "0.10.0",
+    "petsc": "3.24.5",
+    "scalar_type": "float64",
+    "mpi_ranks": 1
+  },
+  "tests": {
+    "passed": 12,
+    "skipped": 1,
+    "elapsed_seconds": 83.94,
+    "skipped_test": "test_city_dataset_demo_runs_twice",
+    "skip_reason": "Live-data demo requires DTCC_RUN_DEMOS=1 and --run-expensive",
+    "real_worker_enabled": true,
+    "installed_package_import_asserted": true
+  },
+  "saved_city_case": {
+    "passed": true,
+    "input_sha256": "fb9c124a0fd3e71a05c4b0a9f0db98405d4b7e03ad15cece2a7c00c6ee0bcad2",
+    "vertices": 829,
+    "triangles": 1527,
+    "terrain": "synthetic slope",
+    "final_time_seconds": 0.05,
+    "snapshots": 3,
+    "accepted_steps": 5,
+    "rejected_attempts": 0,
+    "reflecting_regions": 13,
+    "reflecting_building_interfaces": 194,
+    "maximum_regional_volume_drift": 7.105427357601002e-14,
+    "relative_mass_error": 6.044418878830979e-16,
+    "geometry_markers_and_crs_preserved": true,
+    "raw_dg_field_mapping_verified": true,
+    "dtcc_and_vtu_round_trips_verified": true,
+    "derived_fields_verified": true,
+    "live_geometry_acquisition_repeated": false
+  },
+  "research_variants_promoted": false,
+  "quantitative_flood_prediction_validated": false
+}
