@@ -71,7 +71,9 @@ Core also provides `RectangleMesh(nx, ny)`, a triangular `Mesh` on the unit
 square. It is a surface mesh, not a tetrahedral input for these 3D solvers.
 The experimental [shallow-water solver](shallow-water.md) takes this triangular
 Mesh directly and returns conservative face fields. It uses an isolated real-PETSc
-worker, configured with `DTCC_SWE_PYTHON` when different from the DTCC caller.
+worker running the current Python in the real DOLFINx 0.11 `fenicsx-env`.
+Advanced callers can select a separate real 0.11 worker with `solver_python=`
+or `DTCC_SWE_PYTHON`.
 See the [installation guide](installation.md#solver-output) for outputs and
 [demo catalog](../demos/README.md) for complete examples.
 

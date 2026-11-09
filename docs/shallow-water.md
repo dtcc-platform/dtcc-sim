@@ -22,7 +22,10 @@ solver = ShallowWaterSolver(
 )
 water = solver.simulate()
 water.info()
-solver.result.plot()
+water.plot(
+    projection="xy", field="water_depth", title="Water depth · t = 0.04 s",
+    coordinate_unit="m", scale_bar=True, vmin=0., cmap="Blues",
+)
 ```
 
 The input is a native triangular `Mesh`, rather than the tetrahedral
@@ -56,28 +59,31 @@ an otherwise unknown CRS, without reprojection. Diagnostics and
 
 ## Runtime
 
-DTCC Sim uses Python 3.12+. The isolated numerical worker needs real-valued
-Float64 PETSc and DOLFINx 0.10.x; the validated worker uses Python 3.11 and
-PETSc 3.24.5. The standard repository environment uses DOLFINx 0.11 and cannot
-serve as this worker. Create the dedicated environment from the checked-in
-[worker recipe](../shallow-water-worker.yml), then configure the worker while
-keeping the DTCC caller in its Python 3.12+ environment:
+DTCC Sim uses Python 3.12+ and the common real-valued
+[fenicsx-env recipe](../fenicsx-env.yml), pinned to DOLFINx 0.11.0.
+The numerical worker requires real Float64 PETSc and supports the 0.11 release
+family. With this environment active, the current Python is used automatically:
 
 ```sh
-conda env create -f shallow-water-worker.yml
-export DTCC_SWE_PYTHON="$(conda run -n dtcc-shallow-water-worker python -c 'import sys; print(sys.executable)')"
+conda env create -f fenicsx-env.yml
+conda activate fenicsx-env
+uv pip install --python "$CONDA_PREFIX/bin/python" -e '.[test]'
 python demos/shallow_water_pulse.py
 python demos/dataset_urban_flood.py
 ```
 
-Otherwise, the caller's Python is used as the worker. Advanced callers can set
-`solver_python=` explicitly. Both executables must be on the same machine.
-No SSH login or server submission is hidden inside the solver API. The worker
-uses one MPI rank and one OMP/OpenBLAS thread; its source and equilibrium-pressure
-selection are pinned. Other equation solvers and their runtime defaults are unchanged.
-Before mesh preparation, the worker checks the DOLFINx version, PETSc scalar
-type and MPI size. Incompatible runtimes fail with setup instructions rather
-than continuing into numerical assembly or snapshot extraction.
+### Advanced interpreter selection
+
+A complex-PETSc caller can select a separate real-valued Python with
+`solver_python=` or `DTCC_SWE_PYTHON=/path/to/fenicsx-env/bin/python`.
+Use the same common recipe for that real worker; complex PETSc remains in
+`fenicsx-env-complex`. Both executables must be on the same machine.
+The worker uses one MPI rank and one OMP/OpenBLAS thread; its source and
+equilibrium-pressure selection are pinned. Before mesh preparation it checks
+the DOLFINx version, PETSc scalar type and MPI size. Unsupported versions,
+complex/non-Float64 PETSc and missing dependencies fail with setup instructions.
+The state layout requires one linear triangular cell type, scalar DG1 component
+maps and matching component/cell counts; mixed cell types are unsupported.
 
 ## City dataset
 
@@ -85,8 +91,6 @@ than continuing into numerical assembly or snapshot extraction.
 import dtcc_core as dtcc
 import dtcc_sim.datasets
 from dtcc_sim import ShallowWaterParameters
-from dtcc_sim.shallow_water import ShallowWaterResult
-
 center_x = 319970.
 center_y = 6397910.
 L = 250.
@@ -105,7 +109,11 @@ water = dtcc.datasets.urban_flood_simulation(
     ),
 )
 water.info()
-ShallowWaterResult.load(output_dir).plot()
+water.plot(
+    projection="xy", field="water_depth", context_mask=water.markers >= 0,
+    title="Water depth · t = 20 s", coordinate_unit="m", scale_bar=True,
+    xlabel="Easting [m]", ylabel="Northing [m]", vmin=0., cmap="Blues",
+)
 ```
 
 The city demo uses the 250 × 250 m Chalmers Johanneberg domain in EPSG:3006,
@@ -152,20 +160,37 @@ result.export_series("output/water/series")
 axes = result.plot(snapshot=0, show=False, vmax=.2)
 ```
 
-`ShallowWaterResult.plot()` shows a filled, equal-scale XY depth map using the
-actual conservative face values, with no interpolation between cells. It labels
-the saved simulation time, metre axes, depth colour bar and a metric scale bar.
-Building triangles form neutral footprint context and their interiors are hidden
-from the depth scale. Coordinates and CRS stay in the input frame. The generic
-Core `Mesh.plot()` remains available as its standard model preview.
+Native `Mesh.plot(projection="xy", field="water_depth")` fills actual
+conservative face values without interpolation. Supply `context_mask=mesh.markers >= 0` on tagged city meshes to show building faces neutrally and exclude them
+from the depth colour range. Core draws the footprint perimeter without internal
+triangle seams. For meshes without markers, omit the context mask. Use `vmin=0.`
+and a common positive `vmax` to compare snapshots. The scalar field name and
+unit label the colourbar. All-zero fields are labelled explicitly.
 
-The final snapshot is selected by default. Use `snapshot=` to select another
-saved state and a common positive `vmax` when comparing maps. `show=False`
-returns the Matplotlib 2D axes for headless rendering or customization; pass
-`ax=` to draw into an existing 2D axes, or `theme="dark"` for the Core dark
-theme. An all-dry map is labelled explicitly.
-Plotting a completed result needs Matplotlib in the caller environment and
-does not require another numerical-worker run.
+Pass a simulation-time `title` explicitly; transient Python attributes are not
+part of native mesh serialization. `coordinate_unit="m"` and `scale_bar=True`
+are appropriate for the solver's metric input coordinates. Plotting preserves
+coordinates and CRS without reprojection. `show=False` returns a Matplotlib 2D
+axes; `ax=` accepts an existing 2D axes and `theme="dark"` selects Core styling.
+The default Core mesh plot remains a 3D preview.
+
+A dataset package can be moved and opened without the numerical run directory:
+
+```python
+from dtcc_core.datasets import load_model_package
+
+water = load_model_package("flood.dtccpkg")
+water.plot(
+    projection="xy", field="water_depth", context_mask=water.markers >= 0,
+    title="Water depth · t = 20 s", coordinate_unit="m", scale_bar=True,
+    vmin=0., cmap="Blues",
+)
+```
+
+`ShallowWaterResult.load(...)` is for transient inspection and series export.
+Its convenience `plot(snapshot=...)` selects a saved Mesh and delegates to the
+same native Core plotting API, supplying the recorded snapshot time and
+building context. Plotting needs Matplotlib in the caller, with no worker run.
 
 The series contains native DTCC/VTU snapshots and `times.json`; actual saved
 times are scheduled evenly and include the initial and final states. Repeated
@@ -191,7 +216,6 @@ dry-node momentum is zeroed and the convex neighbor-velocity limiter bounds
 momentum. The time integrator is three-stage SSPRK3 with a CFL step capped at
 the next output time. Negative cell means trigger step halving, with at most
 13 attempts. The accepted-step limit is independent of those retries.
-Unused alternative flat-bed flux and worker export implementations are removed;
 `ShallowWaterResult` owns supported native result conversion and export.
 TVB limiting applies throughout the domain, including on meshes with building
 markers; its neighbor stencils exclude reflecting building interfaces. The

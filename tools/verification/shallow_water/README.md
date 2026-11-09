@@ -1,8 +1,10 @@
 # Reflecting-basin wave verification
 
-Run on the DTCC caller with `DTCC_SWE_PYTHON` set to the dedicated real worker:
+Run in the common real-valued DOLFINx 0.11 environment:
 
 ```sh
+conda activate fenicsx-env
+unset DTCC_SWE_PYTHON
 python -m tools.verification.shallow_water.wave --output output/verification/shallow-water-wave
 ```
 

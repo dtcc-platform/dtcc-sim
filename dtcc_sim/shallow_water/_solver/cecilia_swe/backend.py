@@ -4,6 +4,8 @@
 
 from pathlib import Path
 
+from .layout import collapse_components, scalar_cell_dofs, triangle_geometry
+
 import basix.ufl
 import numpy as np
 import ufl
@@ -139,7 +141,7 @@ def build_tvb_limiter_data(domain, scalar_space):
     num_cells = cell_map.size_local + cell_map.num_ghosts
 
     dof_coords = scalar_space.tabulate_dof_coordinates()[:, :domain.geometry.dim]
-    cell_dofs = scalar_space.dofmap.list
+    cell_dofs = scalar_cell_dofs(scalar_space, 3)
     num_local_dofs = cell_dofs.shape[1]
     if num_local_dofs != 3:
         raise NotImplementedError("The TVB limiter below is implemented for DG(1) triangles only.")
@@ -299,9 +301,8 @@ def run(parameters, output_dir, mesh_data=None):
     U_2 = fem.Function(V, name="U_stage_2")
     U_eval = fem.Function(V, name="U_eval")
 
-    Q_h, h_dofs = V.sub(0).collapse()
-    Q_hu, hu_dofs = V.sub(1).collapse()
-    Q_hv, hv_dofs = V.sub(2).collapse()
+    (Q_h, Q_hu, Q_hv), (h_dofs, hu_dofs, hv_dofs) = collapse_components(V, U_n.x.array.size)
+    cell_dofs = scalar_cell_dofs(Q_h, 3)
 
     bed = fem.Function(Q_h,name="bed_elevation")
     if p.bed_from_mesh:
@@ -316,7 +317,7 @@ def run(parameters, output_dir, mesh_data=None):
     equilibrium_depth=fem.Function(Q_h)
     from .equilibrium_depth import reconstruct
     equilibrium_mean_errors=[]
-    mask_dofs=Q_mask.dofmap.list.reshape(-1)
+    mask_dofs=scalar_cell_dofs(Q_mask, 1)[:, 0]
     h_init = fem.Function(Q_h)
     hu_init = fem.Function(Q_hu)
     hv_init = fem.Function(Q_hv)
@@ -361,7 +362,7 @@ def run(parameters, output_dir, mesh_data=None):
     domain.topology.create_connectivity(tdim-1,tdim)
     c_to_f = domain.topology.connectivity(tdim,tdim-1)
     f_to_c = domain.topology.connectivity(tdim-1,tdim)
-    count = len(Q_h.dofmap.list)
+    count = len(cell_dofs)
     neighbors = np.repeat(np.arange(count)[:,None],4,axis=1)
     walls = set() if wall_facets is None else set(wall_facets.indices[wall_facets.values==1])
     for cell in range(count):
@@ -373,11 +374,11 @@ def run(parameters, output_dir, mesh_data=None):
     # TVB and velocity limiting share the same wall-aware edge neighbors.
     limiter_data['cell_neighbors'] = [np.unique(row[row != cell]) for cell,row in enumerate(neighbors)]
     np.savez(output_dir/'limiter-topology.npz',neighbors=neighbors,
-             wall_facets=np.array(sorted(walls),dtype=int),cell_dofs=Q_h.dofmap.list)
+             wall_facets=np.array(sorted(walls),dtype=int),cell_dofs=cell_dofs)
     wetdry_events = []
 
     def dry_mask(state):
-        cells=Q_h.dofmap.list
+        cells=cell_dofs
         depths=state.x.array[h_dofs][cells]
         beds=bed.x.array[cells]
         return (depths+beds).max(axis=1)-beds.max(axis=1)<h_floor
@@ -385,7 +386,7 @@ def run(parameters, output_dir, mesh_data=None):
     def solve_terrain_stage(ksp,rhs_form,dt,U_eval,U_in,U_out,rhs_vec):
         semidry.x.array[mask_dofs]=dry_mask(U_eval)
         if EQUILIBRIUM_PRESSURE:
-            cells=Q_h.dofmap.list
+            cells=cell_dofs
             depths=U_eval.x.array[h_dofs][cells]
             equilibrium=reconstruct(depths,bed.x.array[cells])
             equilibrium_mean_errors.append(float(abs(equilibrium.mean(axis=1)-depths.mean(axis=1)).max()))
@@ -407,7 +408,7 @@ def run(parameters, output_dir, mesh_data=None):
             values=state.x.array[dofs].copy()
             limit_scalar_component(values,limiter_data,tvb_M,tvb_nu,h_min,limit_cells=limit_cells)
             state.x.array[dofs]=values
-        cells = Q_h.dofmap.list
+        cells = cell_dofs
         arrays = np.stack([state.x.array[dofs][cells] for dofs in component_dofs],axis=-1)
         limited,stats = limit(arrays,dry_depth=h_floor)
         for k,dofs in enumerate(component_dofs):
@@ -419,7 +420,7 @@ def run(parameters, output_dir, mesh_data=None):
 
     from .mesh_io import validate_mesh
     if mesh_data is None:
-        faces = np.asarray(domain.geometry.dofmap, dtype=np.int64)
+        faces = triangle_geometry(domain).astype(np.int64)
         markers = np.full(len(faces), -1, dtype=np.int32)
         if cell_tags is not None:
             markers[cell_tags.indices] = cell_tags.values
@@ -591,7 +592,7 @@ def run(parameters, output_dir, mesh_data=None):
     np.savez(output_dir / "state.npz", state=values, initial_state=initial_state, bed=bed.x.array,
              h_dofs=h_dofs, hu_dofs=hu_dofs, hv_dofs=hv_dofs,
              coordinates=Q_h.tabulate_dof_coordinates(),
-             cell_dofs=Q_h.dofmap.list)
+             cell_dofs=cell_dofs)
     (output_dir / "diagnostics.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
     if not report["passed"]:

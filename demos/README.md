@@ -25,7 +25,7 @@ to continue where provided.
 | [dataset_urban_wind_stokes.py](dataset_urban_wind_stokes.py) | Stokes wind through the dataset API | Real FEniCSx; city data |
 | [dataset_air_quality_field.py](dataset_air_quality_field.py) | Air-quality field reconstruction through the dataset API | Real FEniCSx; live data |
 | [dataset_urban_noise.py](dataset_urban_noise.py) | City noise wave amplitude through the dataset API | Complex FEniCSx; city data |
-| [dataset_urban_flood.py](dataset_urban_flood.py) | Experimental shallow-water pulse on flat city geometry | DTCC environment with real FEniCSx worker; live city data |
+| [dataset_urban_flood.py](dataset_urban_flood.py) | Experimental shallow-water pulse on flat city geometry | Real FEniCSx 0.11; live city data |
 | [dataset_traffic.py](dataset_traffic.py) | Traffic assignment using road and population/employment data | Standard Python environment; live data |
 
 ## Solver examples
@@ -41,23 +41,28 @@ to continue where provided.
 | [channel_flow.py](channel_flow.py) | Exact planar Poiseuille flow | Real FEniCSx; synthetic |
 | [bluff_body.py](bluff_body.py) | Stationary low-Reynolds-number obstruction flow | Real FEniCSx; synthetic |
 | [helmholtz_box.py](helmholtz_box.py) | Offline Gaussian source, direct solver API and amplitude preview | Complex FEniCSx; synthetic |
-| [shallow_water_pulse.py](shallow_water_pulse.py) | Experimental wetting/drying pulse on a closed unit square | DTCC environment with real FEniCSx worker; offline |
+| [shallow_water_pulse.py](shallow_water_pulse.py) | Experimental wetting/drying pulse on a closed unit square | Real FEniCSx 0.11; offline |
 
 ## Requirements and limitations
 
-The shallow-water examples use the retained experimental reference. Set
-`DTCC_SWE_PYTHON` to a real-PETSc DOLFINx 0.10 Python when the DTCC caller uses
-a different runtime; otherwise the caller's Python is used. They need no
-arguments. The library replaces `solution.dtcc`, `solution.vtu` and coordinate
-sidecars on repeated calls, preserves unrelated files, and retains raw runs
+The shallow-water examples use the retained experimental reference in the
+common real DOLFINx 0.11 environment. Activate `fenicsx-env`, then run
+`python demos/shallow_water_pulse.py` or `python demos/dataset_urban_flood.py`.
+They need no arguments or interpreter override. Complex-PETSc callers can
+explicitly select a real 0.11 worker as described in the runtime guide. The
+library replaces `solution.dtcc`, `solution.vtu` and coordinate sidecars on
+repeated calls, preserves unrelated files, and retains raw runs
 under `.shallow_water_runs`. The city example uses Core's `city_flat_mesh`,
 not the tetrahedral volume cache. It has a flat bed, reflecting boundaries,
 and an idealized pulse, not rainfall or a calibrated flood event. See
 [shallow-water scope and usage](../docs/shallow-water.md).
-Use `simulation.result.plot()` or reload `ShallowWaterResult` for filled face
-depths with time, metric axes, a scale bar and building-footprint context. The
-method returns a Matplotlib 2D axes; the generic Core mesh preview remains
-available separately.
+Both demos call `.info()` and `.plot(projection="xy", field="water_depth", ...)`
+on the returned native Mesh. Core fills conservative face values; tagged
+building faces provide neutral context. Explicit titles supply simulation time,
+and known metric coordinates support metre axes and a scale bar. A reopened
+native dataset package supports the same plot without its numerical run files.
+Use `ShallowWaterResult.load(...)` separately for transient inspection/export or
+its snapshot-plot convenience method.
 
 The shallow-water city demo uses Chalmers Johanneberg in EPSG:3006, centred at
 `(319970, 6397910)` with `L = 250` m and bounds

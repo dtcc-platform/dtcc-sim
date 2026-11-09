@@ -12,4 +12,7 @@ parameters = ShallowWaterParameters(
 simulation = ShallowWaterSolver(mesh=mesh, params=parameters, output_dir=output_dir)
 result = simulation.simulate()
 result.info()
-simulation.result.plot()
+result.plot(
+    projection="xy", field="water_depth", title=f"Water depth · t = {parameters.final_time:g} s",
+    coordinate_unit="m", scale_bar=True, vmin=0., cmap="Blues", theme="light",
+)
