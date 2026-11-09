@@ -23,6 +23,10 @@ Application orchestration and catalog operation belong in DTCC Twin.
   advanced controls. Validate required inputs and fail with actionable errors.
 - Keep heavy solver dependencies isolated from capabilities that do not need
   them. Document real versus complex PETSc and supported DOLFINx requirements.
+- Use DOLFINx 0.11.0 across all FEniCSx solvers and isolated numerical workers,
+  matching the shared environment recipes. Real and complex PETSc use separate
+  environments with the same DOLFINx version. Port solvers to this common
+  baseline before integration rather than introducing per-solver version pins.
 - Distinguish numerical convergence from physical validity. Record assumptions,
   sources, boundary conditions and limitations; do not label amplitude as dB.
 
