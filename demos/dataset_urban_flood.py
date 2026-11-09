@@ -3,7 +3,6 @@
 import dtcc_core as dtcc
 import dtcc_sim.datasets
 from dtcc_sim import ShallowWaterParameters
-from dtcc_sim.shallow_water import ShallowWaterResult
 
 # Chalmers Johanneberg (EPSG:3006); 250 m × 250 m domain
 center_x = 319970.
@@ -23,4 +22,8 @@ flood = dtcc.datasets.urban_flood_simulation(
     ),
 )
 flood.info()
-ShallowWaterResult.load(output_dir).plot()
+flood.plot(
+    projection="xy", field="water_depth", context_mask=flood.markers >= 0,
+    title="Water depth · t = 20 s", coordinate_unit="m", scale_bar=True,
+    xlabel="Easting [m]", ylabel="Northing [m]", vmin=0., cmap="Blues", theme="light",
+)

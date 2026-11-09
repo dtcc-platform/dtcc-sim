@@ -1,209 +1,53 @@
 # Shallow-water integration validation
 
-Validated on 2026-10-29 against DTCC Sim `develop` at
-`17ccc7f63e47ceae83e04cecf16e4059535ff217` and the project's exact Core pin
-`6f983244b630a2ac820e9e9734a8d653aece9f38`.
+## Source identity and runtime
 
-The DTCC caller used Python 3.12 with complex PETSc. Numerical work ran in a
-separate Python 3.11 worker with DOLFINx 0.10.0 and real PETSc 3.24.5,
-using one MPI rank and one OMP/OpenBLAS thread. All numerical runs and
-scientific postprocessing were performed on the server.
+The numerical source is identified by
+[`reference.json`](../../dtcc_sim/shallow_water/reference.json): backend
+`cecilia-reference`, upstream commit
+`2cf10273eea2441137393b57040528b1c03e8725`, reference
+`equilibrium-terrain-20261028+integration-controls+domain-tvb-zero-skip+active-backend-cleanup`.
+The manifest records SHA256 for every retained worker file. Completed dataset
+packages preserve that complete identity in processing provenance.
 
-## Installed package and regression checks
+The caller requires Python 3.12+ and Matplotlib for maps. The dedicated
+[worker recipe](../../shallow-water-worker.yml) supplies DOLFINx 0.10.x with
+real Float64 PETSc, one MPI rank and one OMP/OpenBLAS thread. The standard
+DOLFINx 0.11 environment is incompatible. Caller and worker run on the same
+host; MPI may require local socket permissions even for a single rank.
 
-`uv build` produced a wheel and source distribution. The wheel was installed
-in an isolated target directory without replacing the shared environment.
-Every retained worker file matched `reference.json`; both distributions
-contained the manifest and MIT license.
-
-The initial selection passed all **64 tests** against the installed wheel,
-with `DTCC_SWE_PYTHON` identifying the real-valued worker:
-
-```sh
-python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py \
-  tests/test_dtcc_core_contract.py tests/test_helmholtz_dataset.py \
-  tests/test_traffic.py tests/test_timing.py -o pythonpath= -q
-```
-
-The installed wheel and exact pinned Core were on `PYTHONPATH`; the working
-source tree was excluded from package import resolution.
-
-Checks include native field round-trips, DTCC package context preservation,
-repeated output replacement without deleting unrelated files, indexed transient
-exports, worker failure isolation, exact input-coordinate preservation,
-bitwise state invariance under an exactly representable XY translation,
-short-run conservation and preservation of a fully wet sloping lake at rest.
-
-## Demos and city output
-
-Both shallow-water demos ran twice through the actual solver and Core
-`info()` / `plot()` methods, using Matplotlib's Agg backend for headless
-verification. The live city checks were explicitly enabled:
-
-```sh
-DTCC_RUN_DEMOS=1 python -m pytest tests/test_shallow_water_demos.py --run-expensive
-python -m pytest tests/test_demo_catalog.py -q
-```
-
-All 19 demo catalog checks passed. Dataset QA and import checks also passed.
-
-The city demo used live `city_flat_mesh` geometry around Poseidon in Gothenburg:
-996 vertices, 1,861 triangles, and 12 building markers. Both negative ground
-markers share the flow domain; their individual masses may exchange. Outer
-boundaries and ground/building interfaces reflect. The two runs used the same
-idealized compact pulse for 0.5 seconds on a flat bed.
-
-An independent installed-wheel output audit confirmed:
-
-- All fields finite and water depth nonnegative; zero rejected steps.
-- Reported global relative mass error zero in both runs.
-- Ground mass and each enclosed building-region mass preserved within
-  `1e-9 * max(abs(initial_mass), 1)`.
-- Native output vertices, triangles, markers and field values round-trip
-  exactly. Results and saved native output declare EPSG:3006.
-- The provider's input mesh had no stored CRS; the dataset explicitly declared
-  EPSG:3006. Numerical XY was local; presentation coordinates remained projected.
-- Core's native `plot(field="water_depth")` produced a saved preview.
-
-The [machine-readable city audit](shallow-water-city.json) records the frame,
-fields, snapshot times and regional masses.
-
-## Installed-wheel revalidation on 2026-10-30
-
-The saved final wheel was checked again without changing the numerical worker.
-All 65 installed package files matched the wheel, and all 11 retained worker
-files matched the pinned source manifest. The wheel SHA256 was
-`3940ccff82cb7b3819b59f618b0f9fb384d9ceb76ed495a48dd2d70e036ddd2b`.
-The caller used Python 3.12.15; the separate worker used Python 3.11,
+The supplied scientific audits dated 2026-10-29, 2026-10-30 and 2026-11-07
+used Core `6f983244b630a2ac820e9e9734a8d653aece9f38`. The 2026-11-07 Sim
+source is PR head `c53dbe5d02ed5bf514b4eb6ee4d25975250a7af9`; exact worker,
+verification-tool and wheel hashes are in the
+[wave audit](shallow-water-wave.json). The supplied server worker used
 DOLFINx 0.10.0 and real PETSc 3.24.5.
 
-The three shallow-water test modules passed **12 tests**, with **one skipped**
-in 83.94 seconds. The skipped test was the opt-in live-data city demo. All
-real-worker API, native-file dataset and offline pulse-demo checks were enabled.
-An import assertion verified that tests used the installed wheel rather than
-the source checkout. To repeat this selection, place the installed wheel and
-compatible Core on `PYTHONPATH`, set `DTCC_SWE_PYTHON` to the real-valued worker,
-and run from the source checkout:
+## Reproduction
+
+From the repository root in the DTCC caller environment:
 
 ```sh
-python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py \
-  tests/test_shallow_water_demos.py --import-mode=importlib -o pythonpath= \
-  -p no:cacheprovider -q
+export DTCC_SWE_PYTHON=/path/to/real-worker/python
+export MPLBACKEND=Agg
+python -m pytest tests/test_shallow_water.py \
+  tests/test_shallow_water_dataset.py tests/test_shallow_water_demos.py \
+  tests/test_shallow_water_plotting.py tests/test_shallow_water_wave_reference.py \
+  tests/test_demo_catalog.py tests/test_city_demo_domains.py \
+  tests/test_dataset_qa.py tests/test_import.py
+python -m pytest tests/test_core_pin_update.py tests/test_helmholtz_installer.py
+uv build
 ```
 
-These checks cover failure isolation, repeatable runs, input-coordinate and CRS
-preservation, conservation, sloping-bed still water, native field round-trips,
-dataset/package context and an offline demo run twice. The earlier broader
-regression selection and live-city runs above are separate historical evidence;
-they were not repeated by this selection.
+For installed-wheel checks, install the built wheel with its declared Core
+revision into an isolated environment. Confirm `dtcc_sim.__file__` is in that
+environment's site-packages, then run the selection with
+`--import-mode=importlib -o pythonpath= -p no:cacheprovider`. Do not put the
+source tree or a local Core override on `PYTHONPATH`.
 
-A separate fresh run used a saved native city mesh with a synthetic sloping bed:
-829 vertices, 1,527 triangles, a compact pulse, and a final time of 0.05 seconds.
-It completed five accepted steps with no rejected attempts. Independent checks
-of all three snapshots confirmed:
-
-- Exact input vertices, face order and markers, with CRS preserved.
-- Exported depth, momentum and bed matching raw DG cell means.
-- DTCC and VTU field round-trips and consistent derived velocity/surface fields.
-- Water conservation in 13 reflecting regions with 194 building/ground interfaces.
-- Maximum regional volume drift of `7.11e-14` and global relative mass error
-  of `6.04e-16`.
-
-The [compact revalidation audit](shallow-water-revalidation.json) records these
-results. This saved-input check did not repeat live geometry acquisition.
-Raw snapshots, worker logs and numerical-experiment archives remain on the
-validation server; they are not repository fixtures. Core plotting was tested
-headlessly; interactive desktop viewer behavior was not checked.
-
-## API and worker-control checks on 2026-11-07
-
-The public entry point is `ShallowWaterSolver`. A server regression selection
-covering the shallow-water API/dataset/demos, Core contracts, timing, demo
-catalog and imports passed **55 tests**, with the opt-in live city demo skipped.
-The actual DOLFINx 0.10 real-valued worker was enabled. New regressions check
-explicit step-limit failure, all six snapshots for five requested intervals
-when a CFL step would otherwise span them, incompatible-runtime rejection
-before mesh preparation, and exact numerical reference metadata in a reloaded
-dataset package.
-
-An isolated wheel was then built and installed. Import assertions verified the
-new public name and pinned source manifest; two additional real-worker tests
-passed for scheduled output/step limits and dataset-package provenance. The
-dedicated `shallow-water-worker.yml` resolved successfully in a Linux Conda
-dry run; this was not a fresh installation of the resolved environment.
-
-The source selection used:
-
-```sh
-python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py \
-  tests/test_shallow_water_demos.py tests/test_dtcc_core_contract.py \
-  tests/test_timing.py tests/test_demo_catalog.py tests/test_import.py \
-  --import-mode=importlib -o pythonpath= -p no:cacheprovider -q
-```
-
-This first batch did not resolve the city-mesh limiter defect, common city
-demo domain/scenario, visualization, independent dynamic accuracy benchmark or
-backend cleanup.
-
-## City-mesh limiter correction on 2026-11-07
-
-TVB limiting is enabled throughout the domain, with the same wall-aware edge
-neighbors used by velocity limiting. A building marker no longer disables
-TVB limiting away from its walls. Existing wet/dry restrictions on free-surface
-slope limiting remain in effect; building interfaces still reflect.
-
-A real-worker regression runs an 8-by-8 unit-square mesh for 0.01 seconds with
-a compact pulse centered at (0.25, 0.25), then repeats it with one distant,
-initially dry building triangle. Before the correction, both runs reported
-success but differed near the pulse by up to 0.0481 m in raw nodal depth. The
-new regression failed against that version. After the correction, depth,
-momentum and regularized velocity near the pulse matched exactly in this case.
-The test also verifies that ground-cell limiter stencils exclude the building.
-
-The broader real-worker selection above passed **56 tests**, with the opt-in
-live city demo skipped. Two installed-wheel checks then passed: the
-distant-building regression and an active-pulse conservation test with a wet,
-enclosed building region. Independent volume integration over the snapshots
-gave maximum building/ground drifts of `1.73e-18` and `9.71e-17`, respectively.
-Installed-package imports and pinned worker hashes were verified.
-
-At that stage the common city-demo domain/scenario, visualization, independent dynamic
-accuracy/refinement benchmark and backend cleanup remained outstanding. These
-regressions address the reviewed limiter defect; they do not establish general
-dynamic accuracy or flood-prediction validity.
-
-## Johanneberg city scenario on 2026-11-07
-
-The city demo and its workflow example use the requested Chalmers Johanneberg
-domain: EPSG:3006, centre `(319970, 6397910)`, `L = 250` m and bounds
-`(319845, 6397785, 320095, 6398035)`, derived as centre ± `L / 2`. The actual
-Core flat-city mesh has 1,621 vertices and 3,108 triangles. Core resolved real
-city data using its source-tile cache.
-
-The compact pulse starts on open ground at `(320005, 6397890)`, with amplitude
-0.2 m, width 7 m, zero background depth and zero initial momentum. The scenario
-runs for 20 seconds at CFL 0.08 and saves states at 0, 5, 10, 15 and 20 seconds.
-Its footprint initially excludes building interiors. Both complete runs
-took 1,006 accepted steps with no rejected attempts. Independent integration
-over all five snapshots in each run found maximum regional volume drift `7.11e-14 m³`
-across 19 reflecting regions with 450 building/ground interfaces.
-
-The saved states show propagation onto initially dry ground, including beside
-buildings. Counts below use face-mean depth greater than `1e-4 m`:
-
-| Time (s) | Wet ground faces | Newly wet ground faces | Newly wet beside buildings |
-|---:|---:|---:|---:|
-| 0 | 50 | 0 | 0 |
-| 5 | 63 | 10 | 4 |
-| 10 | 88 | 35 | 9 |
-| 15 | 132 | 79 | 21 |
-| 20 | 186 | 133 | 32 |
-
-The live-demo test explicitly checks the centre, bounds, CRS, duration, saved
-times, building exclusion and propagation to new ground next to buildings.
-The actual demo passed both executions and preserved an unrelated notes file.
-The opt-in test took about 31 minutes on the validation server, including city
-preparation and plotting; runtime depends on mesh detail and hardware.
+The offline demo test executes `demos/shallow_water_pulse.py` twice and checks
+that an unrelated output file survives. The city demo test requires both
+explicit opt-ins and live data:
 
 ```sh
 DTCC_RUN_DEMOS=1 python -m pytest \
@@ -211,156 +55,120 @@ DTCC_RUN_DEMOS=1 python -m pytest \
   --run-expensive -q
 ```
 
-To keep this longer scenario practical, identically zero TVB polynomials skip
-the local least-squares calculations. A 0.5-second comparison on the same city
-mesh produced byte-identical final state, initial state, bed, coordinates and
-DOF maps before and after this shortcut. Observed run times were 99.47 and
-14.46 seconds; this is a single-run comparison, not a scaling benchmark.
-The built wheel's short-case arrays also matched the source run. The wider
-regression selection passed 57 tests, with the opt-in live case tested separately.
-
-The bed remains flat and boundaries idealized and reflecting. These checks
-establish a more informative city demonstration, not general dynamic accuracy
-or flood calibration. At that stage, filled-map plotting, independent dynamic
-accuracy/refinement checks and backend cleanup remained outstanding. Their
-completion is recorded in the following sections. Verification images and raw
-outputs remain on the server.
-
-## Filled depth-map presentation on 2026-11-07
-
-`ShallowWaterResult.plot()` renders the conservative ground-face depths as
-filled triangles in the input coordinate frame. It adds saved time, metre axes,
-a metric scale bar, a depth colour bar and building footprints with perimeter
-outlines. It does not interpolate between faces or change numerical results.
-The demos use this reusable result method; native Core meshes and their generic
-preview remain available.
-
-The initial server selection passed 65 tests, with the long live-city case
-skipped. This includes eight renderer tests, real-worker result plotting and
-the updated offline demo executed twice. An isolated installed wheel passed
-all eight renderer tests and rendered a saved city result through the public
-method. Renderer checks cover actual polygon/value mapping, input-coordinate
-preservation, building exclusion from colour scaling, perimeter outlines,
-all-dry inputs, common colour limits and supplied 2D axes.
-
-After integrating `develop` at `497f4d26aa5cc7ce3797945e069b861402523b59`,
-the affected selection including shared city-domain checks passed 87 tests,
-with the opt-in long city solve skipped. The merge retained the pinned Core
-dependency and the numerical worker; it resolved the demo-catalog conflict
-using the shared Johanneberg convention.
-
-All ten snapshots from the two completed Johanneberg runs were rendered with a
-common depth scale. Checks confirmed the 1,854 ground polygons, 50 m scale bar,
-CRS/time labels and displayed text bounds. The updated city script's plotting
-path was replayed twice against those completed results; the numerical city
-solves were not repeated. Saved numerical-state hashes remained unchanged.
-
-PNG images remain on the validation server. Programmatic rendering and layout
-checks passed at that stage. Final visual inspection and numerical verification
-are recorded below.
-
-## Dynamic verification and backend cleanup on 2026-11-07
-
-The independent [reflecting-basin wave study](../../tools/verification/shallow_water/README.md)
-passed all mesh, time, amplitude and reference-resolution checks. It uses a
-1 m square, 1 m background depth, a `1e-4 m` Gaussian perturbation and zero
-initial momentum, with reflecting walls and final time 0.04 s. A cosine-series
-solution of the linearized shallow-water equations provides the evolving
-reference independently of DG assembly. Errors integrate the full DG1
-polynomials, rather than just exported face means.
-
-| Subdivisions per direction | Steps | Relative depth L2 error | Relative momentum-x/y L2 error |
-|---:|---:|---:|---:|
-| 8 | 71 | 26.17% | 34.05% |
-| 16 | 142 | 12.98% | 14.11% |
-| 24 | 213 | 8.37% | 8.45% |
-
-CFL is fixed at 0.02 in this mesh study. All component errors decrease at
-each refinement and satisfy the finest-grid 25% accuracy requirement. A frozen
-initial Gaussian would have 125% depth error and 100% momentum error, so the
-criterion distinguishes evolution from a stationary, conservative result.
-These limited resolutions show convergence; they do not establish a formal
-DG1 accuracy order or convergence for city shorelines.
-
-The time study fixes 12 subdivisions and uses CFL 0.08, 0.04 and 0.02,
-requiring 27, 54 and 107 accepted steps. Successive normalized depth differences
-shrink from `9.73e-6` to `5.61e-6`; momentum differences shrink from `1.14e-5`
-to `6.73e-6` in both directions. Reference errors are spatially dominated and
-are not strictly monotone in time-step size; no third-order claim is made for
-the stage-limited algorithm.
-
-At 16 subdivisions, halving the amplitude changes normalized depth/momentum
-by only `1.46e-6`, `1.19e-6`, `1.19e-6`, each below 0.011% of its discretization
-error. This supports comparison with a linear reference in this small-amplitude
-regime; the finite-amplitude nonlinear solution is not claimed to be exact.
-Increasing reference modes/quadrature from 48/96 to 64/128 changes normalized
-point values by less than `9.88e-8`, below the stated absolute and relative
-reference-resolution budgets. Maximum relative mass error in the mesh study
-is `2.00e-15`. Two lightweight tests check the reference initial condition,
-reflecting walls, evolution equations and nonstationary behavior.
-
-The unused alternative flat-bed RHS/flux functions, unused TVB wrapper and
-duplicate worker result-export module were removed. The active hydrostatic
-Rusanov flux, TVB/positivity/velocity treatment and SSPRK3 method are documented
-in the [solver guide](../shallow-water.md). The retained source manifest was
-updated. A fresh 0.5-second Johanneberg run produced bitwise-identical arrays
-in both snapshots and the full raw DG state compared with the preserved
-pre-cleanup run.
-
-City and offline depth PNGs were visually inspected in chat. Disabling triangle
-antialiasing removed raster seams inside building fills; labels, scales, time
-and building context are readable. This inspection concerns saved Agg images,
-not an interactive desktop viewer.
-
-An isolated wheel passed **89 tests**, with **one opt-in live city test skipped**,
-using the actual real-valued worker. Import assertions excluded the source
-checkout; the worker manifest and absence of deleted code were checked. The
-selection includes the affected shallow-water, Core, timing, demo catalog,
-shared-domain and import tests, plus the two reference-equation tests. The
-source selection's transfer-metadata catalog failures were resolved by removing
-macOS AppleDouble files from the server copy; the catalog/reference rerun
-passed all 21 tests. No numerical change was needed for those failures.
-
-Reproduce the dynamic study from the repository root with the dedicated worker:
+The full independent wave study is separate:
 
 ```sh
-DTCC_SWE_PYTHON=/path/to/real-worker/python \
-  python -m tools.verification.shallow_water.wave --output output/verification/shallow-water-wave
+python -m tools.verification.shallow_water.wave \
+  --output output/verification/shallow-water-wave
 ```
 
-A further audit increased triangle error-integration quadrature from six to
-eight points per direction. The largest change in any normalized L2 error was
-`7.32e-10` on the coarsest mesh; changes on the finer meshes were below `1.13e-14`.
-This checks that the reported mesh errors are resolved by the integration rule.
+It is required when the worker or its numerical behavior changes. Reference
+PDE tests in the normal selection do not reproduce the full refinement study.
 
-The [machine-readable final audit](shallow-water-wave.json) records exact errors,
-reference identity/hashes, verification-tool hash, wheel hash and server case
-locations. Raw solves, logs, PNGs and archives remain on sahakyan.
+## Native maps and persistence
 
-## Limits
+The demos request a native Core Mesh, call its `info()` method and plot that
+same Mesh through `plot(projection="xy", field="water_depth", ...)`.
+Core owns triangle filling, shared colour limits, equal XY scale, styling,
+neutral context and perimeter outlines. Sim's transient plotting method selects
+a snapshot and delegates to that public API.
 
-These are integration, conservation and smooth-wave accuracy checks, not flood
-prediction validation. The generated-city case used a flat bed; the saved-input case used
-a synthetic slope. The pulse is synthetic; building interiors
-are simulated regions. Rainfall, infiltration, drainage, observed flood data,
-measured terrain accuracy and shoreline convergence remain outside this result.
+The real-worker package consumer test exports an actual small tagged
+simulation, moves its package to a consumer directory, deletes the numerical
+run and input mesh, and reopens it through Core. Assertions cover face values,
+associations, dimensions, units, exact vertices/connectivity/markers, CRS,
+affine and numerical reference provenance. Building-interior values exceed
+ground values so colour-range exclusion is observable. Polygon/value assertions
+and a rendered PNG check the public native map without transient attributes.
+Generic renderer tests belong to Core and cover transforms, display budgeting,
+constant fields, invalid inputs, supplied axes and read-only behavior.
 
-The workflow supports metric triangular native meshes, explicit synthetic-bed
-tests and conservative face fields. There is no automatic CRS reprojection,
-open inflow/outflow boundary interface or drainage-network coupling. The worker
-runs on the caller's host with one MPI rank; parallel scaling is not established.
-Building interfaces are idealized impermeable reflections, not a roof/runoff
-model. Exported face means omit subcell DG structure, which remains available
-in the raw transient results.
+## Independently reproduced checks: 2026-11-09
 
-Moving-shoreline accuracy, independent mesh/time convergence and validation
-against observed flooding remain unresolved. The retained baseline remains
-experimental. These checks support an integration demonstration, not
-quantitative flood forecasting or an improved wet/dry algorithm.
+Native-map integration used the published Core commit
+`350a2faefdc2977588d67156a6a86062333fa2a5`. Both dependency declarations,
+`uv.lock`, installer sources and checksum records agree. The caller was Python
+3.12.12 on macOS arm64; the actual worker was Python 3.12.13, DOLFINx 0.10.0
+and real Float64 PETSc 3.25.6. All 11 retained worker-file hashes matched the
+manifest. Numerical settings and acceptance criteria are recorded in the
+worker source and regression tests.
 
-The numerical source is pinned by the manifest, including integration controls
-for runtime validation, maximum steps and scheduled outputs. It is not an
-unmodified copy of the thesis commit. Its terrain, wetting/drying and
-equilibrium extensions are identified in the workflow and source manifest.
-Three inherited trailing-whitespace lines remain in the pinned backend; the
-adapter, tests and documentation pass the whitespace check.
+- Full Sim suite: **350 passed, 79 skipped**. Skips concern optional solver
+  runtimes, live data and expensive checks.
+- Required focused selection plus Core-pin/installer checks: **90 passed,
+  5 skipped**, both in the source environment and against an isolated installed
+  wheel. The five skips are the opt-in live city demo and four caller-side
+  FEniCSx import/log checks; the separate real shallow-water worker was enabled.
+- Wheel import assertions verified that both Sim and Core came from the isolated
+  environment's site-packages and that Core's installed VCS identity was the
+  declared published commit. `uv build` produced a wheel and source distribution.
+  Installer checksums passed.
+- The moved-package consumer test passed after deleting the original numerical
+  run and input mesh. Its depth map was visually inspected: ground values set
+  the range, larger interior values stayed neutral, and scale/CRS/time labels
+  were readable. The actual offline demo ran twice, retained an unrelated file,
+  and produced a visually inspected face map.
+- Core consumer-baseline coverage: **3,329 passed, 51 skipped, 67 deselected**;
+  strict public API verification covered **117/117** exported functions. Its
+  unchanged baseline has Ruff errors in `dtcc_core/__init__.py` and
+  `tests/common/test_progress.py`, plus formatting failures in the progress
+  and structured-mesh files. All feature files pass.
+- Core current-develop coverage: **3,233 passed, 49 skipped, 67 deselected**;
+  **113/113** exported functions covered. Whole-repository Ruff checks and
+  formatting passed. The offline calibration-grid demo completed on both
+  Core baselines. Fresh-context code/security review reported no issues and
+  independently passed 47 focused preview/style/import/map tests.
+
+The approximately 31-minute two-run live city test was not repeated, and no
+saved Johanneberg numerical result was available locally for a city-map check.
+The demo API-wiring test verifies the native Mesh call and exact common domain,
+pulse, mesh settings, duration, CFL and output schedule; its stubbed dataset
+request supplies no scientific evidence. The full wave study was not rerun:
+numerical source identity is recorded above. Interactive GUI behavior,
+large context-union performance and cross-platform CI remain unverified locally.
+
+## Supplied scientific evidence
+
+These audits were supplied with the source; their full scientific runs are not
+independently reproduced by the native-map test selection.
+
+- [City audit, 2026-10-29](shallow-water-city.json): native output, regional
+  conservation, fields and coordinate frame for a short flat-city case.
+- [Saved-mesh audit, 2026-10-30](shallow-water-revalidation.json): a synthetic
+  sloping-bed case with 829 vertices and 1,527 triangles, five accepted steps,
+  no rejected attempts, and maximum regional volume drift `7.11e-14 m³`.
+- [Wave audit, 2026-11-07](shallow-water-wave.json) and
+  [benchmark procedure](../../tools/verification/shallow_water/README.md):
+  an independent reflecting-basin linear-wave reference, integrated over the
+  full DG1 state. Mesh refinement from 8 to 16 to 24 subdivisions reduced
+  relative depth L2 errors from 26.17% to 12.98% to 8.37%, and momentum errors
+  from 34.05% to 14.11% to 8.45%. Successive time-step differences decreased;
+  amplitude halving changed normalized solutions by less than 0.011% of the
+  discretization error. Reference-mode and integration-quadrature checks
+  resolved the reported errors. This establishes neither formal DG1 order nor
+  shoreline accuracy.
+
+The supplied 2026-11-07 Johanneberg city execution used EPSG:3006, centre
+`(319970, 6397910)`, `L = 250` m and bounds
+`(319845, 6397785, 320095, 6398035)`. Geometry had 1,621 vertices and 3,108
+triangles. A compact 0.2 m pulse of width 7 m started at `(320005, 6397890)` on
+initially dry open ground. The 20-second scenario used CFL 0.08 and snapshots
+at 0, 5, 10, 15 and 20 seconds. Both complete runs took 1,006 accepted steps
+with no rejected attempts; maximum regional drift was `7.11e-14 m³` across
+19 reflecting regions. At 20 seconds, 133 initially dry ground faces were wet,
+including 32 beside buildings, using a `1e-4 m` face-depth threshold.
+The two-run live test took approximately 31 minutes on sahakyan.
+
+## Physical and numerical limits
+
+Generated city terrain is flat. Outer walls and ground/building interfaces
+reflect; building interiors are separately simulated regions. There is no
+rainfall, infiltration, drainage, roof runoff, open inflow/outflow interface or
+drainage-network coupling. Synthetic slopes and pulses are equation and
+integration checks. No measured flood, measured terrain accuracy or moving
+shoreline accuracy is validated.
+
+Smooth fully wet wave refinement does not establish city wet/dry convergence
+or quantitative flood prediction. Exported conservative face means omit DG
+subcell structure, which remains in raw transient results. There is no automatic
+CRS reprojection, and parallel scaling beyond one worker rank is unverified.
