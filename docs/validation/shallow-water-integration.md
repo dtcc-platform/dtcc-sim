@@ -27,6 +27,7 @@ changing numerical parameters or acceptance criteria.
 | Required selection in real 0.11, no worker override | 99 | 1 |
 | Installed-wheel solver/package selection, no worker override | 24 | 0 |
 | Live city test, two complete demo executions | 1 | 0 |
+| Hosted Ubuntu real 0.11 runtime selection | 30 | 1 |
 
 The full worker-enabled suite skips 66 checks requiring caller-side FEniCSx,
 three requiring `pymetis`, two requiring `xlrd` and eight opt-in live-data
@@ -103,7 +104,10 @@ directory outside the checkout and run tests with
 `--import-mode=importlib -o pythonpath= -p no:cacheprovider`. Verify import
 locations and VCS metadata. The shallow-water runtime CI uses `fenicsx-env.yml`
 and executes actual offline solves, repeated plotting and a moved-package
-consumer with no worker override.
+consumer with no worker override. The [hosted Ubuntu run](https://github.com/dtcc-platform/dtcc-sim/actions/runs/42599713941)
+passed on commit `8cf49f359f5bfde476ca11d1877aeb803480a711`, using DOLFINx 0.11.0,
+real PETSc 3.25.6 and MPICH 5.0.1. Its sole skip is the separately executed live
+city test.
 
 ## Evidence scope
 
@@ -119,5 +123,5 @@ infiltration, drainage, roof runoff or open inflow/outflow. Smooth fully wet
 wave refinement does not establish moving-shoreline accuracy, measured-terrain
 accuracy, city wet/dry convergence or quantitative flood prediction. Exported
 face means omit DG subcell structure, retained in raw results. No CRS
-reprojection is performed. Interactive GUI behavior and hosted Linux workflow
-execution remain unverified locally. No required local acceptance check is open.
+reprojection is performed. Interactive GUI behavior remains unverified. No
+required acceptance check is open.

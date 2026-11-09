@@ -360,7 +360,23 @@
   ],
   "remaining_acceptance_blockers": [],
   "unverified": [
-    "Hosted Linux workflow execution",
     "Interactive GUI behavior"
-  ]
+  ],
+  "hosted_ci": {
+    "url": "https://github.com/dtcc-platform/dtcc-sim/actions/runs/42599713941",
+    "source_commit": "8cf49f359f5bfde476ca11d1877aeb803480a711",
+    "runner": "ubuntu-24.04",
+    "environment_recipe": "fenicsx-env.yml",
+    "dolfinx": "0.11.0",
+    "petsc": "3.25.6 real",
+    "mpich": "5.0.1",
+    "worker_override": false,
+    "passed": 30,
+    "skipped": 1,
+    "failures": 0,
+    "errors": 0,
+    "test_seconds": 38.119,
+    "skip_reason": "Opt-in live city test, executed separately on the validation host",
+    "conclusion": "success"
+  }
 }
