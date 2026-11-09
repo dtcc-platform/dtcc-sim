@@ -11,9 +11,7 @@ DEMO_DIR = Path(__file__).resolve().parents[1] / "demos"
 
 
 @pytest.fixture
-def demo_runtime(monkeypatch, tmp_path):
-    if not os.environ.get("DTCC_SWE_PYTHON"):
-        pytest.skip("Set DTCC_SWE_PYTHON for real worker demos")
+def demo_runtime(monkeypatch, tmp_path, real_worker):
     import matplotlib
     matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt

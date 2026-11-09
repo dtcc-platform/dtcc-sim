@@ -1,7 +1,5 @@
 """Flood dataset discovery, native context and real-worker execution."""
 
-import os
-
 import pytest
 from pydantic import ValidationError
 
@@ -24,7 +22,7 @@ def test_flood_dataset_contract(tmp_path):
         UrbanFloodSimulationArgs(bounds=[1, 0, 0, 1], output_dir=tmp_path)
 
 
-@pytest.mark.skipif(not os.environ.get("DTCC_SWE_PYTHON"), reason="Set DTCC_SWE_PYTHON for real worker tests")
+@pytest.mark.usefixtures("real_worker")
 @pytest.mark.simulation
 def test_native_file_dataset_and_package_use_real_solver(tmp_path):
     from dtcc_core.datasets import load_model_package
@@ -51,7 +49,7 @@ def test_native_file_dataset_and_package_use_real_solver(tmp_path):
     assert completed["reference"] == _reference()
 
 
-@pytest.mark.skipif(not os.environ.get("DTCC_SWE_PYTHON"), reason="Set DTCC_SWE_PYTHON for real worker tests")
+@pytest.mark.usefixtures("real_worker")
 @pytest.mark.simulation
 def test_moved_package_plots_without_numerical_run(tmp_path):
     import shutil

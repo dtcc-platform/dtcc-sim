@@ -72,7 +72,7 @@ def test_worker_isolation_failure_and_source_frame(mesh, tmp_path, monkeypatch):
     assert os.environ["CECILIA_EQUILIBRIUM_PRESSURE"] == "0"
 
 
-real_worker = pytest.mark.skipif(not os.environ.get("DTCC_SWE_PYTHON"), reason="Set DTCC_SWE_PYTHON for real worker tests")
+real_worker = pytest.mark.usefixtures("real_worker")
 
 
 @real_worker
@@ -171,13 +171,13 @@ def test_runtime_rejects_incompatible_worker_before_preparation(tmp_path, monkey
     from dtcc_sim.shallow_water._solver.cecilia_swe.runtime import validate_runtime
     from dtcc_sim.shallow_water._solver.cecilia_swe.simulator import ShallowWaterSimulator
 
-    monkeypatch.setitem(sys.modules, "dolfinx", SimpleNamespace(__version__="0.11.0"))
+    monkeypatch.setitem(sys.modules, "dolfinx", SimpleNamespace(__version__="0.10.0"))
     monkeypatch.setitem(sys.modules, "mpi4py", SimpleNamespace(MPI=SimpleNamespace(COMM_WORLD=SimpleNamespace(size=1))))
     monkeypatch.setitem(sys.modules, "petsc4py", SimpleNamespace(PETSc=SimpleNamespace(ScalarType=np.float64)))
-    with pytest.raises(RuntimeError, match="Unsupported worker DOLFINx 0.11.0.*shallow-water-worker.yml"):
+    with pytest.raises(RuntimeError, match="Unsupported worker DOLFINx 0.10.0.*fenicsx-env.yml"):
         ShallowWaterSimulator(output_dir=tmp_path / "worker").run()
     assert not (tmp_path / "worker").exists()
-    monkeypatch.setitem(sys.modules, "dolfinx", SimpleNamespace(__version__="0.10.0"))
+    monkeypatch.setitem(sys.modules, "dolfinx", SimpleNamespace(__version__="0.11.0"))
     monkeypatch.setitem(sys.modules, "petsc4py", SimpleNamespace(PETSc=SimpleNamespace(ScalarType=np.complex128)))
     with pytest.raises(RuntimeError, match="real Float64 PETSc"):
         validate_runtime()
@@ -259,3 +259,82 @@ def test_building_and_ground_conserve_water_with_active_pulse(tmp_path):
     np.testing.assert_allclose(volumes, np.broadcast_to(volumes[0], volumes.shape),
                                rtol=0, atol=1e-12)
     assert np.max(abs(fields["water_momentum"][~building])) > 1e-8
+
+
+@pytest.mark.parametrize("scalar", [np.complex128, np.float32])
+def test_runtime_scalar_rank_and_dependencies(monkeypatch, scalar):
+    import sys
+    from dtcc_sim.shallow_water._solver.cecilia_swe.runtime import validate_runtime
+
+    monkeypatch.setitem(sys.modules, "dolfinx", SimpleNamespace(__version__="0.11.1"))
+    monkeypatch.setitem(sys.modules, "mpi4py", SimpleNamespace(MPI=SimpleNamespace(COMM_WORLD=SimpleNamespace(size=1))))
+    petsc = SimpleNamespace(ScalarType=scalar)
+    monkeypatch.setitem(sys.modules, "petsc4py", SimpleNamespace(PETSc=petsc))
+    with pytest.raises(RuntimeError, match="real Float64 PETSc"):
+        validate_runtime()
+    petsc.ScalarType = np.float64
+    validate_runtime()
+    sys.modules["mpi4py"].MPI.COMM_WORLD.size = 2
+    with pytest.raises(RuntimeError, match="one MPI rank"):
+        validate_runtime()
+    monkeypatch.setitem(sys.modules, "dolfinx", None)
+    with pytest.raises(RuntimeError, match="needs DOLFINx 0.11.*fenicsx-env.yml"):
+        validate_runtime()
+
+
+@real_worker
+@pytest.mark.simulation
+def test_default_and_explicit_interpreter(mesh, tmp_path, monkeypatch, real_worker):
+    import sys
+    monkeypatch.delenv("DTCC_SWE_PYTHON", raising=False)
+    default = ShallowWaterSolver(mesh=mesh, output_dir=tmp_path / "default")
+    assert default.solver_python == sys.executable
+    # An explicit worker is independent of the caller's interpreter selection.
+    worker = real_worker
+    monkeypatch.setattr(sys, "executable", "/unavailable/caller/python")
+    explicit = ShallowWaterSolver(mesh=mesh, output_dir=tmp_path / "explicit",
+        solver_python=worker, params=ShallowWaterParameters(final_time=.001, n_outputs=1))
+    assert explicit.run().diagnostics["passed"]
+
+
+@real_worker
+@pytest.mark.simulation
+def test_raw_dg_components_and_native_face_mapping(mesh, tmp_path):
+    params = ShallowWaterParameters(h0=.1, amplitude=.2, sigma=.2,
+                                    x_center=.3, y_center=.4, final_time=.005, n_outputs=1)
+    result = ShallowWaterSolver(mesh=mesh, params=params, output_dir=tmp_path).run()
+    with np.load(result.case_dir / "solver/state.npz") as raw:
+        cells = raw["cell_dofs"]
+        coordinates = raw["coordinates"][cells, :2]
+        maps = [raw[name] for name in ("h_dofs", "hu_dofs", "hv_dofs")]
+        assert all(m.dtype.kind in "iu" and m.ndim == 1 and m.size == cells.size for m in maps)
+        np.testing.assert_array_equal(np.sort(np.concatenate(maps)), np.arange(raw["state"].size))
+        initial = np.stack([raw["initial_state"][m][cells] for m in maps], axis=-1)
+        expected = params.h0 + params.amplitude * np.exp(-np.sum(
+            (coordinates - [params.x_center, params.y_center])**2, axis=-1) / (2 * params.sigma**2))
+        np.testing.assert_allclose(initial[:, :, 0], expected, rtol=0, atol=1e-15)
+        np.testing.assert_array_equal(initial[:, :, 1:], 0.)
+        values = np.stack([raw["state"][m][cells].mean(axis=1) for m in maps], axis=-1)
+        distances = np.linalg.norm(coordinates[:, :, None, :] - mesh.vertices[None, None, :, :2], axis=-1)
+        vertices = distances.argmin(axis=-1)
+        assert np.take_along_axis(distances, vertices[:, :, None], axis=-1).max() < 1e-14
+        key = lambda triangle: tuple(sorted(map(int, triangle)))
+        by_triangle = {key(triangle): value for triangle, value in zip(vertices, values, strict=True)}
+        native = result.to_dtcc()
+        independent = np.array([by_triangle[key(triangle)] for triangle in mesh.faces])
+        fields = {f.name: f.values for f in native.fields}
+        np.testing.assert_array_equal(fields["water_depth"][:, 0], independent[:, 0])
+        np.testing.assert_array_equal(fields["water_momentum"], independent[:, 1:])
+        assert np.max(abs(independent[:, 1:])) > 1e-8
+
+
+@real_worker
+@pytest.mark.simulation
+def test_partially_wet_lake_equilibrium(mesh, tmp_path):
+    mesh.vertices[:, 2] = .1 * mesh.vertices[:, 0]
+    solver = ShallowWaterSolver(mesh=mesh, output_dir=tmp_path,
+        params=ShallowWaterParameters(bed_from_mesh=True, water_surface=.06,
+                                     amplitude=0., final_time=.02, n_outputs=1))
+    solver.run()
+    assert solver.diagnostics["max_state_change"] < 1e-10
+    assert solver.diagnostics["positive_depth"]

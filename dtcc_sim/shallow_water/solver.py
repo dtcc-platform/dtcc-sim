@@ -91,7 +91,7 @@ class ShallowWaterSolver:
             if process.returncode:
                 lines = (case / "solver.log").read_text().strip().splitlines()
                 detail = f" {lines[-1]}" if lines else ""
-                raise RuntimeError(f"Shallow-water worker exited with {process.returncode}.{detail} See {case / 'solver.log'}. Set DTCC_SWE_PYTHON to a real-PETSc DOLFINx 0.10 Python if required.")
+                raise RuntimeError(f"Shallow-water worker exited with {process.returncode}.{detail} See {case / 'solver.log'}. Activate the real fenicsx-env (DOLFINx 0.11); complex callers may select its Python with solver_python or DTCC_SWE_PYTHON.")
             diagnostics = json.loads((case / "solver/diagnostics.json").read_text())
             worker = json.loads((case / "solver/configuration.json").read_text())
             if (not diagnostics["passed"] or not diagnostics["equilibrium_pressure"]

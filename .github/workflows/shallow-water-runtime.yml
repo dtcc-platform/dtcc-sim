@@ -1,0 +1,74 @@
+name: Shallow-water runtime
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'dtcc_sim/shallow_water/**'
+      - 'dtcc_sim/qa.py'
+      - 'dtcc_sim/datasets.py'
+      - 'tests/conftest.py'
+      - 'tests/test_shallow_water*.py'
+      - 'demos/shallow_water_pulse.py'
+      - 'demos/dataset_urban_flood.py'
+      - 'fenicsx-env.yml'
+      - 'pyproject.toml'
+      - '.github/workflows/shallow-water-runtime.yml'
+  pull_request:
+    paths:
+      - 'dtcc_sim/shallow_water/**'
+      - 'dtcc_sim/qa.py'
+      - 'dtcc_sim/datasets.py'
+      - 'tests/conftest.py'
+      - 'tests/test_shallow_water*.py'
+      - 'demos/shallow_water_pulse.py'
+      - 'demos/dataset_urban_flood.py'
+      - 'fenicsx-env.yml'
+      - 'pyproject.toml'
+      - '.github/workflows/shallow-water-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shallow-water-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash -el {0}
+    env:
+      UCX_TLS: self,sm,tcp
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: fenicsx-env.yml
+          activate-environment: fenicsx-env
+          miniforge-version: latest
+      - name: Install declared Sim and Core dependencies
+        run: uv pip install --python "$CONDA_PREFIX/bin/python" -e '.[test]'
+      - name: Verify the default real runtime
+        run: |
+          unset DTCC_SWE_PYTHON
+          python -c 'from dtcc_sim.shallow_water._solver.cecilia_swe.runtime import validate_runtime; validate_runtime()'
+          python -m pytest -q --junitxml=shallow-water-tests.xml \
+            tests/test_shallow_water.py tests/test_shallow_water_dataset.py \
+            tests/test_shallow_water_demos.py tests/test_shallow_water_plotting.py \
+            tests/test_shallow_water_wave_reference.py
+      - name: Preserve numerical test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shallow-water-runtime-results
+          retention-days: 7
+          if-no-files-found: ignore
+          path: shallow-water-tests.xml

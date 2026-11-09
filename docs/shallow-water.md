@@ -59,28 +59,31 @@ an otherwise unknown CRS, without reprojection. Diagnostics and
 
 ## Runtime
 
-DTCC Sim uses Python 3.12+. The isolated numerical worker needs real-valued
-Float64 PETSc and DOLFINx 0.10.x; the validated worker uses Python 3.11 and
-PETSc 3.24.5. The standard repository environment uses DOLFINx 0.11 and cannot
-serve as this worker. Create the dedicated environment from the checked-in
-[worker recipe](../shallow-water-worker.yml), then configure the worker while
-keeping the DTCC caller in its Python 3.12+ environment:
+DTCC Sim uses Python 3.12+ and the common real-valued
+[fenicsx-env recipe](../fenicsx-env.yml), pinned to DOLFINx 0.11.0.
+The numerical worker requires real Float64 PETSc and supports the 0.11 release
+family. With this environment active, the current Python is used automatically:
 
 ```sh
-conda env create -f shallow-water-worker.yml
-export DTCC_SWE_PYTHON="$(conda run -n dtcc-shallow-water-worker python -c 'import sys; print(sys.executable)')"
+conda env create -f fenicsx-env.yml
+conda activate fenicsx-env
+uv pip install --python "$CONDA_PREFIX/bin/python" -e '.[test]'
 python demos/shallow_water_pulse.py
 python demos/dataset_urban_flood.py
 ```
 
-Otherwise, the caller's Python is used as the worker. Advanced callers can set
-`solver_python=` explicitly. Both executables must be on the same machine.
-No SSH login or server submission is hidden inside the solver API. The worker
-uses one MPI rank and one OMP/OpenBLAS thread; its source and equilibrium-pressure
-selection are pinned. Other equation solvers and their runtime defaults are unchanged.
-Before mesh preparation, the worker checks the DOLFINx version, PETSc scalar
-type and MPI size. Incompatible runtimes fail with setup instructions rather
-than continuing into numerical assembly or snapshot extraction.
+### Advanced interpreter selection
+
+A complex-PETSc caller can select a separate real-valued Python with
+`solver_python=` or `DTCC_SWE_PYTHON=/path/to/fenicsx-env/bin/python`.
+Use the same common recipe for that real worker; complex PETSc remains in
+`fenicsx-env-complex`. Both executables must be on the same machine.
+The worker uses one MPI rank and one OMP/OpenBLAS thread; its source and
+equilibrium-pressure selection are pinned. Before mesh preparation it checks
+the DOLFINx version, PETSc scalar type and MPI size. Unsupported versions,
+complex/non-Float64 PETSc and missing dependencies fail with setup instructions.
+The state layout requires one linear triangular cell type, scalar DG1 component
+maps and matching component/cell counts; mixed cell types are unsupported.
 
 ## City dataset
 

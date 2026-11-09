@@ -17,13 +17,14 @@ solver execution requires the FEniCSx environment below.
 
 ## FEniCSx environment
 
-Use the real-number environment `fenicsx-env` for heat, wind and reconstruction.
+Use the real-number environment `fenicsx-env` for heat, wind, reconstruction
+and shallow water.
 The Helmholtz solver requires complex PETSc and uses the
 [complex-number environment](#complex-number-environment), `fenicsx-env-complex`.
 Both environments use DOLFINx 0.11.0 and can share the same editable Sim checkout.
-The experimental shallow-water solver uses a separate DOLFINx 0.10 worker;
-see its [dedicated worker setup](shallow-water.md#runtime) and
-[environment recipe](../shallow-water-worker.yml).
+The experimental shallow-water solver uses this same real-valued DOLFINx 0.11
+environment. Run both demos with ordinary `python` after activation; see the
+[shallow-water runtime setup](shallow-water.md#runtime).
 
 Install a Conda-compatible distribution, then create the environment from the
 checked-in recipe:

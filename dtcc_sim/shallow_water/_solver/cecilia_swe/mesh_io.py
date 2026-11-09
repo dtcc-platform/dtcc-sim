@@ -59,7 +59,11 @@ def build_domain(data, comm):
     coordinate_element = basix.ufl.element("Lagrange", "triangle", 1, shape=(2,))
     domain = mesh.create_mesh(comm, data["faces"], ufl.Mesh(coordinate_element),
                               data["vertices"][:, :2].copy())
-    original = np.asarray(domain.topology.original_cell_index, dtype=np.int64)
+    from .layout import triangle_geometry
+    triangle_geometry(domain)
+    original = np.asarray(domain.topology.original_cell_index)
+    if original.shape != (len(data["faces"]),) or original.dtype.kind not in "iu":
+        raise RuntimeError("Imported cell identities must be one integer per triangle")
     if not np.array_equal(np.sort(original), np.arange(len(data["faces"]))):
         raise RuntimeError("Imported cell ordering is not a bijection")
     tags = mesh.meshtags(domain, 2, np.arange(len(original), dtype=np.int32),

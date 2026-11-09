@@ -45,7 +45,7 @@ VALIDATION_CASES: tuple[SimulationValidationCase, ...] = (
         family="shallow_water", dataset="urban_flood_simulation", status="implemented",
         scope="native mesh and package contracts, real-worker conservation, local-coordinate invariance, lake balance and repeated demos",
         test_reference="tests/test_shallow_water.py; tests/test_shallow_water_dataset.py; tests/test_shallow_water_demos.py",
-        notes="Real worker tests require DTCC_SWE_PYTHON; live city demo is opt-in. These checks do not establish physical flood forecast accuracy.",
+        notes="Numerical tests use the common real DOLFINx 0.11 environment; live city demo is opt-in. These checks do not establish physical flood forecast accuracy.",
     ),
     SimulationValidationCase(
         family="helmholtz", dataset="urban_noise_simulation", status="implemented",
