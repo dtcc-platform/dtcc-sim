@@ -1,0 +1,366 @@
+{
+  "date": "2026-11-09",
+  "implementation_commit": "97649faa17adb7c0c6909a5d364dc3155fb78139",
+  "core_commit": "350a2faefdc2977588d67156a6a86062333fa2a5",
+  "reference": {
+    "backend": "cecilia-reference",
+    "experimental": true,
+    "upstream": "https://github.com/Elite-Luna2/shallow-water-rkdg-thesis",
+    "upstream_commit": "2cf10273eea2441137393b57040528b1c03e8725",
+    "reference": "equilibrium-terrain-dg1-dolfinx-0.11",
+    "sha256": {
+      "LICENSE": "4432356c9dc7e82b9ce3df55923e6bf11b73168dc1b6b6bd77c9354d7191776a",
+      "__init__.py": "ca5359362db72ce4d2efa9392b6f165f4af29d96baef971c181e61c543f3e688",
+      "__main__.py": "af7f0bbbf4af41f73e9c315250b7bca8848d10f807926bdb5e1017ab3c3625fd",
+      "backend.py": "78c8a33745cc60459b6ce449568e6d1e7c624fbdd92ebff978169665d83adfd2",
+      "equilibrium_depth.py": "8a912f75a00bda83da3f356849ae47844fb3c09dc22a9e7095c6ce6fa1a53759",
+      "layout.py": "f8960c552eaf5580baa84727852090190bfaf7a8db656163383740e719199f47",
+      "mesh_io.py": "9f339d2079221d02dd654aea6e3940c14de71ac89968cfa2e1c27172baf05ef1",
+      "runtime.py": "eccfc24421caa4c9b0254c266d267423a628d36d60de1e9a14f4304d21a737e7",
+      "simulator.py": "6276f7db8def86262804e4bf1237fb9457251498ce0a28cd77dcd4bd700846f7",
+      "terrain_flux.py": "41d5dcf40273895a8930fcd83b183c5df6bf5d6fc41a7ff90dda42384733ddaf",
+      "velocity_candidate.py": "f4756efd00917147d8cb3ad5b26757dd7b7f21f01c3ed9419139b54ed90a1602",
+      "wetdry_candidate.py": "109fd93fa18d3262b07efc40b8a3fd522177010d316ccbe66d19c8aabd276914"
+    },
+    "base_reference": "equilibrium-terrain-20261028",
+    "integration_changes": [
+      "Configurable step limit and exact scheduled output times",
+      "Early dedicated-worker runtime validation",
+      "Apply TVB limiting throughout the domain with wall-aware neighbors",
+      "Skip identically zero TVB polynomials without changing their values",
+      "Remove unused flat-bed flux/limiter wrapper and duplicate worker exports"
+    ]
+  },
+  "runtime": {
+    "platform": "macOS arm64",
+    "python": "3.12.16",
+    "dolfinx": "0.11.0",
+    "petsc": [
+      3,
+      25,
+      6
+    ],
+    "scalar_type": "float64",
+    "mpi_standard": [
+      5,
+      0
+    ],
+    "mpi_library": "MPICH 5.0.1, ch4:ofi",
+    "ranks": 1,
+    "numerical_threads": 1,
+    "coordinates": "local Float64",
+    "recipe": "fenicsx-env.yml",
+    "validation_environment": "Isolated clone of the standard real fenicsx-env; declared Sim/Core dependencies installed",
+    "transport": {
+      "environment": {
+        "FI_PROVIDER": "tcp"
+      },
+      "reason": "Default en1 provider failed MPI finalization with an OFI I/O error"
+    }
+  },
+  "tests": [
+    {
+      "command": "env -u DTCC_SWE_PYTHON uv run --locked pytest -q -rs",
+      "runtime": "uv Python 3.12.12",
+      "worker_override": false,
+      "passed": 343,
+      "skipped": 91,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 84.97
+    },
+    {
+      "command": "DTCC_SWE_PYTHON=/path/to/fenicsx-env/bin/python uv run --locked pytest -q -rs",
+      "runtime": "uv Python 3.12.12",
+      "worker_override": true,
+      "passed": 355,
+      "skipped": 79,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 41.954
+    },
+    {
+      "command": "env -u DTCC_SWE_PYTHON python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py tests/test_shallow_water_demos.py tests/test_shallow_water_plotting.py tests/test_shallow_water_wave_reference.py tests/test_demo_catalog.py tests/test_city_demo_domains.py tests/test_dataset_qa.py tests/test_import.py tests/test_core_pin_update.py tests/test_helmholtz_installer.py -q -rs",
+      "runtime": "real fenicsx-env",
+      "worker_override": false,
+      "passed": 99,
+      "skipped": 1,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 44.191
+    },
+    {
+      "command": "env -u PYTHONPATH -u DTCC_SWE_PYTHON python -m pytest /path/to/tests/test_shallow_water.py /path/to/tests/test_shallow_water_dataset.py --import-mode=importlib -o pythonpath= -p no:cacheprovider -q -rs",
+      "runtime": "installed wheel, real 0.11, cwd outside checkout",
+      "worker_override": false,
+      "passed": 24,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 21.958
+    },
+    {
+      "command": "env -u DTCC_SWE_PYTHON DTCC_RUN_DEMOS=1 python -m pytest tests/test_shallow_water_demos.py::test_city_dataset_demo_runs_twice --run-expensive -q -s",
+      "runtime": "real fenicsx-env",
+      "worker_override": false,
+      "passed": 1,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 329.662
+    }
+  ],
+  "skips": {
+    "full_worker": {
+      "optional_caller_FEniCSx": 66,
+      "optional_pymetis": 3,
+      "optional_xlrd": 2,
+      "opt_in_live_data": 8
+    },
+    "full_uv_additional": {
+      "optional_shallow_water_runtime": 12
+    },
+    "focused": [
+      "opt-in city demo, executed separately"
+    ],
+    "wheel": []
+  },
+  "wave": {
+    "command": "env -u DTCC_SWE_PYTHON python -m tools.verification.shallow_water.wave --output output/verification/shallow-water-wave-011",
+    "fresh_solves": true,
+    "tool_sha256": "39ddf239230b853f26d2bcf9f71a40dc51a0cfe51d080f8d670cba21e50bf6a6",
+    "mesh": [
+      {
+        "n": 8,
+        "cfl": 0.02,
+        "amplitude": 0.0001,
+        "relative_l2": [
+          0.26169614270524916,
+          0.3405415456517923,
+          0.3405415450982428
+        ],
+        "normalized_l2": [
+          0.028580627192687707,
+          0.033615816565604494,
+          0.033615816492881215
+        ],
+        "steps": 71,
+        "relative_mass_error": 6.661296293201623e-16,
+        "reference_uncertainty": 9.728942984219002e-08
+      },
+      {
+        "n": 16,
+        "cfl": 0.02,
+        "amplitude": 0.0001,
+        "relative_l2": [
+          0.12980609669603968,
+          0.14105634885605678,
+          0.14105634885966076
+        ],
+        "normalized_l2": [
+          0.014176516345819092,
+          0.013924070072125238,
+          0.013924070072480962
+        ],
+        "steps": 142,
+        "relative_mass_error": 1.110216048945915e-15,
+        "reference_uncertainty": 9.878686897668576e-08
+      },
+      {
+        "n": 24,
+        "cfl": 0.02,
+        "amplitude": 0.0001,
+        "relative_l2": [
+          0.08373763193829764,
+          0.08454923030081461,
+          0.08454923029985442
+        ],
+        "normalized_l2": [
+          0.009145240001425182,
+          0.008346093010348303,
+          0.008346093010253512
+        ],
+        "steps": 213,
+        "relative_mass_error": 1.5543024685199382e-15,
+        "reference_uncertainty": 9.743374972115415e-08
+      }
+    ],
+    "timestep_differences": [
+      [
+        9.73007188440544e-06,
+        1.1355180176511593e-05,
+        1.1355180302171814e-05
+      ],
+      [
+        5.614026522963665e-06,
+        6.732606206471882e-06,
+        6.732605770880771e-06
+      ]
+    ],
+    "amplitude_difference": [
+      1.455196179931854e-06,
+      1.1882604109378672e-06,
+      1.1882605773051768e-06
+    ],
+    "checks": {
+      "finest_relative_error": true,
+      "mesh_errors_decrease": true,
+      "timestep_differences_decrease": true,
+      "small_amplitude": true,
+      "resolved_reference": true
+    },
+    "passed": true
+  },
+  "city": {
+    "crs": "EPSG:3006",
+    "centre": [
+      319970,
+      6397910
+    ],
+    "L": 250,
+    "bounds": [
+      319845,
+      6397785,
+      320095,
+      6398035
+    ],
+    "pulse_centre": [
+      320005,
+      6397890
+    ],
+    "height_m": 0.2,
+    "width_m": 7,
+    "final_time_s": 20,
+    "cfl": 0.08,
+    "output_intervals": 4,
+    "mesh_h": 10,
+    "min_building_detail": 0.5,
+    "strict_live": true,
+    "runs": [
+      {
+        "case": "run-a6twq_me",
+        "vertices": 1621,
+        "faces": 3108,
+        "regions": 19,
+        "steps": 1006,
+        "rejected_attempts": 0,
+        "relative_mass_error": 9.736248114636795e-16,
+        "minimum_depth": 0.0,
+        "maximum_regional_volume_drift_m3": 3.552713678800501e-14,
+        "newly_wet_faces": 133,
+        "newly_wet_beside_building": 32,
+        "snapshot_times": [
+          0.0,
+          5.0,
+          10.0,
+          15.0,
+          20.0
+        ],
+        "state_sha256": "50c7dc7e356409d77fd834215fb76d3b01b737224901e61089039a92b2796e18"
+      },
+      {
+        "case": "run-h8dd94i5",
+        "vertices": 1621,
+        "faces": 3108,
+        "regions": 19,
+        "steps": 1006,
+        "rejected_attempts": 0,
+        "relative_mass_error": 9.736248114636795e-16,
+        "minimum_depth": 0.0,
+        "maximum_regional_volume_drift_m3": 3.552713678800501e-14,
+        "newly_wet_faces": 133,
+        "newly_wet_beside_building": 32,
+        "snapshot_times": [
+          0.0,
+          5.0,
+          10.0,
+          15.0,
+          20.0
+        ],
+        "state_sha256": "50c7dc7e356409d77fd834215fb76d3b01b737224901e61089039a92b2796e18"
+      }
+    ],
+    "unrelated_file_preserved": true
+  },
+  "offline_demo": {
+    "executions": 2,
+    "worker_override": false,
+    "passed": true,
+    "unrelated_file_preserved": true
+  },
+  "advanced_caller": {
+    "python": "3.12.16",
+    "dolfinx": "0.11.0",
+    "petsc": [
+      3,
+      25,
+      6
+    ],
+    "scalar_type": "complex128",
+    "explicit_real_worker": true,
+    "solve_passed": true
+  },
+  "runtime_rejections": {
+    "missing_dependencies": {
+      "returncode": 1,
+      "expected_error": "needs DOLFINx 0.11",
+      "passed": true
+    },
+    "complex_petsc": {
+      "returncode": 1,
+      "expected_error": "real Float64 PETSc",
+      "passed": true
+    },
+    "two_mpi_ranks": {
+      "returncode": 1,
+      "expected_error": "one MPI rank",
+      "passed": true
+    },
+    "explicit_missing_worker": {
+      "returncode": 1,
+      "expected_error": "Cannot start shallow-water worker",
+      "passed": true
+    }
+  },
+  "unit_guard_coverage": [
+    "DOLFINx 0.10 rejection",
+    "DOLFINx 0.11.1 acceptance",
+    "complex128 and float32 PETSc rejection"
+  ],
+  "package": {
+    "wheel": "dtcc_sim-0.1.0-py3-none-any.whl",
+    "wheel_sha256": "e5fad33f40bc886f94b9d4e1b34c7ec971c4a2338839651270ab56d66a8d35d5",
+    "site_packages_imports_verified": [
+      "dtcc_sim",
+      "dtcc_core"
+    ],
+    "source_and_worker_overrides_unset": true,
+    "code_and_manifest_match_source": true,
+    "core_vcs_identity_verified": true,
+    "worker_hashes_verified": 12,
+    "default_interpreter_solve": true,
+    "moved_package_plot_after_numerical_files_removed": true,
+    "build_commands": [
+      "uv build",
+      "uv build --sdist"
+    ]
+  },
+  "visual_inspection": [
+    "genuine offline final native map",
+    "genuine city snapshots at 0, 5, 10, 15, 20 s",
+    "genuine city final native map",
+    "installed-wheel moved-package map"
+  ],
+  "physical_limits": [
+    "Flat generated city bed",
+    "Reflecting outer and building interfaces",
+    "Separately simulated building interiors",
+    "No rainfall, infiltration, drainage or open inflow/outflow",
+    "No measured flood, measured terrain or shoreline accuracy validation"
+  ],
+  "remaining_acceptance_blockers": [],
+  "unverified": [
+    "Hosted Linux workflow execution",
+    "Interactive GUI behavior"
+  ]
+}
