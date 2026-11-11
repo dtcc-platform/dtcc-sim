@@ -53,3 +53,12 @@ def test_fenics_log_level_configuration(level):
     else:
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip().splitlines()[-1] == level
+
+
+def test_sim_ships_no_service():
+    """Sim defines Datasets and solvers; it has no HTTP service of its own."""
+    from importlib.metadata import metadata
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("service")
+    assert "service" not in (metadata("dtcc-sim").get_all("Provides-Extra") or [])

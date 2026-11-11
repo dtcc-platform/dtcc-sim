@@ -41,7 +41,7 @@ Application orchestration and catalog operation belong in DTCC Twin.
 - **Dataset adapters:** use Core's registry and Context to return semantic
   models with the request, actual provenance and limitations.
 - **I/O and presentation:** use Core model persistence and visualization;
-  operational launchers and service code remain separate from numerical APIs.
+  operational launchers remain separate from numerical APIs.
 
 ## Trust and quality
 
