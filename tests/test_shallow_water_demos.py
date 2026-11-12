@@ -123,6 +123,7 @@ def test_dataset_demo_plots_returned_native_mesh(monkeypatch, tmp_path):
     import matplotlib
     matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
+    import dtcc_sim.datasets
     from dtcc_core import RectangleMesh, datasets
     from dtcc_core.model import Field, Mesh
 

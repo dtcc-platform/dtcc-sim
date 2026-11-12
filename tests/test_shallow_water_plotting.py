@@ -44,3 +44,25 @@ def test_empty_and_invalid_markers(monkeypatch):
     mesh.markers = np.array([0, 1])
     with pytest.raises(ValueError, match="Markers"):
         _plot_depth(mesh, 0, show=False)
+
+
+def test_depth_map_draws_whole_mesh_above_core_default_budget():
+    import matplotlib
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+    from dtcc_core import RectangleMesh
+    from dtcc_core.model import Field
+    from dtcc_sim.shallow_water.plotting import _plot_depth
+
+    mesh = RectangleMesh(100, 101)
+    markers = np.full(len(mesh.faces), -1, dtype=np.int32)
+    markers[:2] = 0  # The two triangles of one square.
+    mesh.markers = markers
+    mesh.fields = [Field(name="water_depth", unit="m", association="face", dim=1,
+                         values=np.ones((len(mesh.faces), 1)))]
+    axes = _plot_depth(mesh, 0., show=False)
+    drawn = {layer.get_gid(): layer for layer in axes.collections}
+    assert len(drawn["face_field"].get_paths()) == 20198
+    assert len(drawn["face_context"].get_paths()) == 2
+    assert len(drawn["context_outline"].get_segments()) == 4
+    plt.close(axes.figure)
