@@ -215,6 +215,7 @@ sandbox/output
 # Local agent plans and working documents
 /.agent/plans/
 /.agent/work/
+/.agents/
 
 # Local numerical inputs and generated runs
 /meshes/

@@ -60,10 +60,8 @@ jobs:
           "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/shallow-water-env" \
             python -c 'from dtcc_sim.shallow_water._solver.cecilia_swe.runtime import validate_runtime; validate_runtime()'
           "$CONDA/bin/conda" run --no-capture-output -p "$RUNNER_TEMP/shallow-water-env" \
-            python -m pytest -q --junitxml=shallow-water-tests.xml \
-            tests/test_shallow_water.py tests/test_shallow_water_dataset.py \
-            tests/test_shallow_water_demos.py tests/test_shallow_water_plotting.py \
-            tests/test_shallow_water_wave_reference.py
+            python -m pytest -q -rs --junitxml=shallow-water-tests.xml \
+            tests/test_shallow_water*.py
       - name: Preserve numerical test results
         if: always()
         uses: actions/upload-artifact@v4

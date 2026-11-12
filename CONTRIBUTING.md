@@ -92,7 +92,7 @@ python -m pytest tests/test_helmholtz_manufactured.py tests/test_helmholtz_numer
 
 Shallow-water tests use the current Python in the real DOLFINx 0.11
 `fenicsx-env`, with `DTCC_SWE_PYTHON` unset. Run
-`python -m pytest tests/test_shallow_water.py tests/test_shallow_water_dataset.py tests/test_shallow_water_demos.py`.
+`python -m pytest tests/test_shallow_water*.py`.
 The city demo additionally requires `DTCC_RUN_DEMOS=1` and `--run-expensive`.
 See the [shallow-water runtime setup](docs/shallow-water.md). The independent
 [wave verification study](tools/verification/shallow_water/README.md) runs
