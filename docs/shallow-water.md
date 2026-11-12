@@ -233,6 +233,10 @@ axes; `ax=` accepts an existing 2D axes. `Mesh.plot` defaults to `theme="dark"`;
 pass `theme="light"` to match the demos and `ShallowWaterResult.plot()`.
 The default Core mesh plot remains a 3D preview.
 
+`Mesh.plot` draws at most `max_elements` triangles and outline segments
+together, 20,000 by default, and samples a larger map. Pass a larger
+`max_elements` to draw a larger mesh completely.
+
 A dataset package can be moved and opened without the numerical run directory:
 
 ```python
@@ -249,7 +253,9 @@ water.plot(
 `ShallowWaterResult.load(...)` is for transient inspection and series export.
 Its convenience `plot(snapshot=...)` selects a saved Mesh and delegates to the
 same native Core plotting API, supplying the recorded snapshot time and
-building context. Plotting needs Matplotlib in the caller, with no worker run.
+building context. It draws the whole mesh without sampling; for a sampled
+preview, call `Mesh.plot` on `result.to_dtcc(snapshot)` with a `max_elements`
+budget. Plotting needs Matplotlib in the caller, with no worker run.
 
 The series contains native DTCC snapshots, DG1 VTU snapshots, `times.json` and
 `solution.pvd` at the output root. Open the index in ParaView for time-dependent
