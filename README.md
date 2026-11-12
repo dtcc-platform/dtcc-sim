@@ -3,8 +3,8 @@
 DTCC Sim is a Python library for urban simulation. It provides heat and wind
 solvers, experimental shallow-water simulation, Helmholtz wave simulation,
 air-quality field reconstruction, and static traffic assignment, using DTCC Core
-models and datasets. The heat, wind and reconstruction solvers
-are built on FEniCSx.
+models and datasets. The heat, wind, shallow-water, Helmholtz and reconstruction
+solvers are built on FEniCSx.
 
 DTCC Sim is part of the [DTCC Platform](https://github.com/dtcc-platform/).
 
@@ -21,7 +21,7 @@ uv sync
 
 Run Python scripts in the installed environment with `uv run python`.
 This environment supports traffic simulation and dataset inspection. For heat,
-wind and air-quality reconstruction, follow the
+wind, air-quality reconstruction and shallow water, follow the
 [FEniCSx installation guide](docs/installation.md#fenicsx-environment).
 The Helmholtz solver requires complex PETSc; use the
 [complex-number environment](docs/installation.md#complex-number-environment).

@@ -11,7 +11,8 @@ installs Sim in editable mode with test and service dependencies. This
 environment supports traffic simulation, dataset inspection and service
 development. Queued service jobs also need a broker and worker.
 
-Heat, wind and air-quality reconstruction require FEniCSx/dolfinx with MPI/PETSc.
+Heat, wind, air-quality reconstruction and shallow water require FEniCSx/dolfinx
+with MPI/PETSc.
 All simulation datasets can be listed and described in the uv environment;
 solver execution requires the FEniCSx environment below.
 
@@ -23,8 +24,8 @@ The Helmholtz solver requires complex PETSc and uses the
 [complex-number environment](#complex-number-environment), `fenicsx-env-complex`.
 Both environments use DOLFINx 0.11.0 and can share the same editable Sim checkout.
 The experimental shallow-water solver uses this same real-valued DOLFINx 0.11
-environment. Run both demos with ordinary `python` after activation; see the
-[shallow-water runtime setup](shallow-water.md#runtime).
+environment. With it active and `DTCC_SWE_PYTHON` unset, run both demos with
+ordinary `python`; see the [shallow-water runtime setup](shallow-water.md#runtime).
 
 Install a Conda-compatible distribution, then create the environment from the
 checked-in recipe:
@@ -69,7 +70,8 @@ not use `uv.lock`. Docker uses the same Conda plus `uv pip` approach.
 The complex-number FEniCSx environment is named `fenicsx-env-complex`.
 It provides complex PETSc, which is required to run the Helmholtz solver.
 PETSc's scalar type is selected at build time, so keep this environment
-separate from the real-number environment used for heat, wind and reconstruction:
+separate from the real-number environment used for heat, wind, reconstruction
+and shallow water:
 
 ```bash
 conda env create -f fenicsx-env-complex.yml
@@ -194,8 +196,8 @@ The generated flood dataset also saves `city.vtu` and its coordinate sidecar.
 Its LOD1 building context uses estimated heights above a flat z=0 ground,
 matching the 2D water mesh. Supplied 2D meshes have no inferred 3D city context.
 
-Omitting `output_dir` keeps other solvers' results in memory; Helmholtz requires
-it for numerical artifacts. An explicit `output_path` remains available for
+Omitting `output_dir` keeps other solvers' results in memory; Helmholtz and
+shallow water require it for numerical artifacts. An explicit `output_path` remains available for
 heat, wind and reconstruction when no output directory was specified. Helmholtz
 also accepts an explicit export path. Input meshes are never replaced, and
 concurrent Helmholtz writers to the same case are rejected. `output_dir` is
