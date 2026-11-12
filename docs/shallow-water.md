@@ -81,12 +81,15 @@ an otherwise unknown CRS, without reprojection. Diagnostics and
 
 DTCC Sim uses Python 3.12+ and the common real-valued
 [fenicsx-env recipe](../fenicsx-env.yml), pinned to DOLFINx 0.11.0.
-The numerical worker requires real Float64 PETSc and supports the 0.11 release
-family. With this environment active, the current Python is used automatically:
+The numerical worker requires real Float64 PETSc. Its runtime check accepts
+DOLFINx 0.11.x; 0.11.0 is the supported baseline, and other versions are outside
+the tested support contract. With this environment active and `DTCC_SWE_PYTHON`
+unset, the current Python is used automatically:
 
 ```sh
 conda env create -f fenicsx-env.yml
 conda activate fenicsx-env
+unset DTCC_SWE_PYTHON
 uv pip install --python "$CONDA_PREFIX/bin/python" -e '.[test]'
 python demos/shallow_water_pulse.py
 python demos/dataset_urban_flood.py
@@ -226,7 +229,8 @@ Pass a simulation-time `title` explicitly; transient Python attributes are not
 part of native mesh serialization. `coordinate_unit="m"` and `scale_bar=True`
 are appropriate for the solver's metric input coordinates. Plotting preserves
 coordinates and CRS without reprojection. `show=False` returns a Matplotlib 2D
-axes; `ax=` accepts an existing 2D axes and `theme="dark"` selects Core styling.
+axes; `ax=` accepts an existing 2D axes. `Mesh.plot` defaults to `theme="dark"`;
+pass `theme="light"` to match the demos and `ShallowWaterResult.plot()`.
 The default Core mesh plot remains a 3D preview.
 
 A dataset package can be moved and opened without the numerical run directory:
@@ -284,8 +288,8 @@ markers; its neighbor stencils exclude reflecting building interfaces. The
 existing wet/dry treatment still restricts free-surface slope limiting in
 partially dry cells. Runtime validation, a configurable step limit, scheduled
 output times and the domain-wide TVB correction are recorded in the manifest.
-Identically zero TVB polynomials bypass the local least-squares solves; nonzero
-polynomials retain the same limiting procedure and wall-aware stencils.
+The TVB limiter skips identically zero polynomials and applies cached
+geometry-dependent maps, with wall-aware stencils, to the remaining cells.
 Local assembly and the public DTCC adapter do not
 claim to reproduce projected-coordinate floating-point results bitwise.
 Completed diagnostics and dataset-package processing provenance include the
