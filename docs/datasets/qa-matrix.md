@@ -7,7 +7,7 @@ scope instead of being hidden in default CI.
 
 Runtime tiers:
 
-- `static/default`: descriptor, service, traffic, and plumbing tests that do
+- `static/default`: descriptor, traffic, and plumbing tests that do
   not require FEniCSx.
 - `simulation`: simulation dataset or solver validation tests.
 - `fenics`: tests that require a FEniCSx/dolfinx runtime and skip with an

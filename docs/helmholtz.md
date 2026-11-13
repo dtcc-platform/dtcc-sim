@@ -482,9 +482,8 @@ completed numerical result and diagnostics without rerunning the solver.
 
 The [installation guide](installation.md#complex-number-environment) provides the
 separate complex-PETSc runtime. Local Python, foreground CLI and detached Linux
-execution are supported. The general queued service excludes Helmholtz from
-both discovery and task registration; dedicated supervision and deployment are
-outside this contribution. Other simulation datasets keep their existing routes.
+execution are supported. Dedicated supervision and deployment are outside this
+contribution.
 The dataset rejects daemonic execution with multiple patch workers before
 starting a workflow.
 

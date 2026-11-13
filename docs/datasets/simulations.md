@@ -57,10 +57,6 @@ Vertex-valued fields use `association="vertex"`. Native heat and air-quality
 exports preserve mesh vertices and nodal scalar samples, rather than the full
 FEniCS function space. Legacy `.pb` model files are unsupported.
 
-XDMF exports include companion HDF5 files. The service defaults to XDMF for heat
-and air quality when no format is requested. It runs the dataset to obtain a
-Python object, then serializes and packages the result with its companion files.
-
 ## Air-quality station elevations
 
 Station metadata `elevation_source` distinguishes supplied elevations from

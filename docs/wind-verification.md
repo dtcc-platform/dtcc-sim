@@ -141,7 +141,7 @@ city cases deselected. All three city cases pass when explicitly selected.
 Eleven complex Helmholtz checks, four complex-runtime flow guards and the
 two-rank MPI check pass. Source and wheel builds and `git diff --check` pass.
 
-Real-environment checks cover equations, datasets, service schemas and failure
+Real-environment checks cover equations, datasets, schemas and failure
 states, exports, manufactured convergence, analytical references and offline
 demos. Helmholtz numerical checks run separately in the complex environment;
 flow runtime rejection is checked there too. City demonstrations execute with

@@ -7,9 +7,8 @@ Mesher dependencies. Run the commands below from the Sim repository root.
 ## Python environment with uv
 
 `uv sync` creates `.venv`, installs the versions recorded in `uv.lock`, and
-installs Sim in editable mode with test and service dependencies. This
-environment supports traffic simulation, dataset inspection and service
-development. Queued service jobs also need a broker and worker.
+installs Sim in editable mode with test dependencies. This environment
+supports traffic simulation and dataset inspection.
 
 Heat, wind, air-quality reconstruction and shallow water require FEniCSx/dolfinx
 with MPI/PETSc.
@@ -34,15 +33,15 @@ checked-in recipe:
 source ~/miniconda3/etc/profile.d/conda.sh
 conda env create -f fenicsx-env.yml
 conda activate fenicsx-env
-uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,service,helmholtz-mesh]"
+uv pip install --python "$CONDA_PREFIX/bin/python" -e ".[test,helmholtz-mesh]"
 ```
 
 The recipe supplies Python 3.12, DOLFINx 0.11.0, real PETSc, MPI bindings,
 PyVista, Matplotlib, native build tools and uv. Adjust the initialization path
-if Conda is installed elsewhere. DOLFINx 0.11.0 is the supported solver baseline,
-also used by the Docker image. Other versions are outside the tested support
-contract. The editable installation adds Sim, its pinned Core revision, and the
-test and service extras. The `helmholtz-mesh` extra supplies Core’s volume
+if Conda is installed elsewhere. DOLFINx 0.11.0 is the supported solver baseline.
+Other versions are outside the tested support contract. The editable
+installation adds Sim, its pinned Core revision, and the test extra. The
+`helmholtz-mesh` extra supplies Core’s volume
 mesher and is also needed by the real-valued city demos. Wind solvers reject
 complex PETSc before meshing; activate `fenicsx-env` for Stokes and Navier–Stokes.
 
@@ -63,7 +62,7 @@ conda activate fenicsx-env
 Keep this environment separate from `.venv`. After activating Conda, use
 `python` and `python -m pytest`; `uv sync` and `uv run` select the project
 environment. The Conda workflow uses its installed scientific stack and does
-not use `uv.lock`. Docker uses the same Conda plus `uv pip` approach.
+not use `uv.lock`.
 
 ## Complex-number environment
 
@@ -110,8 +109,7 @@ memory, or a future Celery worker process. Launch Python once; do not launch
 one MPI process per core. Select parallelism through `parameters.workers`.
 
 Helmholtz execution in this contribution uses Python or the local command-line
-launchers. It is excluded from the queued service registry; the general worker
-and Docker/Compose deployment do not supply its dedicated complex runtime.
+launchers.
 See the [Helmholtz quick start](helmholtz-quickstart.md) for a complete run.
 
 ## MPI transport
@@ -200,8 +198,7 @@ Omitting `output_dir` keeps other solvers' results in memory; Helmholtz and
 shallow water require it for numerical artifacts. An explicit `output_path` remains available for
 heat, wind and reconstruction when no output directory was specified. Helmholtz
 also accepts an explicit export path. Input meshes are never replaced, and
-concurrent Helmholtz writers to the same case are rejected. `output_dir` is
-local-only; service requests use `format` and service-managed result storage.
+concurrent Helmholtz writers to the same case are rejected.
 
 Helmholtz logs setup, iteration progress and final convergence at INFO through
 the shared DTCC logger (`dtcc-sim`); nonconvergence is logged at ERROR.
