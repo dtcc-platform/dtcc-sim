@@ -44,7 +44,6 @@ meshio==5.3.5
 mypy-extensions==1.1.0
 networkx==3.7
 openpyxl==3.1.5
-opentelemetry-api==1.45.1
 pandas==3.0.6
 parse==1.22.3
 pillow==11.3.0
