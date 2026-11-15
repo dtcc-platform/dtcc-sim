@@ -103,9 +103,9 @@ when changing environments.
 
 The readiness command imports libraries, verifies complex PETSc, the supported
 DOLFINx version, one MPI rank, and whether the current process can start the
-requested patch workers. It does not generate meshes, run the solver, or
-contact a service. Passing it does not validate a particular mesh, available
-memory, or a future Celery worker process. Launch Python once; do not launch
+requested patch workers. It does not generate meshes or run the solver.
+Passing it does not validate a particular mesh, available memory, or another
+worker process. Launch Python once; do not launch
 one MPI process per core. Select parallelism through `parameters.workers`.
 
 Helmholtz execution in this contribution uses Python or the local command-line

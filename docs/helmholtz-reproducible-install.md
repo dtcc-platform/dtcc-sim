@@ -74,4 +74,6 @@ existing Linux server, including 129 focused/installer checks and both real
 workflows, without manual repair after launch. This is a single same-host
 measurement with package/geodata caches available; it is not a promised
 installation time on another machine. See the
-[scripted validation report](validation/helmholtz-scripted-install.json).
+[scripted validation report](validation/helmholtz-scripted-install.json). That
+run used an earlier Python pin list with additional HTTP service packages; the
+`Helmholtz runtime` workflow checks the current list.
