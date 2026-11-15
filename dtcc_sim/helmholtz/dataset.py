@@ -239,7 +239,7 @@ class UrbanNoiseSimulationDataset(DatasetDescriptor):
 
         if args.parameters.workers > 1 and mp.current_process().daemon:
             raise RuntimeError(
-                "Parallel Helmholtz requires a non-daemonic worker; use a Celery solo pool or workers=1"
+                "Parallel Helmholtz requires a non-daemonic process; use workers=1 in a daemonic worker"
             )
         mesh_args = (
             {"mesh_path": args.mesh_path, "mesh_h": args.h, "mesh_crs": args.mesh_crs}
