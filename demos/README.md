@@ -46,8 +46,9 @@ to continue where provided.
 ## Requirements and limitations
 
 The shallow-water examples use the retained experimental reference in the
-common real DOLFINx 0.11 environment. Activate `fenicsx-env`, then run
-`python demos/shallow_water_pulse.py` or `python demos/dataset_urban_flood.py`.
+common real DOLFINx 0.11 environment. Activate `fenicsx-env`, unset
+`DTCC_SWE_PYTHON`, then run `python demos/shallow_water_pulse.py` or
+`python demos/dataset_urban_flood.py`.
 They need no arguments or interpreter override. Complex-PETSc callers can
 explicitly select a real 0.11 worker as described in the runtime guide. The
 library replaces `solution.dtcc`, `solution_finaly.vtu` and coordinate sidecars on

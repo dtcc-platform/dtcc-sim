@@ -29,10 +29,8 @@ because the same version string can produce a different partition. Completed
 older results remain loadable/exportable; older prepared cases need fresh
 preparation for another solve.
 
-The contribution excludes specialized Celery/supervisor/systemd support.
-General service discovery excludes Helmholtz so that unsuitable workers cannot
-accept it. Other datasets retain their existing service behavior. The personal
-Chalmers launcher is separate from generic library code.
+The contribution excludes specialized Celery/supervisor/systemd support. The
+personal Chalmers launcher is separate from generic library code.
 
 ## Evidence and its limits
 

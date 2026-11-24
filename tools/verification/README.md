@@ -1,7 +1,7 @@
 # Solver verification
 
-Run from the repository root. The flow checks below use the real-number
-FEniCSx environment; the shallow-water study uses its separate worker setup.
+Run from the repository root. The flow checks below and the shallow-water study
+use the real-number FEniCSx environment.
 
 `abl_homogeneity.py` checks horizontal homogeneity of the atmospheric
 boundary layer: an equilibrium log-law inflow should cross a flat, empty

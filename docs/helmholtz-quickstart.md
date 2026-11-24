@@ -3,7 +3,7 @@
 Run commands from the checkout root. The Helmholtz solver requires complex
 PETSc with DOLFINx 0.11.0 and Python 3.12. Use the complex-number environment
 `fenicsx-env-complex`, separate from the real-number `fenicsx-env` environment
-used for heat, wind and reconstruction.
+used for heat, wind, reconstruction and shallow water.
 
 ## 1. Install and check the runtime
 

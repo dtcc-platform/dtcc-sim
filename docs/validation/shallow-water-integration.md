@@ -4,7 +4,7 @@
 
 Implementation: `97649faa17adb7c0c6909a5d364dc3155fb78139`.
 The numerical reference is `equilibrium-terrain-dg1-dolfinx-0.11`;
-[`reference.json`](../../dtcc_sim/shallow_water/reference.json) identifies the
+[`reference.json`](https://github.com/dtcc-platform/dtcc-sim/blob/97649faa17adb7c0c6909a5d364dc3155fb78139/dtcc_sim/shallow_water/reference.json) identifies the
 MIT-licensed upstream commit and all 12 retained worker-file hashes. Installed
 Core is the declared revision `350a2faefdc2977588d67156a6a86062333fa2a5`.
 The [machine-readable audit](shallow-water-011.json) records commands, source
@@ -58,9 +58,9 @@ Both actual demos executed twice with no interpreter override. Each city run
 used 1,621 vertices and 3,108 triangles, took 1,006 accepted steps, rejected no
 steps and saved times 0, 5, 10, 15 and 20 s. Fields were finite and nonnegative;
 relative total mass error was `9.74e-16`. Across 19 reflecting regions, maximum
-absolute volume drift was `3.56e-14 m³`. At 20 s, 133 initially dry ground faces
+absolute volume drift was `3.55e-14 m³`. At 20 s, 133 initially dry ground faces
 exceeded `1e-4 m` depth, including 32 beside buildings. The two-run test took
-329.67 s. Both runs preserved an unrelated output file. Genuine city snapshots,
+329.66 s. Both runs preserved an unrelated output file. Genuine city snapshots,
 the city final map and the offline map were visually inspected for face values,
 building context, CRS/time labels, units and scale bars.
 
@@ -80,7 +80,9 @@ provenance. Its native map was visually inspected.
 
 ## Reproduction
 
-Use the [common real environment](../installation.md#fenicsx-environment):
+Run these recorded commands from implementation `97649fa` in the
+[common real environment](../installation.md#fenicsx-environment). Running them
+on another revision validates that revision, not the recorded results:
 
 ```sh
 conda activate fenicsx-env
@@ -111,11 +113,12 @@ city test.
 
 ## Evidence scope
 
-The archived [city](shallow-water-city.json),
+Of the archived [city](shallow-water-city.json),
 [saved-mesh](shallow-water-revalidation.json) and
-[wave](shallow-water-wave.json) audits record their original DOLFINx 0.10
-runtimes. Their numerical measurements apply to those recorded sources and
-runtimes.
+[wave](shallow-water-wave.json) audits, only the saved-mesh audit records a
+DOLFINx version (0.10.0); the city and wave files do not specify one. Their
+measurements are historical evidence, not validation of the current
+implementation.
 
 Generated city terrain is flat; outer and building interfaces reflect, with
 building interiors simulated as separate regions. There is no rainfall,

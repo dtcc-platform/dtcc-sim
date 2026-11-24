@@ -14,9 +14,9 @@ Call a dataset with `bounds=[xmin, ymin, xmax, ymax]` to run it.
 `urban_noise_simulation` additionally requires explicit `h`, `output_dir`, and either
 `mesh_path` for an existing XDMF mesh or generation settings. Generated meshes
 use a sibling `<output_dir>-mesh-cache` by default; `mesh_cache_dir` overrides it.
-Dataset execution fetches upstream geospatial data. Heat, wind and air-quality
-reconstruction also require the
-[FEniCSx environment](../installation.md#fenicsx-environment).
+Dataset execution fetches upstream geospatial data. Heat, wind, air-quality
+reconstruction and shallow water also require the
+[real-number FEniCSx environment](../installation.md#fenicsx-environment).
 
 | Dataset | Python result | Formats | Output |
 | --- | --- | --- | --- |
@@ -48,15 +48,14 @@ provenance and diagnostics together with the mesh. Reopen it with
 `dtcc_core.datasets.load_model_package(path)`. Standalone `.dtcc` files retain
 fields but not dataset context.
 
-Shallow-water exports contain face-valued cell means with `association="face"`.
+Shallow-water native DTCC files and dataset packages contain face-valued cell
+means with `association="face"`. VTU exports also contain the DG1 values of each
+triangle as vertex fields with `association="vertex"`, on unshared vertices that
+preserve discontinuities.
 
 Vertex-valued fields use `association="vertex"`. Native heat and air-quality
 exports preserve mesh vertices and nodal scalar samples, rather than the full
 FEniCS function space. Legacy `.pb` model files are unsupported.
-
-XDMF exports include companion HDF5 files. The service defaults to XDMF for heat
-and air quality when no format is requested. It runs the dataset to obtain a
-Python object, then serializes and packages the result with its companion files.
 
 ## Air-quality station elevations
 

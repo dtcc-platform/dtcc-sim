@@ -1,4 +1,4 @@
-"""Stationary wind dataset and service boundary contracts."""
+"""Stationary wind dataset contracts."""
 
 import pytest
 from dtcc_sim.datasets import UrbanWindSimulationArgs, UrbanWindSimulationDataset
@@ -34,18 +34,6 @@ def test_dataset_propagates_numerical_failure(monkeypatch, tmp_path):
     import json
     assert [path.name for path in tmp_path.iterdir()] == ["timings.json"]
     assert json.loads((tmp_path / "timings.json").read_text())["status"] == "failed"
-
-
-def test_service_advertises_stationary_schema_and_reports_failure():
-    pytest.importorskip("fastapi")
-    from service.routes import list_datasets, _task_state_payload
-    from types import SimpleNamespace
-    result = list_datasets()
-    schema = result["datasets"]["urban_wind_simulation"]["args_schema"]["properties"]
-    assert "nonlinear_max_it" in schema and "dt" not in schema
-    payload = _task_state_payload(SimpleNamespace(state="FAILURE", result=RuntimeError("Stationary flow solve failed")))
-    assert payload["status"] == "failed"
-    assert "result_file" not in payload
 
 
 @pytest.mark.fenics

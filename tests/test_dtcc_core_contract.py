@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import fields
 from inspect import signature
 
+import h5py
+import numpy as np
 import pytest
 
 import dtcc_core.io  # noqa: F401  Registers VolumeMesh.save.
 import dtcc_core.datasets as datasets
-from dtcc_core.model import DeSO, RoadNetwork, SensorCollection, VolumeMesh
+from dtcc_core.model import DeSO, Field, RoadNetwork, SensorCollection, VolumeMesh
 
 
 UPSTREAM_DATASET_CONTRACTS = [
@@ -81,3 +83,27 @@ def test_upstream_result_interfaces_used_by_sim():
     assert callable(DeSO.to_arrays)
     assert isinstance(DeSO.fields, property)
     assert callable(VolumeMesh.save)
+
+
+@pytest.mark.parametrize("field_name", ["temperature", "NO2"])
+def test_volume_mesh_xdmf_keeps_vertex_fields(tmp_path, field_name):
+    mesh = VolumeMesh(
+        vertices=np.array(
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        ),
+        cells=np.array([[0, 1, 2, 3]], dtype=np.int64),
+    )
+    mesh.add_field(
+        Field(name=field_name, values=np.array([18.0, 19.0, 20.0, 21.0]), dim=1,
+              association="vertex", unit="degC")
+    )
+
+    mesh.save(tmp_path / "result.xdmf")
+
+    assert f'Attribute Name="{field_name}"' in (tmp_path / "result.xdmf").read_text()
+    with h5py.File(tmp_path / "result.h5", "r") as h5_file:
+        saved = {
+            dataset.attrs["name"]: dataset[()]
+            for dataset in h5_file["Mesh/mesh/fields"].values()
+        }
+    np.testing.assert_allclose(saved[field_name], [18.0, 19.0, 20.0, 21.0])

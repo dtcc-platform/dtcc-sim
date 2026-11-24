@@ -48,8 +48,7 @@ single faces.
 Time steps, CFL controls, ramps, statistical windows and pressure-correction
 options are invalid arguments. Configure nonlinear tolerances and
 `petsc_options` for Navier–Stokes, or `petsc_stokes` for Stokes. Unknown arguments
-raise a validation error in the direct and dataset APIs. The service exposes the
-same dataset schema.
+raise a validation error in the direct and dataset APIs.
 
 ## Boundaries and pressure
 
@@ -160,7 +159,7 @@ An output directory receives `solution_velocity.xdmf` and
 quality diagnostics use the P2 solution. Dataset byte output remains `dtcc`.
 Repeated successful runs replace owned outputs and preserve unrelated files.
 Numerical failures preserve existing solution files and propagate through the
-dataset and service as failures.
+dataset as failures.
 
 ### MPI
 

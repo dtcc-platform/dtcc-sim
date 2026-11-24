@@ -27,7 +27,6 @@ helmholtz-mesh = ["dtcc-core[volume] @ git+https://github.com/dtcc-platform/dtcc
 test = ["pytest"]
 benchmarks = ["xlrd>=2.0", "scipy>=1.12", "matplotlib"]
 docs = ["sphinx", "sphinx-immaterial"]
-service = ["fastapi>=0.125.0", "uvicorn>=0.38.0", "celery[redis]>=5.4", "httpx>=0.27"]
 
 [project.urls]
 Homepage = "https://github.com/dtcc-platform/dtcc-sim"
@@ -36,7 +35,7 @@ Documentation = "https://platform.dtcc.chalmers.se/"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["dtcc_sim*", "service*"]
+include = ["dtcc_sim*"]
 
 [tool.setuptools.package-data]
 "dtcc_sim.shallow_water" = ["reference.json", "_solver/cecilia_swe/LICENSE"]
@@ -51,5 +50,4 @@ markers = [
 ]
 
 [dependency-groups]
-# Include the service dependencies used by the test suite.
-dev = ["dtcc-sim[test,service]"]
+dev = ["dtcc-sim[test]"]
