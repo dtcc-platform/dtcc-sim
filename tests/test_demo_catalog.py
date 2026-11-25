@@ -1,11 +1,10 @@
 """The catalog covers short, linear public API examples."""
 
 import ast
-from pathlib import Path
 import re
+from pathlib import Path
 
 import pytest
-
 
 DEMO_DIR = Path(__file__).resolve().parents[1] / "demos"
 DEMOS = sorted(DEMO_DIR.glob("*.py"))
@@ -43,13 +42,13 @@ def test_demo_structure(path):
                for call in calls)
     assert any(isinstance(call.func, ast.Attribute) and call.func.attr == "plot"
                for call in calls)
-    output, = [keyword.value for call in calls for keyword in call.keywords
-               if keyword.arg == "output_dir"]
-    if isinstance(output, ast.Name):
-        output, = [node.value for node in tree.body if isinstance(node, ast.Assign)
-                   and isinstance(node.targets[0], ast.Name)
-                   and node.targets[0].id == output.id]
-    assert ast.literal_eval(output) == f"output/{path.stem}"
+    for output in (keyword.value for call in calls for keyword in call.keywords
+                   if keyword.arg == "output_dir"):
+        if isinstance(output, ast.Name):
+            output, = [node.value for node in tree.body if isinstance(node, ast.Assign)
+                       and isinstance(node.targets[0], ast.Name)
+                       and node.targets[0].id == output.id]
+        assert Path(ast.literal_eval(output)) == Path("output") / path.stem
 
 
 def test_dataset_wind_uses_same_scenario_as_direct_solver():
