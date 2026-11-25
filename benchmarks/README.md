@@ -10,6 +10,10 @@ benchmarks are in [`tools/benchmarks`](../tools/benchmarks/README.md).
 | --- | --- | --- |
 | [`aij`](aij/README.md) | AIJ pedestrian-wind cases A (high-rise building) and B (slab) | stationary Navier–Stokes with the atmospheric boundary-layer closures |
 
+The [People benchmark](people/PROTOCOL.md) compares synthetic resident travel
+with GAPSIM in three Göteborg primary areas. Its field evaluator accepts
+independently measured pedestrian counts for a specified screenline.
+
 ## Reference data
 
 Measurement data are not redistributed with DTCC Sim.
