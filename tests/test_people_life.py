@@ -2,7 +2,9 @@ from collections import Counter
 from itertools import pairwise
 
 import numpy as np
+import pytest
 from dtcc_core.model import Person, RoadNetwork
+from dtcc_core.model.object.people import TimedPath
 
 from dtcc_sim.people.inputs import Anchor, building_height
 from dtcc_sim.people.population import (
@@ -209,6 +211,43 @@ def test_failed_commute_leaves_the_job_available():
         assert bool(trips) == (expected == 0)
         assert jobs.remaining[0] == expected
     assert jobs.overflow == 0
+
+
+@pytest.mark.parametrize("arrival", [23 * 3600, 23.5 * 3600])
+def test_outing_without_time_to_return_stays_home(arrival):
+    class LateService:
+        def itinerary(self, origin, destination, depart, speed, purpose, key, router):
+            assert purpose == "leisure"
+            return [
+                TimedPath(
+                    "transit", purpose, [[depart, *origin], [arrival, *destination]]
+                )
+            ]
+
+    home = anchor("home", 0, "home")
+    sites = {"leisure": Destinations([anchor("park", 300, "leisure")])}
+    survey = {
+        "table_1_annual_thousand": {"work": [0, 0, 0, 1]},
+        "table_5_daily_rate_and_95ci": {"shopping": [0], "leisure": [1]},
+    }
+    diagnostics = Counter()
+    paths, _, trips, _ = _schedule(
+        "adult",
+        30,
+        "home",
+        home,
+        sites,
+        Destinations([]),
+        street(),
+        survey,
+        42,
+        diagnostics,
+        timetable=LateService(),
+    )
+    assert [(p.purpose, p.start, p.end) for p in paths] == [("home", 0, 86400)]
+    assert trips == []
+    assert diagnostics["infeasible_journeys"] == 1
+    assert diagnostics["scheduled_transit_outings_dropped_on_return"] == 1
 
 
 def test_vehicle_crossing_view_between_stops_is_included():

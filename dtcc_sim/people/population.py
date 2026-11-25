@@ -538,6 +538,11 @@ def _schedule(
                 outbound[-1].end + 900,
                 CAMPUS_BLOCKS[plan[1]][1] + float(stream.uniform(0, 1500)),
             )
+        if leave >= 86400:
+            diagnostics["infeasible_journeys"] += 1
+            if scheduled_transit:
+                diagnostics["scheduled_transit_outings_dropped_on_return"] += 1
+            continue
         stay_diagnostics = Counter()
         stay, last, moves, leave = (
             _stay(
