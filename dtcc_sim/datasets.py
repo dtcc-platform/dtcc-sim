@@ -13,9 +13,10 @@ from .timing import phase as timing_phase, timed_run
 from typing import Optional, Literal
 from pydantic import Field, model_validator
 
-from dtcc_core.datasets import DatasetDescriptor, DatasetBaseArgs
+from dtcc_core.datasets import DatasetDescriptor, DatasetBaseArgs, get_dataset
 
 from ._flow.parameters import _FlowParameters
+from .people.dataset import PeopleArgs, PeopleDataset
 
 from .traffic import TrafficAssignmentSimulator, TrafficAssignmentParameters
 from .helmholtz.dataset import (
@@ -1199,7 +1200,13 @@ class TrafficSimulationDataset(DatasetDescriptor):
         return result
 
 
+people = get_dataset("people")
+
+
 __all__ = [
+    "people",
+    "PeopleArgs",
+    "PeopleDataset",
     "UrbanHeatSimulationArgs",
     "UrbanHeatSimulationDataset",
     "AirQualityFieldArgs",

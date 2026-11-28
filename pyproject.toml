@@ -19,11 +19,14 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = ["dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@350a2faefdc2977588d67156a6a86062333fa2a5"]
+dependencies = [
+  "dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@146076123ec8eca8f766767d1ef89c090bd7627e",
+  "openpyxl>=3.1.5,<4",
+]
 
 [project.optional-dependencies]
 helmholtz = ["scipy>=1.12", "pymetis", "threadpoolctl>=3.1"]
-helmholtz-mesh = ["dtcc-core[volume] @ git+https://github.com/dtcc-platform/dtcc-core.git@350a2faefdc2977588d67156a6a86062333fa2a5"]
+helmholtz-mesh = ["dtcc-core[volume] @ git+https://github.com/dtcc-platform/dtcc-core.git@146076123ec8eca8f766767d1ef89c090bd7627e"]
 test = ["pytest"]
 benchmarks = ["xlrd>=2.0", "scipy>=1.12", "matplotlib"]
 docs = ["sphinx", "sphinx-immaterial"]
