@@ -43,6 +43,12 @@ def test_demo_structure(path):
                for call in calls)
     assert any(isinstance(call.func, ast.Attribute) and call.func.attr == "plot"
                for call in calls)
+    if path.stem == "dataset_people":
+        plot, = [call for call in calls if isinstance(call.func, ast.Attribute)
+                 and call.func.attr == "plot"]
+        assert any(keyword.arg == "animate" and ast.literal_eval(keyword.value) is True
+                   for keyword in plot.keywords)
+        return
     output, = [keyword.value for call in calls for keyword in call.keywords
                if keyword.arg == "output_dir"]
     if isinstance(output, ast.Name):

@@ -19,7 +19,10 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = ["dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@530fc78c3344b17f061f7441e63e9bec20b5e6cf"]
+dependencies = [
+  "dtcc-core @ git+https://github.com/dtcc-platform/dtcc-core.git@530fc78c3344b17f061f7441e63e9bec20b5e6cf",
+  "openpyxl>=3.1.5,<4",
+]
 
 [project.optional-dependencies]
 helmholtz = ["scipy>=1.12", "pymetis", "threadpoolctl>=3.1"]

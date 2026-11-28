@@ -27,6 +27,7 @@ to continue where provided.
 | [dataset_urban_noise.py](dataset_urban_noise.py) | City noise wave amplitude through the dataset API | Complex FEniCSx; city data |
 | [dataset_urban_flood.py](dataset_urban_flood.py) | Experimental shallow-water pulse over point-cloud-derived city terrain | Real FEniCSx 0.11; live city data |
 | [dataset_traffic.py](dataset_traffic.py) | Traffic assignment using road and population/employment data | Standard Python environment; live data |
+| [dataset_people.py](dataset_people.py) | Animated synthetic pedestrians on mapped streets around Chalmers | Standard Python environment; cached or live OpenStreetMap roads |
 
 ## Solver examples
 
@@ -175,3 +176,10 @@ wind-tunnel measurements around isolated buildings in the
 wakes, and is not validated for city areas. The
 cavity uses a smooth tangential lid that vanishes at its edges. Channel and
 bluff-body meshes use native Core geometry without Gmsh.
+
+### People
+
+The People example opens a Matplotlib animation of a small sample of
+synthetic walkers on the 250 × 250 m Johanneberg domain. The preview uses
+mapped streets and illustrative trips. The population, transit and package
+examples are in the [People guide](../docs/people.md).
