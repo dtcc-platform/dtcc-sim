@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import numpy as np
 
+from .dataset import qualify_gapsim_evaluation
 from .routing import Router, timed_route
 
 
@@ -22,6 +23,7 @@ def close_walk_link(model, network, edge):
     result = deepcopy(model)
     result.attributes["closed_walk_edge"] = edge
     if result.dataset_context is not None:
+        qualify_gapsim_evaluation(result.dataset_context.presentation)
         result.dataset_context.presentation.annotations.append(
             {
                 "relationship": "scenario_intervention",

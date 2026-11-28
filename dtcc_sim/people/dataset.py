@@ -6,16 +6,29 @@ from typing import ClassVar, Literal
 from dtcc_core.datasets import Dataset, DatasetBaseArgs
 from pydantic import Field, model_validator
 
+VALIDATION_REPORT = (
+    "https://github.com/dtcc-platform/dtcc-sim/blob/"
+    "7f67fddfc434ba4fc0ef340c04fef44a13985d27/docs/people-validation.md"
+)
+EVALUATED_AREAS = ("Johanneberg", "Askim", "Hammarkullen")
 VALIDATION_REFERENCE = {
     "relationship": "model_evaluation",
     "version": "2019-v1",
-    "model_version": "0.1.0",
-    "url": "https://github.com/dtcc-platform/dtcc-sim/blob/develop/docs/people-validation.md",
+    "model_version": "0.2.1",
+    "url": VALIDATION_REPORT,
+    "applies_to": {
+        "regions": [area.lower() for area in EVALUATED_AREAS],
+        "transit_service_date": None,
+        "survey_profile": "published",
+        "seeds": [17, 42, 83],
+        "nearest_baseline_seed": 42,
+        "closed_walk_edge": None,
+    },
     "evidence": {
         "gapsim": {
             "doi": "10.5281/zenodo.13882078",
             "reference_year": 2019,
-            "area": ["Johanneberg", "Askim", "Hammarkullen"],
+            "area": list(EVALUATED_AREAS),
             "tested_outputs": [
                 "resident demography",
                 "household composition",
@@ -32,32 +45,19 @@ VALIDATION_REFERENCE = {
         },
     },
 }
-SCHEDULED_VALIDATION_REFERENCE = {
-    **VALIDATION_REFERENCE,
-    "version": "2019-v1-scheduled",
-    "url": "https://github.com/dtcc-platform/dtcc-sim/blob/develop/docs/people-validation.md#scheduled-transit-sensitivity",
-    "applies_to": {"transit_service_date": "2019-10-15", "survey_profile": "published"},
-}
-JOHANNEBERG_VALIDATION_REFERENCE = {
-    **VALIDATION_REFERENCE,
-    "version": "2019-v2-johanneberg",
-    "model_version": "0.2.1",
-    "url": "https://github.com/dtcc-platform/dtcc-sim/blob/develop/docs/people-validation.md#johanneberg-model-021",
-    "applies_to": {
-        "region": "johanneberg",
-        "transit_service_date": None,
-        "survey_profile": "published",
-        "seeds": [17, 42, 83],
-        "nearest_baseline_seed": 42,
-    },
-    "evidence": {
-        **VALIDATION_REFERENCE["evidence"],
-        "gapsim": {
-            **VALIDATION_REFERENCE["evidence"]["gapsim"],
-            "area": ["Johanneberg"],
-        },
-    },
-}
+
+
+def qualify_gapsim_evaluation(presentation):
+    """Keep the GAPSIM report as background for a scenario outside its scope."""
+    for annotation in presentation.annotations:
+        if (
+            annotation.get("relationship") == "model_evaluation"
+            and "gapsim" in annotation.get("evidence", {})
+        ):
+            annotation["relationship"] = "related_model_evaluation"
+            presentation.limitations.append(
+                "The GAPSIM comparison did not evaluate this scenario."
+            )
 
 
 class PeopleArgs(DatasetBaseArgs):
@@ -169,24 +169,23 @@ class PeopleDataset(Dataset):
                 "The local diary template profile has no GAPSIM or independent pedestrian evaluation."
             )
         elif args.profile == "population":
+            reference = deepcopy(VALIDATION_REFERENCE)
+            scope = reference["applies_to"]
+            if args.transit_service_date:
+                reference["url"] += "#transit-timetable-sensitivity"
+                scope["transit_service_date"] = "2019-10-15"
+            context.presentation.annotations.append(reference)
+            tested_seed = (
+                args.seed == scope["nearest_baseline_seed"]
+                if args.baseline
+                else args.seed in scope["seeds"]
+            )
             if (
-                result.attributes.get("region") == "johanneberg"
-                and not args.transit_service_date
-                and not args.closed_walk_edge
+                self.version != reference["model_version"]
+                or result.attributes.get("region") not in scope["regions"]
+                or args.transit_service_date != scope["transit_service_date"]
+                or args.closed_walk_edge is not None
+                or not tested_seed
             ):
-                context.presentation.annotations.append(
-                    deepcopy(JOHANNEBERG_VALIDATION_REFERENCE)
-                )
-            else:
-                reference = (
-                    SCHEDULED_VALIDATION_REFERENCE
-                    if args.transit_service_date
-                    else VALIDATION_REFERENCE
-                )
-                context.presentation.annotations.append(
-                    {**deepcopy(reference), "relationship": "prior_model_evaluation"}
-                )
-                context.presentation.limitations.append(
-                    f"The linked GAPSIM evaluation covers model {reference['model_version']}."
-                )
+                qualify_gapsim_evaluation(context.presentation)
         return context

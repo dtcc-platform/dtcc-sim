@@ -18,7 +18,7 @@ from dtcc_sim.people import population
 from dtcc_sim.people.intervention import close_walk_link
 from dtcc_sim.people.population import _ages, _members
 from dtcc_sim.people.routing import Router, timed_route
-from dtcc_sim.people.scenario import rng, walking_preview
+from dtcc_sim.people.scenario import rng, simulation, walking_preview
 
 
 def fixture_network():
@@ -185,7 +185,9 @@ def test_population_result_does_not_share_cached_state_and_keys_runs_by_input_ha
     assert next_run.attributes["survey"]["rates"] == [1]
     assert next_run.attributes["zonal_controls"]["zone"]["count"] == 1
     assert next_run.presentation.annotations[-1]["evidence"]["gapsim"]["area"] == [
-        "Johanneberg"
+        "Johanneberg",
+        "Askim",
+        "Hammarkullen",
     ]
     assert revisions == [("first",), ("second",)]
     assert next_run.provenance.sources[0]["sha256"] == "second"
@@ -202,32 +204,64 @@ def test_walking_preview_rejects_ignored_population_options(options):
 
 
 @pytest.mark.parametrize(
-    ("region", "options", "relationship"),
+    ("region", "options", "evaluated"),
     [
-        ("johanneberg", {}, "model_evaluation"),
-        (
-            "johanneberg",
-            {"transit_service_date": "2019-10-15"},
-            "prior_model_evaluation",
-        ),
-        ("johanneberg", {"closed_walk_edge": "fixture"}, "prior_model_evaluation"),
-        ("malmo", {}, "prior_model_evaluation"),
+        ("johanneberg", {}, True),
+        ("askim", {"seed": 17}, True),
+        ("hammarkullen", {"seed": 83}, True),
+        ("askim", {"baseline": True, "seed": 42}, True),
+        ("johanneberg", {"baseline": True, "seed": 17}, False),
+        ("hammarkullen", {"seed": 82}, False),
+        ("johanneberg", {"closed_walk_edge": "fixture"}, False),
+        ("malmo", {}, False),
     ],
 )
+@pytest.mark.parametrize("service_date", [None, "2019-10-15"])
 def test_current_evaluation_reference_is_scoped_to_tested_scenario(
-    region, options, relationship
+    region, options, evaluated, service_date
 ):
     model = PeopleSimulation(
         attributes={"region": region, "source_provenance": [], "diagnostics": {}}
     )
     args = datasets.people.validate(
-        {"bounds": [319720, 6397660, 320220, 6398160], **options}
+        {
+            "bounds": [319720, 6397660, 320220, 6398160],
+            "transit_service_date": service_date,
+            **options,
+        }
     )
     context = datasets.people._context_for_result(model, args)
     references = [
         a for a in context.presentation.annotations if a["relationship"] != "methods"
     ]
-    assert [a["relationship"] for a in references] == [relationship]
-    if relationship == "model_evaluation":
-        assert references[0]["model_version"] == datasets.people.version
-        assert references[0]["evidence"]["gapsim"]["area"] == ["Johanneberg"]
+    (reference,) = references
+    assert reference["relationship"] == (
+        "model_evaluation" if evaluated else "related_model_evaluation"
+    )
+    assert reference["model_version"] == datasets.people.version == "0.2.1"
+    assert reference["version"] == "2019-v1"
+    section = "#transit-timetable-sensitivity" if service_date else ""
+    assert reference["url"].endswith(f"/docs/people-validation.md{section}")
+    assert reference["applies_to"]["transit_service_date"] == service_date
+    assert reference["applies_to"]["regions"] == ["johanneberg", "askim", "hammarkullen"]
+    observations = reference["evidence"]["independent_pedestrian_observations"]
+    assert observations["status"] == "unscored"
+    limitation = "The GAPSIM comparison did not evaluate this scenario."
+    assert (limitation in context.presentation.limitations) == (not evaluated)
+
+
+def test_link_closure_qualifies_the_evaluation_in_the_exported_package(tmp_path):
+    bounds = Bounds(0, 0, 230, 180)
+    args = datasets.people.validate({"bounds": list(bounds.tuple)})
+    model = simulation(bounds, args, [], {}, [], region="johanneberg")
+    model.dataset_context = datasets.people._context_for_result(model, args)
+    closed, _ = close_walk_link(model, fixture_network(), "0")
+    restored = load_model_package(
+        closed.export(tmp_path / "closure.dtccpkg", canonical=True).path
+    )
+    assert model.presentation.annotations[-1]["relationship"] == "model_evaluation"
+    assert [entry["relationship"] for entry in restored.presentation.annotations] == [
+        "methods",
+        "related_model_evaluation",
+        "scenario_intervention",
+    ]
